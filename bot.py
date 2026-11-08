@@ -1,4 +1,5 @@
 import asyncio, logging, os, re, secrets, hashlib, html, json
+import store as shop
 from datetime import datetime, timezone, timedelta
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
@@ -484,6 +485,32 @@ async def start(m:Message,state:FSMContext):
     except Exception:
         logging.exception("Ошибка /start")
         await m.answer("Не удалось открыть бота. Попробуй ещё раз позже.")
+@dp.callback_query(F.data.startswith("donation_paid:"))
+async def donation_paid(c):
+    if not is_owner(c.from_user.id): return await c.answer("Только владелец.",show_alert=True)
+    did=int(c.data.split(":",1)[1])
+    item=db._one(f"SELECT * FROM donations WHERE id={db._ph()}",(did,))
+    if not item or item["status"]!="pending": return await c.answer("Заявка уже обработана.",show_alert=True)
+    if not shop.mark_paid(db,did,c.from_user.id,"Одобрено владельцем"): return await c.answer("Не удалось одобрить.",show_alert=True)
+    msg="Пополнение #"+str(did)+" одобрено. Начислено "+str(int(item["fnz_amount"]))+" NMZ."
+    db.add_notification(int(item["uid"]),"Статус пополнения",msg)
+    try: await bot.send_message(int(item["uid"]),msg)
+    except Exception: logging.exception("notify player failed")
+    await c.message.edit_reply_markup(reply_markup=None)
+    await c.answer("Зачисление подтверждено")
+@dp.callback_query(F.data.startswith("donation_rejected:"))
+async def donation_rejected(c):
+    if not is_owner(c.from_user.id): return await c.answer("Только владелец.",show_alert=True)
+    did=int(c.data.split(":",1)[1])
+    item=db._one(f"SELECT * FROM donations WHERE id={db._ph()}",(did,))
+    if not item or item["status"]!="pending": return await c.answer("Заявка уже обработана.",show_alert=True)
+    if not shop.reject_donation(db,did,c.from_user.id,"Отклонено владельцем"): return await c.answer("Не удалось отклонить.",show_alert=True)
+    msg="Пополнение #"+str(did)+" отклонено владельцем."
+    db.add_notification(int(item["uid"]),"Статус пополнения",msg)
+    try: await bot.send_message(int(item["uid"]),msg)
+    except Exception: logging.exception("notify player failed")
+    await c.message.edit_reply_markup(reply_markup=None)
+    await c.answer("Заявка отклонена")
 @dp.callback_query(F.data == "check_subscription")
 async def check_subscription(c):
     if not await subscribed(c.from_user.id):
