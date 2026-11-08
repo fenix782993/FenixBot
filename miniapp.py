@@ -502,6 +502,45 @@ async def shop_buy(req):
     db.add_notification(user_id,"Покупка оформлена",msg)
     return response({"id":order_id,"balance":shop.balance(db,user_id)})
 
+async def audio_tracks(req):
+    user_id=uid(req)
+    scope=req.query.get("scope","public")
+    if scope=="mine":
+        rows=db._all("SELECT a.id,a.uid,a.title,a.artist,a.audio_url,a.visibility,a.created,u.nick FROM audio_tracks a LEFT JOIN users u ON u.uid=a.uid WHERE a.uid=? ORDER BY a.id DESC LIMIT 100" if not db.use_postgres else "SELECT a.id,a.uid,a.title,a.artist,a.audio_url,a.visibility,a.created,u.nick FROM audio_tracks a LEFT JOIN users u ON u.uid=a.uid WHERE a.uid=%s ORDER BY a.id DESC LIMIT 100",(user_id,))
+    else:
+        rows=db._all("SELECT a.id,a.uid,a.title,a.artist,a.audio_url,a.visibility,a.created,u.nick FROM audio_tracks a LEFT JOIN users u ON u.uid=a.uid WHERE a.visibility='public' ORDER BY a.id DESC LIMIT 100")
+    return response({"tracks":[dict(x) for x in rows]})
+
+async def audio_track_add(req):
+    user_id=uid(req)
+    if not db.user(user_id):
+        return response("Сначала зарегистрируй игровой аккаунт.",403)
+    data=await payload(req)
+    title=str(data.get("title","")).strip()[:100]
+    artist=str(data.get("artist","")).strip()[:100]
+    url=str(data.get("url","")).strip()[:1000]
+    visibility=str(data.get("visibility","private"))
+    if len(title)<2:return response("Название должно содержать минимум 2 символа.",400)
+    if not (url.startswith("https://") or url.startswith("http://")):return response("Укажи прямую HTTP(S)-ссылку на аудиофайл.",400)
+    if visibility not in ("private","public"):visibility="private"
+    ph=db._ph()
+    if db.use_postgres:
+        row=db._one("INSERT INTO audio_tracks(uid,title,artist,audio_url,visibility,created) VALUES(%s,%s,%s,%s,%s,%s) RETURNING id",(user_id,title,artist,url,visibility,db._now()))
+    else:
+        cur=db._execute("INSERT INTO audio_tracks(uid,title,artist,audio_url,visibility,created) VALUES(?,?,?,?,?,?)",(user_id,title,artist,url,visibility,db._now()))
+        row={"id":cur.lastrowid}
+    return response({"id":row["id"]})
+
+async def audio_track_delete(req):
+    user_id=uid(req)
+    track_id=int(req.match_info["track_id"])
+    ph=db._ph()
+    row=db._one(f"SELECT id FROM audio_tracks WHERE id={ph} AND uid={ph}",(track_id,user_id))
+    if not row:return response("Запись не найдена.",404)
+    db._execute(f"DELETE FROM audio_tracks WHERE id={ph} AND uid={ph}",(track_id,user_id))
+    return response({"deleted":True})
+
+
 async def wallet_payment_details(req):
     user_id=uid(req)
     if not db.user(user_id):
@@ -755,6 +794,7 @@ async def main():
     app.router.add_get("/orders", lambda _: web.FileResponse(WEB_DIR / "account.html"))
     app.router.add_get("/app", home)
     app.router.add_get("/store", lambda _: web.FileResponse(WEB_DIR / "store.html"))
+    app.router.add_get("/audio", lambda _: web.FileResponse(WEB_DIR / "audio.html"))
     app.router.add_get("/health", lambda _: web.json_response({"status": "ok", "service": "fenix-miniapp"}))
     app.router.add_static("/assets/", ROOT / "assets", show_index=False)
     app.router.add_post("/api/auth/telegram", login_telegram)
@@ -784,6 +824,9 @@ async def main():
     app.router.add_post("/api/admin/publish", admin_publish)
     app.router.add_get("/api/shop", shop_home)
     app.router.add_post("/api/shop/buy", shop_buy)
+    app.router.add_get("/api/audio", audio_tracks)
+    app.router.add_post("/api/audio", audio_track_add)
+    app.router.add_delete("/api/audio/{track_id}", audio_track_delete)
     app.router.add_get("/api/wallet/payment-details", wallet_payment_details)
     app.router.add_post("/api/wallet/donate", wallet_donate)
     app.router.add_get("/api/admin/store", admin_store)
