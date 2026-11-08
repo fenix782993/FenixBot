@@ -181,7 +181,7 @@ async def import_emoji_pack(m: Message):
             parse_mode="HTML"
         )
     link = parts[1].strip()
-    match = re.search(r"(?:t\\.me|telegram\\.me)/(?:addemoji|addstickers)/([A-Za-z0-9_]+)", link)
+    match = re.search(r"(?:https?://)?(?:www\\.)?(?:t\\.me|telegram\\.me)/(?:addemoji|addstickers)/([A-Za-z0-9_]+)", link)
     if not match:
         return await m.answer("❌ Не распознал ссылку. Нужна ссылка вида https://t.me/addemoji/название_пака")
     pack_name = match.group(1)
