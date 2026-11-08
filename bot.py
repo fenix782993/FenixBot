@@ -2,7 +2,7 @@ import asyncio, logging, os, re, secrets, hashlib, html, json
 from datetime import datetime, timezone, timedelta
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, MessageEntity
 from pathlib import Path
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
@@ -225,8 +225,30 @@ async def list_pack_emojis(m: Message):
     items = _load_emoji_pack()
     if not items:
         return await m.answer("Пак ещё не загружен. Используй /emojipack ссылка")
-    lines = [f"{i}. {html.escape(x.get('emoji','💎'))} — <code>{html.escape(x['id'])}</code>" for i,x in enumerate(items,1)]
-    await m.answer("💎 <b>ЭМОДЗИ ИЗ СОХРАНЁННОГО ПАКА</b>\n\n" + "\n".join(lines), parse_mode="HTML")
+
+    # Telegram renders a real custom emoji only when the message carries
+    # a custom_emoji MessageEntity with the corresponding custom_emoji_id.
+    lines = ["💎 PREMIUM CUSTOM EMOJI ИЗ ПАКА", "━━━━━━━━━━━━━━━━━━"]
+    entities = []
+    utf16_offset = 0
+    for i, item in enumerate(items, 1):
+        custom_id = str(item.get("id") or "")
+        marker = "X"
+        line = f"{i}. {marker}  ID: {custom_id}"
+        marker_offset = utf16_offset + len(f"{i}. ")
+        if custom_id:
+            entities.append(MessageEntity(
+                type="custom_emoji",
+                offset=marker_offset,
+                length=1,
+                custom_emoji_id=custom_id
+            ))
+        lines.append(line)
+        # Telegram entity offsets are measured in UTF-16 code units.
+        utf16_offset += len(line.encode("utf-16-le")) // 2 + 1
+
+    text = "\\n".join(lines)
+    await m.answer(text, entities=entities)
 
 @dp.message(Command("btnlist"))
 async def list_premium_buttons(m: Message):
