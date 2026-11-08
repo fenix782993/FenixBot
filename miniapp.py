@@ -502,6 +502,15 @@ async def shop_buy(req):
     db.add_notification(user_id,"Покупка оформлена",msg)
     return response({"id":order_id,"balance":shop.balance(db,user_id)})
 
+async def wallet_payment_details(req):
+    user_id=uid(req)
+    if not db.user(user_id):
+        return response("Сначала зарегистрируй игровой аккаунт в боте.",403)
+    details=(db.setting("manual_payment_details", os.getenv("MANUAL_PAYMENT_DETAILS", "")) or "").strip()
+    if not details or "УКАЖИТЕ" in details.upper():
+        return response("Владелец ещё не настроил реквизиты ручного пополнения.",503)
+    return response({"payment_details":details,"minimum_rub":100,"rate":fnz_rate() or 2})
+
 async def wallet_donate(req):
     user_id=uid(req)
     data=await payload(req)
@@ -756,7 +765,7 @@ async def main():
     app.router.add_post("/api/admin/publish", admin_publish)
     app.router.add_get("/api/shop", shop_home)
     app.router.add_post("/api/shop/buy", shop_buy)
-    app.router.add_post("/api/wallet/donate", wallet_donate)
+    app.router.add_get("/api/wallet/payment-details", wallet_payment_details)\n    app.router.add_post("/api/wallet/donate", wallet_donate)
     app.router.add_get("/api/admin/store", admin_store)
     app.router.add_post("/api/admin/store", admin_store)
     app.router.add_post("/api/admin/donations/{donation_id}", admin_donation_decision)
