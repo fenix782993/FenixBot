@@ -19,9 +19,32 @@ if not TOKEN: raise RuntimeError("BOT_TOKEN не задан")
 logging.basicConfig(level=logging.INFO)
 bot=Bot(TOKEN); dp=Dispatcher(storage=MemoryStorage()); db=DB(os.getenv("DATABASE_PATH","fenix.sqlite3"))
 OWNER_IDS=ADMINS.copy()
+REQUIRED_CHANNEL_URL = CHANNEL_URL or "https://t.me/+1usTps-EXmxjNWRl"
 def is_admin(uid): return db.is_admin(uid)
 def is_owner(uid): return uid in OWNER_IDS
 def markup(rows): return InlineKeyboardMarkup(inline_keyboard=rows)
+
+async def subscribed(uid: int) -> bool:
+    # Для приватного канала CHANNEL_ID должен быть задан числовым ID в окружении.
+    if not CHANNEL:
+        logging.error("CHANNEL_ID не задан: обязательную подписку проверить невозможно")
+        return False
+    try:
+        member = await bot.get_chat_member(CHANNEL, uid)
+        return member.status in {"member", "administrator", "creator"}
+    except Exception:
+        logging.exception("Не удалось проверить подписку пользователя %s", uid)
+        return False
+
+def staff_chat_kind(chat_id):
+    if str(chat_id) == str(db.setting("admin_chat_id", "")): return "admin"
+    if str(chat_id) == str(db.setting("leader_chat_id", "")): return "leader"
+    return None
+
+def can_manage_chat(message, kind):
+    if is_owner(message.from_user.id): return True
+    if kind == "admin": return is_admin(message.from_user.id)
+    return bool(db.staff_role(message.from_user.id, "leader"))
 
 BASE_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = BASE_DIR / "assets"
@@ -64,20 +87,20 @@ async def answer_visual(message, asset_key, caption, reply_markup=None):
 def menu(uid):
     label=db.setting("home_label","📢 Новости FENIX ONLINE")
     url=db.setting("home_url",CHANNEL_URL)
-    rows=[[InlineKeyboardButton(text=db.setting("label_cab","👤 Личный кабинет"),callback_data="cab"),
-           InlineKeyboardButton(text=db.setting("label_ref","🔗 Моя реферальная ссылка"),callback_data="ref")],
-          [InlineKeyboardButton(text=db.setting("label_stats","📊 Статистика"),callback_data="stats"),
-           InlineKeyboardButton(text=db.setting("label_top","🏆 Рейтинг"),callback_data="top")],
-          [InlineKeyboardButton(text=db.setting("label_media","🤝 Стать медиапартнёром"),callback_data="media")]]
+    rows=[[InlineKeyboardButton(text=db.setting("cab_label","👤 Личный кабинет"),callback_data="cab"),
+           InlineKeyboardButton(text=db.setting("ref_label","🔗 Моя реферальная ссылка"),callback_data="ref")],
+          [InlineKeyboardButton(text=db.setting("stats_label","📊 Статистика"),callback_data="stats"),
+           InlineKeyboardButton(text=db.setting("top_label","🏆 Рейтинг"),callback_data="top")],
+          [InlineKeyboardButton(text=("🎬 Кабинет медиапартнёра" if (db.media_current(uid) and db.media_current(uid).get("status")=="approved") else db.setting("media_label","🤝 Стать медиапартнёром")),callback_data=("media_cabinet" if (db.media_current(uid) and db.media_current(uid).get("status")=="approved") else "media"))]]
     if url: rows.append([InlineKeyboardButton(text=label,url=url)])
     if is_admin(uid): rows.append([InlineKeyboardButton(text="⚙️ Панель владельца",callback_data="owner")])
     return markup(rows)
 class S(StatesGroup):
     nick=State(); password=State(); media_channel=State(); media_stats=State(); media_contact=State()
+    media_payout_amount=State(); media_payout_requisites=State()
     post_text=State(); post_photo_choice=State(); post_photo=State()
     post_button_choice=State(); post_button=State(); post_url=State()
     button_label=State(); button_url=State(); broadcast=State(); admin_add=State(); admin_remove=State()
-    staff_uid=State(); staff_role=State(); staff_reason=State(); report_body=State(); media_views=State(); media_frequency=State(); media_examples=State(); media_contact=State()
 def hashpw(p):
     salt=secrets.token_hex(16)
     return salt+"$"+hashlib.pbkdf2_hmac("sha256",p.encode(),salt.encode(),200000).hex()
@@ -86,10 +109,17 @@ async def cmd_id(m): await m.answer(f"Твой Telegram ID: {m.from_user.id}")
 @dp.message(CommandStart())
 async def start(m:Message,state:FSMContext):
     try:
+        if not await subscribed(m.from_user.id):
+            await m.answer(
+                "🔒 Для использования FENIX ONLINE необходимо подписаться на канал проекта.",
+                reply_markup=markup([[InlineKeyboardButton(text="📢 Подписаться", url=REQUIRED_CHANNEL_URL)],
+                                     [InlineKeyboardButton(text="✅ Проверить подписку", callback_data="check_subscription")]])
+            )
+            return
         u=db.user(m.from_user.id)
         if u:
             return await answer_visual(
-                m, "welcome", "🔥 FENIX ONLINE\\nТвой личный кабинет.",
+                m, "welcome", "🔥 FENIX ONLINE\nТвой личный кабинет.",
                 reply_markup=menu(m.from_user.id)
             )
         p=(m.text or "").split(maxsplit=1); ref=None
@@ -101,11 +131,18 @@ async def start(m:Message,state:FSMContext):
         await state.set_state(S.nick)
         await answer_visual(
             m, "welcome",
-            "🔥 FENIX ONLINE — регистрация\\n\\nВведи игровой никнейм (3–24 символа, латиница, цифры и _)."
+            "🔥 FENIX ONLINE — регистрация\n\nВведи игровой никнейм (3–24 символа, латиница, цифры и _)."
         )
     except Exception:
         logging.exception("Ошибка /start")
         await m.answer("Не удалось открыть бота. Попробуй ещё раз позже.")
+@dp.callback_query(F.data == "check_subscription")
+async def check_subscription(c):
+    if not await subscribed(c.from_user.id):
+        return await c.answer("Подписка не найдена. Подпишись и нажми ещё раз.", show_alert=True)
+    await c.message.answer("✅ Подписка подтверждена. Нажми /start для продолжения.")
+    await c.answer("Подписка подтверждена")
+
 @dp.message(S.nick)
 async def nick(m:Message,state:FSMContext):
     n=(m.text or "").strip()
@@ -196,49 +233,86 @@ async def top(c):
 
 @dp.callback_query(F.data=="media")
 async def media(c,state:FSMContext):
-    await state.clear(); await state.set_state(S.media_channel)
-    await answer_visual(c.message,"media","🤝 ЗАЯВКА В МЕДИАПАРТНЁРЫ\n\nУкажи ссылку на YouTube или TikTok канал.")
+    current=db.media_current(c.from_user.id)
+    if current and current.get("status")=="pending":
+        return await c.answer("Твоя заявка уже находится на рассмотрении.",show_alert=True)
+    if current and current.get("status")=="approved":
+        return await c.message.answer("🎉 Ты уже медиапартнёр. Открой свой кабинет.",reply_markup=markup([[InlineKeyboardButton(text="🎬 Кабинет медиапартнёра",callback_data="media_cabinet")]]))
+    await state.set_state(S.media_channel)
+    await answer_visual(c.message, "media", "🤝 ЗАЯВКА В МЕДИАПАРТНЁРЫ\nПришли ссылку на свой канал или площадку.")
     await c.answer()
 
-@dp.message(S.media_channel)
-async def media1(m,state:FSMContext):
-    link=(m.text or "").strip()
-    if not re.match(r"^https?://\S+",link): return await m.answer("Пришли корректную ссылку на канал, начиная с https://")
-    await state.update_data(ch=link); await state.set_state(S.media_stats)
-    await m.answer("Укажи количество подписчиков и среднее число просмотров на видео.")
-@dp.message(S.media_stats)
-async def media2(m,state:FSMContext):
-    await state.update_data(st=m.text or ""); await state.set_state(S.media_views)
-    await m.answer("Сколько просмотров набрали последние 5 видео? Напиши отдельно по каждому, например: 850, 920, 710, 1100, 780.")
-@dp.message(S.media_views)
-async def media_views(m,state:FSMContext):
-    raw=(m.text or "").strip(); nums=[int(x) for x in re.findall(r"\d+",raw)]
-    if len(nums)<5: return await m.answer("Нужно указать просмотры минимум для 5 последних видео.")
-    await state.update_data(views=nums[:5]); await state.set_state(S.media_frequency)
-    await m.answer("Как часто публикуешь видео? Например: 2–3 раза в неделю.")
-@dp.message(S.media_frequency)
-async def media_frequency(m,state:FSMContext):
-    await state.update_data(freq=m.text or ""); await state.set_state(S.media_examples)
-    await m.answer("Пришли ссылки на 2–3 примера своих видео.")
-@dp.message(S.media_examples)
-async def media_examples(m,state:FSMContext):
-    links=(m.text or "").strip()
-    if "http" not in links: return await m.answer("Добавь ссылки на опубликованные видео.")
-    await state.update_data(examples=links); await state.set_state(S.media_contact)
-    await m.answer("Оставь контакт для связи с руководством.")
-@dp.message(S.media_contact)
-async def media3(m,state:FSMContext):
-    d=await state.get_data(); views=d.get("views",[]); avg=sum(views)//len(views) if views else 0
-    details=f"Подписчики/средние просмотры: {d.get('st')}\nПоследние 5 видео: {views}\nСреднее по 5 видео: {avg}\nЧастота: {d.get('freq')}\nПримеры: {d.get('examples')}\nКонтакт: {m.text}"
-    aid=db.media(m.from_user.id,d["ch"],details,m.text or "")
-    await state.clear(); await m.answer("✅ Заявка отправлена руководству.\nКритерий проекта: от 700 просмотров стабильно; решение принимается после проверки последних публикаций.")
-    for a in db.admin_ids():
-        try: await bot.send_message(a,f"🤝 МЕДИА-ЗАЯВКА #{aid}\nID: {m.from_user.id}\nКанал: {d['ch']}\n{details}\nАвтоматический ориентир: {'соответствует' if sum(1 for v in views if v>=700)>=4 else 'не соответствует'} (не менее 4 из 5 видео от 700 просмотров).",reply_markup=markup([[InlineKeyboardButton(text="Одобрить",callback_data=f"mok:{aid}"),InlineKeyboardButton(text="Отклонить",callback_data=f"mno:{aid}")]]))
-        except Exception: logging.exception("Не удалось отправить медиа-заявку админу %s",a)
+@dp.callback_query(F.data=="media_cabinet")
+async def media_cabinet(c):
+    current=db.media_current(c.from_user.id)
+    if not current or current.get("status")!="approved":
+        return await c.answer("Кабинет доступен только одобренным медиапартнёрам.",show_alert=True)
+    payouts=db.media_payouts_for_user(c.from_user.id,5)
+    history="\n".join(f"#{x['id']} — {x['amount']} — {x['status']}" for x in payouts) or "Пока запросов выплат нет."
+    await c.message.answer("🎬 КАБИНЕТ МЕДИАПАРТНЁРА\n\nСтатус: ✅ Одобрен\nКанал: "+str(current.get('ch') or '—')+"\nАудитория: "+str(current.get('stats') or '—')+"\n\n💳 ИСТОРИЯ ЗАПРОСОВ ВЫПЛАТ\n"+history,reply_markup=markup([[InlineKeyboardButton(text="💸 Запросить выплату",callback_data="media_payout")]]))
+    await c.answer()
+
+@dp.callback_query(F.data=="media_payout")
+async def media_payout_start(c,state:FSMContext):
+    current=db.media_current(c.from_user.id)
+    if not current or current.get("status")!="approved": return await c.answer("Нет доступа.",show_alert=True)
+    if db.media_payout_pending(c.from_user.id): return await c.answer("У тебя уже есть запрос выплаты на рассмотрении.",show_alert=True)
+    await state.set_state(S.media_payout_amount)
+    await c.message.answer("💸 Введи сумму выплаты в рублях (только число).")
+    await c.answer()
+
+@dp.message(S.media_payout_amount)
+async def media_payout_amount(m,state:FSMContext):
+    raw=(m.text or '').strip().replace(',','.')
+    try: amount=float(raw)
+    except ValueError: return await m.answer("Введи сумму числом, например 1500.")
+    if amount<=0 or amount>10000000: return await m.answer("Сумма должна быть больше 0 и не превышать 10 000 000.")
+    await state.update_data(payout_amount=f"{amount:g} RUB")
+    await state.set_state(S.media_payout_requisites)
+    await m.answer("Отправь реквизиты и способ перевода. Их увидит только администрация.")
+
+@dp.message(S.media_payout_requisites)
+async def media_payout_requisites(m,state:FSMContext):
+    requisites=(m.text or '').strip()
+    if len(requisites)<5 or len(requisites)>1000: return await m.answer("Проверь реквизиты (от 5 до 1000 символов).")
+    current=db.media_current(m.from_user.id)
+    if not current or current.get('status')!='approved':
+        await state.clear(); return await m.answer("Статус медиапартнёра не подтверждён.")
+    if db.media_payout_pending(m.from_user.id):
+        await state.clear(); return await m.answer("У тебя уже есть запрос выплаты на рассмотрении.")
+    data=await state.get_data(); pid=db.media_payout(m.from_user.id,data['payout_amount'],requisites); await state.clear()
+    await m.answer(f"✅ Запрос выплаты #{pid} отправлен администрации. Статус: на рассмотрении.")
+    u=db.user(m.from_user.id); nick=u['nick'] if u else 'Неизвестно'
+    for admin_id in db.admin_ids():
+        try:
+            await bot.send_message(admin_id,f"💸 ЗАПРОС ВЫПЛАТЫ МЕДИАПАРТНЁРУ #{pid}\nИгровой ник: {nick}\nTelegram ID: {m.from_user.id}\nСумма: {data['payout_amount']}\nРеквизиты: {requisites}",reply_markup=markup([[InlineKeyboardButton(text="✅ Выплачено",callback_data=f"mpaid:{pid}"),InlineKeyboardButton(text="❌ Отклонить",callback_data=f"mreject:{pid}")]]))
+        except Exception: pass
+
+@dp.callback_query(F.data.startswith("mpaid:"))
+async def media_payout_paid(c):
+    if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
+    pid=int(c.data.split(':')[1]); req=db.media_payout_get(pid)
+    if not req or req['status']!='pending': return await c.answer("Запрос уже обработан или не найден.",show_alert=True)
+    db.media_payout_review(pid,'paid',c.from_user.id)
+    try: await bot.send_message(req['uid'],f"✅ Запрос выплаты #{pid} отмечен администрацией как выплаченный.")
+    except Exception: pass
+    await c.message.edit_reply_markup(reply_markup=None); await c.answer("Отмечено как выплачено")
+
+@dp.callback_query(F.data.startswith("mreject:"))
+async def media_payout_reject(c):
+    if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
+    pid=int(c.data.split(':')[1]); req=db.media_payout_get(pid)
+    if not req or req['status']!='pending': return await c.answer("Запрос уже обработан или не найден.",show_alert=True)
+    db.media_payout_review(pid,'rejected',c.from_user.id,'Отклонено администрацией')
+    try: await bot.send_message(req['uid'],f"❌ Запрос выплаты #{pid} отклонён администрацией.")
+    except Exception: pass
+    await c.message.edit_reply_markup(reply_markup=None); await c.answer("Отклонено")
 @dp.callback_query(F.data.startswith("mok:"))
 async def mok(c):
     if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
-    a=db.media_get(int(c.data.split(":")[1])); db.media_status(int(c.data.split(":")[1]),"approved")
+    a=db.media_get(int(c.data.split(":")[1]))
+    if not a or a.get("status") != "pending": return await c.answer("Заявка уже обработана или не найдена.",show_alert=True)
+    db.media_status(int(c.data.split(":")[1]),"approved")
     if a:
         try: await bot.send_message(a["uid"],"🎉 Твоя заявка в медиапартнёры FENIX ONLINE одобрена!")
         except: pass
@@ -246,7 +320,9 @@ async def mok(c):
 @dp.callback_query(F.data.startswith("mno:"))
 async def mno(c):
     if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
-    aid=int(c.data.split(":")[1]); a=db.media_get(aid); db.media_status(aid,"rejected")
+    aid=int(c.data.split(":")[1]); a=db.media_get(aid)
+    if not a or a.get("status") != "pending": return await c.answer("Заявка уже обработана или не найдена.",show_alert=True)
+    db.media_status(aid,"rejected")
     if a:
         try: await bot.send_message(a["uid"],"Заявка в медиапартнёры отклонена.")
         except: pass
@@ -257,12 +333,10 @@ async def owner(c):
     await answer_visual(c.message, "news", "⚙️ ПАНЕЛЬ ВЛАДЕЛЬЦА", reply_markup=markup([
         [InlineKeyboardButton(text="📣 Опубликовать пост",callback_data="post")],
         [InlineKeyboardButton(text="📨 Рассылка",callback_data="broadcast")],
-        [InlineKeyboardButton(text="🎨 Настроить кнопку меню",callback_data="editbutton")],
+        [InlineKeyboardButton(text="🎨 Кастомизация бота",callback_data="customize")],
+        [InlineKeyboardButton(text="👥 Составы и чаты",callback_data="staff_setup")],
         [InlineKeyboardButton(text="📈 Общая статистика",callback_data="ostats")],
-        [InlineKeyboardButton(text="👮 Управление администраторами",callback_data="admins_manage")],
-        [InlineKeyboardButton(text="🧑‍💼 Персонал и должности",callback_data="staff_panel")],
-        [InlineKeyboardButton(text="📋 Отчёты сотрудников",callback_data="reports_panel")],
-        [InlineKeyboardButton(text="🎨 Конструктор меню",callback_data="menu_customizer")]
+        [InlineKeyboardButton(text="👮 Управление администраторами",callback_data="admins_manage")]
     ]))
     await c.answer()
 
@@ -272,7 +346,10 @@ async def admins_manage(c):
         return await c.answer("Управлять администраторами может только владелец.",show_alert=True)
     ids=db.admin_ids()
     text="👮 УПРАВЛЕНИЕ АДМИНИСТРАТОРАМИ\n\n"
-    text += "\n".join(f"• {uid}" for uid in ids) if ids else "Администраторов пока нет."
+    text += "\n".join(
+        f"• {db.staff_display(uid)}\n  Должность: {db.staff_role(uid, 'admin') or 'Администратор'}"
+        for uid in ids
+    ) if ids else "Администраторов пока нет."
     await c.message.answer(text,reply_markup=markup([
         [InlineKeyboardButton(text="➕ Добавить администратора",callback_data="admin_add")],
         [InlineKeyboardButton(text="➖ Снять администратора",callback_data="admin_remove")]
@@ -330,6 +407,87 @@ async def admin_remove_finish(m,state:FSMContext):
     if removed:
         try: await bot.send_message(uid,"Ваши права администратора FENIX ONLINE были сняты.")
         except: pass
+
+@dp.message(Command("bind_admin_chat"))
+async def bind_admin_chat(m):
+    if not is_owner(m.from_user.id) or m.chat.type == "private":
+        return await m.answer("Команду может выполнить владелец непосредственно в административном чате.")
+    db.set_setting("admin_chat_id", str(m.chat.id))
+    await m.answer("✅ Этот чат назначен административным. Здесь доступны команды управления администрацией.")
+
+@dp.message(Command("bind_leader_chat"))
+async def bind_leader_chat(m):
+    if not is_owner(m.from_user.id) or m.chat.type == "private":
+        return await m.answer("Команду может выполнить владелец непосредственно в лидерском чате.")
+    db.set_setting("leader_chat_id", str(m.chat.id))
+    await m.answer("✅ Этот чат назначен лидерским. Здесь доступны команды управления лидерами.")
+
+@dp.message(Command("nnick"))
+async def set_staff_title(m):
+    kind = staff_chat_kind(m.chat.id)
+    if kind not in {"admin", "leader"}:
+        return await m.answer("Эта команда работает только в привязанном административном или лидерском чате.")
+    if not can_manage_chat(m, kind):
+        return await m.answer("⛔ Недостаточно прав для изменения должностей.")
+    parts = (m.text or "").split(maxsplit=2)
+    if len(parts) < 3:
+        return await m.answer("Формат: /nnick Игровой_ник Название должности\nПример: /nnick Fenix_Rudcov Спец. администратор")
+    nick, title = parts[1].strip(), parts[2].strip()
+    if len(title) > 80:
+        return await m.answer("Название должности не должно превышать 80 символов.")
+    user = db.user_by_nick(nick)
+    if not user:
+        return await m.answer("Игрок с таким ником не найден. Он должен сначала запустить бота и зарегистрироваться.")
+    db.set_staff_role(user["uid"], kind, title, m.from_user.id)
+    if kind == "admin": db.add_admin(user["uid"], m.from_user.id)
+    await m.answer(f"✅ Должность назначена\nИгрок: {db.staff_display(user['uid'])}\nДолжность: {title}")
+    try: await bot.send_message(user["uid"], f"🎖 Вам назначена должность: {title}")
+    except Exception: pass
+
+@dp.message(Command("stafflist"))
+async def staff_list(m):
+    kind = staff_chat_kind(m.chat.id)
+    if kind is None: return await m.answer("Команда доступна только в привязанных чатах персонала.")
+    if not can_manage_chat(m, kind): return await m.answer("⛔ Нет доступа.")
+    rows = db.staff_list(kind)
+    heading = "👮 СОСТАВ АДМИНИСТРАЦИИ" if kind == "admin" else "👑 СОСТАВ ЛИДЕРОВ"
+    body = "\n\n".join(f"{i}. {db.staff_display(x['uid'])}\nДолжность: {x['title']}\nTelegram ID: {x['uid']}" for i,x in enumerate(rows,1))
+    await m.answer(heading + "\n\n" + (body or "Состав пока пуст."))
+
+@dp.message(Command("staffremove"))
+async def staff_remove(m):
+    kind = staff_chat_kind(m.chat.id)
+    if kind is None or not can_manage_chat(m, kind): return await m.answer("⛔ Нет доступа или чат не привязан.")
+    parts=(m.text or "").split(maxsplit=1)
+    if len(parts)<2: return await m.answer("Формат: /staffremove Игровой_ник")
+    user=db.user_by_nick(parts[1].strip())
+    if not user: return await m.answer("Игрок не найден.")
+    db.remove_staff_role(user["uid"],kind)
+    if kind == "admin" and user["uid"] not in OWNER_IDS: db.remove_admin(user["uid"])
+    await m.answer(f"✅ Должность снята: {db.staff_display(user['uid'])}")
+
+@dp.callback_query(F.data == "staff_setup")
+async def staff_setup(c):
+    if not is_owner(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
+    await c.message.answer("👥 ПРИВЯЗКА ЧАТОВ\nДобавь бота в нужные группы и выполни в них соответствующие команды:\n/bind_admin_chat — административный чат\n/bind_leader_chat — лидерский чат\n\nВ каждом чате: /nnick ник должность, /stafflist — состав, /staffremove ник — снять должность.")
+    await c.answer()
+
+@dp.callback_query(F.data == "customize")
+async def customize(c):
+    if not is_owner(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
+    await c.message.answer("🎨 КАСТОМИЗАЦИЯ БОТА\nИзменение названий кнопок: /setlabel key новое название\nКлючи: cab, ref, stats, top, media.\nОбычные эмодзи можно добавлять прямо в название. Telegram не позволяет назначать произвольные шрифты или Premium Custom Emoji как значки inline-кнопок.")
+    await c.answer()
+
+@dp.message(Command("setlabel"))
+async def setlabel(m):
+    if not is_owner(m.from_user.id): return await m.answer("Только владелец может менять названия кнопок.")
+    parts=(m.text or "").split(maxsplit=2)
+    if len(parts)<3: return await m.answer("Формат: /setlabel cab 👤 Личный кабинет\nКлючи: cab, ref, stats, top, media")
+    keys={"cab":"cab_label","ref":"ref_label","stats":"stats_label","top":"top_label","media":"media_label"}
+    key=parts[1].lower()
+    if key not in keys: return await m.answer("Неизвестный ключ. Используй: cab, ref, stats, top, media")
+    db.set_setting(keys[key],parts[2][:64])
+    await m.answer("✅ Название кнопки обновлено.")
 
 @dp.callback_query(F.data=="ostats")
 async def ostats(c):
@@ -479,132 +637,16 @@ async def editbutton(c,state:FSMContext):
     await state.set_state(S.button_label); await c.message.answer("Введи новый текст кнопки главного меню."); await c.answer()
 @dp.message(S.button_label)
 async def buttonlabel(m,state:FSMContext):
-    if not is_owner(m.from_user.id):
-        await state.clear(); return await m.answer("Только владелец может менять оформление.")
-    label=(m.text or "").strip()
-    if not label or len(label)>64: return await m.answer("Название кнопки должно содержать 1–64 символа.")
-    await state.update_data(label=label); await state.set_state(S.button_url); await m.answer("Теперь пришли URL кнопки.")
+    await state.update_data(label=m.text); await state.set_state(S.button_url); await m.answer("Теперь пришли URL кнопки.")
 @dp.message(S.button_url)
 async def buttonurl(m,state:FSMContext):
-    if not is_owner(m.from_user.id):
-        await state.clear(); return
+    if not is_admin(m.from_user.id): return
     u=(m.text or "").strip()
     if not u.startswith(("https://","http://")): return await m.answer("Неверный URL.")
     d=await state.get_data(); db.set_setting("home_label",d["label"]); db.set_setting("home_url",u); await state.clear(); await m.answer("✅ Кнопка меню обновлена.")
-@dp.message(Command("setlabel"))
-async def setlabel(m):
-    if not is_owner(m.from_user.id): return await m.answer("Только владелец может менять названия кнопок.")
-    parts=(m.text or "").split(maxsplit=2)
-    keys={"cab":"личный кабинет","ref":"рефералы","stats":"статистика","top":"рейтинг","media":"медиапартнёры"}
-    if len(parts)<3 or parts[1] not in keys:
-        return await m.answer("Формат: /setlabel ключ новое название\nКлючи: cab, ref, stats, top, media\nПример: /setlabel media 🎬 Подать заявку в медиа")
-    label=parts[2].strip()
-    if not label or len(label)>64: return await m.answer("Название должно быть от 1 до 64 символов.")
-    db.set_setting("label_"+parts[1],label)
-    await m.answer(f"✅ Название кнопки «{keys[parts[1]]}» изменено. Нажми /start, чтобы увидеть обновлённое меню.")
-
 @dp.message(Command("cancel"))
 async def cancel(m,state:FSMContext):
     await state.clear(); await m.answer("Отменено.",reply_markup=menu(m.from_user.id))
-@dp.callback_query(F.data=="staff_panel")
-async def staff_panel(c):
-    if not is_owner(c.from_user.id): return await c.answer("Только владелец.",show_alert=True)
-    rows=db.staff_list(); txt="🧑‍💼 СОСТАВ FENIX ONLINE\n\n"+("\n".join(f"• {x['nick'] or x['uid']} — {x['role']} (ID {x['uid']})" for x in rows) if rows else "Состав пока пуст.")
-    active=db.shift_active(); txt+="\n\n🟢 АКТИВНЫЕ СМЕНЫ\n"+("\n".join(f"• {x['nick']} — {x['role']} с {x['started']}" for x in active) if active else "Нет активных смен.")
-    await c.message.answer(txt,reply_markup=markup([[InlineKeyboardButton(text="➕ Назначить / изменить должность",callback_data="staff_add")],[InlineKeyboardButton(text="➖ Снять с должности",callback_data="staff_remove")]])); await c.answer()
-
-@dp.callback_query(F.data=="staff_add")
-async def staff_add(c,state:FSMContext):
-    if not is_owner(c.from_user.id): return await c.answer("Только владелец.",show_alert=True)
-    await state.set_state(S.staff_uid); await c.message.answer("Отправь Telegram ID сотрудника."); await c.answer()
-@dp.message(S.staff_uid)
-async def staff_uid(m,state:FSMContext):
-    if not is_owner(m.from_user.id): return await state.clear()
-    if not (m.text or "").isdigit(): return await m.answer("Нужен числовой Telegram ID.")
-    uid=int(m.text); u=db.user(uid)
-    if not u: return await m.answer("Пользователь должен сначала запустить бота через /start.")
-    await state.update_data(staff_uid=uid,staff_nick=u['nick']); await state.set_state(S.staff_role)
-    await m.answer("Введи должность сотрудника (например: Хелпер, Администратор, Куратор, Заместитель).")
-@dp.message(S.staff_role)
-async def staff_role(m,state:FSMContext):
-    if not is_owner(m.from_user.id): return await state.clear()
-    role=(m.text or "").strip()
-    if not role or len(role)>64: return await m.answer("Название должности: 1–64 символа.")
-    d=await state.get_data(); db.staff_set(d['staff_uid'],d['staff_nick'],role,m.from_user.id); await state.clear()
-    await m.answer(f"✅ {d['staff_nick']} назначен: {role}.")
-    try: await bot.send_message(d['staff_uid'],f"Вам назначена должность в FENIX ONLINE: {role}.")
-    except: pass
-@dp.callback_query(F.data=="staff_remove")
-async def staff_remove_start(c,state:FSMContext):
-    if not is_owner(c.from_user.id): return await c.answer("Только владелец.",show_alert=True)
-    await state.set_state(S.staff_reason); await c.message.answer("Отправь ID сотрудника и причину снятия через пробел."); await c.answer()
-@dp.message(S.staff_reason)
-async def staff_remove_finish(m,state:FSMContext):
-    if not is_owner(m.from_user.id): return await state.clear()
-    parts=(m.text or "").split(maxsplit=1)
-    if not parts or not parts[0].isdigit(): return await m.answer("Формат: TelegramID причина")
-    uid=int(parts[0]); reason=parts[1] if len(parts)>1 else "Не указана"
-    db.staff_remove(uid,m.from_user.id,reason); await state.clear(); await m.answer("✅ Сотрудник снят с должности, действие записано в историю.")
-    try: await bot.send_message(uid,"Ваша должность в FENIX ONLINE снята.")
-    except: pass
-
-@dp.message(Command("shift"))
-async def shift(m):
-    if not db.staff_get(m.from_user.id): return await m.answer("Команда доступна только сотрудникам.")
-    active=db.shift_open(m.from_user.id)
-    if active: await m.answer("🟢 Рабочая смена начата. Для завершения используй /shiftend.")
-    else: await m.answer("У тебя уже есть активная смена. Заверши её командой /shiftend.")
-@dp.message(Command("shiftend"))
-async def shiftend(m):
-    if db.shift_close(m.from_user.id): await m.answer("🔴 Смена завершена и записана.")
-    else: await m.answer("У тебя нет активной смены.")
-
-@dp.message(Command("reprimand"))
-async def reprimand(m):
-    if not is_owner(m.from_user.id): return await m.answer("Только владелец может выдавать выговоры.")
-    parts=(m.text or "").split(maxsplit=2)
-    if len(parts)<3 or not parts[1].isdigit(): return await m.answer("Формат: /reprimand TelegramID причина")
-    db.staff_action(int(parts[1]),m.from_user.id,"выговор",parts[2]); await m.answer("✅ Выговор внесён в историю сотрудника.")
-@dp.message(Command("staffhistory"))
-async def staffhistory(m):
-    if not is_owner(m.from_user.id): return await m.answer("Нет доступа.")
-    parts=(m.text or "").split(maxsplit=1)
-    if len(parts)<2 or not parts[1].isdigit(): return await m.answer("Формат: /staffhistory TelegramID")
-    rows=db.staff_history(int(parts[1])); await m.answer("📚 ИСТОРИЯ СОТРУДНИКА\n\n"+("\n".join(f"{x['created']} — {x['action']}: {x['reason'] or '—'}" for x in rows) if rows else "Записей нет."))
-
-@dp.message(Command("report"))
-async def report_start(m,state:FSMContext):
-    if not db.staff_get(m.from_user.id): return await m.answer("Отчёты доступны только сотрудникам.")
-    await state.set_state(S.report_body); await m.answer("Отправь текст отчёта. Можно приложить доказательства отдельным сообщением после отправки текста.")
-@dp.message(S.report_body)
-async def report_submit(m,state:FSMContext):
-    if not db.staff_get(m.from_user.id): await state.clear(); return
-    body=(m.text or "").strip()
-    if len(body)<10: return await m.answer("Отчёт слишком короткий. Добавь подробности.")
-    rid=db.report_add(m.from_user.id,"weekly",body); await state.clear(); await m.answer(f"✅ Отчёт #{rid} отправлен руководству.")
-    for a in db.admin_ids():
-        try: await bot.send_message(a,f"📋 ОТЧЁТ #{rid}\nСотрудник: {m.from_user.full_name} (ID {m.from_user.id})\n\n{body}",reply_markup=markup([[InlineKeyboardButton(text="✅ Принять",callback_data=f"rptok:{rid}"),InlineKeyboardButton(text="❌ Отклонить",callback_data=f"rptno:{rid}")]]))
-        except: pass
-@dp.callback_query(F.data.startswith("rptok:") | F.data.startswith("rptno:"))
-async def report_decision(c):
-    if not is_owner(c.from_user.id): return await c.answer("Только владелец.",show_alert=True)
-    action,rid=c.data.split(":"); row=db.report_get(int(rid))
-    if not row or row['status']!="pending": return await c.answer("Отчёт уже обработан.",show_alert=True)
-    status="accepted" if action=="rptok" else "rejected"; db.report_review(int(rid),c.from_user.id,status)
-    try: await bot.send_message(row['uid'],"✅ Отчёт принят." if status=="accepted" else "❌ Отчёт отклонён. Свяжись с руководством для уточнения.")
-    except: pass
-    await c.message.edit_reply_markup(reply_markup=None); await c.answer("Решение сохранено.")
-@dp.callback_query(F.data=="reports_panel")
-async def reports_panel(c):
-    if not is_owner(c.from_user.id): return await c.answer("Только владелец.",show_alert=True)
-    rows=db.reports_pending(); txt="📋 ОЖИДАЮТ ПРОВЕРКИ\n\n"+("\n".join(f"#{x['id']} — ID {x['uid']} — {x['created']}" for x in rows) if rows else "Нет ожидающих отчётов.")
-    await c.message.answer(txt); await c.answer()
-
-@dp.callback_query(F.data=="menu_customizer")
-async def menu_customizer(c,state:FSMContext):
-    if not is_owner(c.from_user.id): return await c.answer("Только владелец.",show_alert=True)
-    await state.set_state(S.button_label); await c.message.answer("Отправь новую подпись кнопки новостей. Можно добавить обычный Unicode-эмодзи, например 📰 FENIX NEWS. Максимум 64 символа."); await c.answer()
-
 async def health(request):
     return web.json_response({"status": "ok", "service": "fenix-online-bot"})
 
@@ -623,7 +665,6 @@ async def start_health_server():
 
 async def main():
     db.init()
-    db.ensure_management()
     logging.info("Assets directory: %s | found: %s", ASSETS_DIR, sorted(p.name for p in ASSETS_DIR.glob("*") if p.is_file()))
     runner = await start_health_server()
     try:
