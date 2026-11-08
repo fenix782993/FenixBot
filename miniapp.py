@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl
 
 from aiohttp import web
-from aiogram.types import MenuButtonWebApp, WebAppInfo
+from aiogram.types import MenuButtonWebApp, WebAppInfo, InlineKeyboardButton
 import bot as core
 import store as shop
 
@@ -469,8 +469,9 @@ async def wallet_donate(req):
     if method=="manual" and len(proof)<3:return response("Укажи комментарий к переводу или последние 4 цифры операции.",400)
     did=shop.new_donation(db,user_id,rub,nmz,method,proof)
     text=f"💳 Новое ручное пополнение #{did}\nИгрок: {user_id}\nСумма: {rub:.2f} ₽\nНачисление после проверки: {nmz} NMZ\nПодтверждение: {proof}"
+    keyboard=core.markup([[InlineKeyboardButton(text="Одобрить",callback_data=f"donation_paid:{did}"),InlineKeyboardButton(text="Отклонить",callback_data=f"donation_rejected:{did}")]])
     for aid in db.admin_ids():
-        try:await tg.send_message(aid,text)
+        try:await tg.send_message(aid,text,reply_markup=keyboard)
         except Exception:log.exception("Manual donation notification failed")
     return response({"id":did,"fnz":nmz,"rub":rub,"phone":"+79067853860","banks":["Сбербанк","Т-Банк"]})
 
