@@ -1,0 +1,425 @@
+import asyncio
+import hashlib
+import hmac
+import json
+import logging
+import os
+import time
+from pathlib import Path
+from urllib.parse import parse_qsl
+
+from aiohttp import web
+from aiogram.types import MenuButtonWebApp, WebAppInfo
+import bot as core
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("fenix-miniapp")
+db, tg = core.db, core.bot
+ROOT = Path(__file__).resolve().parent
+WEB_DIR = ROOT / "webapp"
+TOKEN = os.getenv("BOT_TOKEN", "").strip()
+WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip()
+AUTH_MAX_AGE = int(os.getenv("WEBAPP_AUTH_MAX_AGE", "86400"))
+
+
+def response(data=None, status=200):
+    return web.json_response({"ok": status < 400, "data": data} if status < 400 else {"ok": False, "error": data}, status=status)
+
+
+def verify_init_data(raw):
+    if not TOKEN or not raw:
+        return None
+    try:
+        pairs = dict(parse_qsl(raw, keep_blank_values=True))
+        received = pairs.pop("hash", "")
+        if not received:
+            return None
+        check = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
+        secret = hmac.new(b"WebAppData", TOKEN.encode(), hashlib.sha256).digest()
+        actual = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(actual, received):
+            return None
+        auth_date = int(pairs.get("auth_date", "0"))
+        now = time.time()
+        if auth_date <= 0 or now - auth_date > AUTH_MAX_AGE or auth_date > now + 60:
+            return None
+        user = json.loads(pairs.get("user", "{}"))
+        return user if user.get("id") else None
+    except Exception:
+        log.exception("initData validation failed")
+        return None
+
+
+@web.middleware
+async def auth(request, handler):
+    if request.path.startswith("/api/"):
+        user = verify_init_data(request.headers.get("X-Telegram-Init-Data", ""))
+        if not user:
+            return response("Telegram-сессия не подтверждена. Перезапусти Mini App из Telegram.", 401)
+        request["tg_user"] = user
+        if not db.user(int(user["id"])):
+            return response("Сначала запусти бота командой /start и заверши регистрацию.", 403)
+    return await handler(request)
+
+
+def uid(req):
+    return int(req["tg_user"]["id"])
+
+
+def admin(req):
+    return db.is_admin(uid(req))
+
+
+async def payload(req):
+    try:
+        return await req.json()
+    except Exception:
+        raise web.HTTPBadRequest(text="Invalid JSON")
+
+
+async def home(_):
+    return web.FileResponse(WEB_DIR / "index.html")
+
+
+async def bootstrap(req):
+    user_id = uid(req)
+    user = db.user(user_id)
+    tickets = db.tickets_for_user(user_id, 100)
+    awards = db.achievements_for_user(user_id)
+    media = db.media_current(user_id) or {}
+    me = req["tg_user"]
+    bot_info = await tg.get_me()
+    return response({
+        "profile": {"id": user_id, "nick": user.get("nick"), "username": me.get("username"), "first_name": me.get("first_name"), "photo_url": me.get("photo_url")},
+        "admin": admin(req),
+        "stats": {"referrals": db.ref_count(user_id), "channel_joins": db.channel_count(user_id), "tickets": len(tickets), "open_tickets": sum(1 for t in tickets if t.get("status") in ("open", "answered")), "notifications": db.unread_notifications(user_id), "achievements": len(awards)},
+        "media_status": media.get("status", "none"),
+        "referral_link": f"https://t.me/{bot_info.username}?start=r{user_id}",
+        "channel_url": core.CHANNEL_URL or core.REQUIRED_CHANNEL_URL
+    })
+
+
+async def stats(req):
+    user_id = uid(req)
+    return response({"referrals": db.ref_count(user_id), "channel_joins": db.channel_count(user_id)})
+
+
+async def top(_):
+    return response(db.top())
+
+
+async def tickets(req):
+    return response(db.tickets_for_user(uid(req), 50))
+
+
+async def ticket_create(req):
+    user_id = uid(req)
+    data = await payload(req)
+    subject, text = str(data.get("subject", "")).strip()[:100], str(data.get("body", "")).strip()[:4000]
+    if len(subject) < 3 or len(text) < 5:
+        return response("Заполни тему и сообщение (минимум 5 символов).", 400)
+    ticket_id = db.create_ticket(user_id, subject, text)
+    for admin_id in db.admin_ids():
+        try:
+            await tg.send_message(admin_id, f"🎫 Новое обращение #{ticket_id}\nОт: {user_id}\nТема: {subject}")
+        except Exception:
+            log.exception("Ticket notification failed")
+    return response({"id": ticket_id})
+
+
+async def ticket_detail(req):
+    user_id, ticket_id = uid(req), int(req.match_info["ticket_id"])
+    item = db.ticket_get(ticket_id)
+    if not item or (int(item["uid"]) != user_id and not admin(req)):
+        return response("Обращение не найдено.", 404)
+    return response({"ticket": item, "messages": db.ticket_messages(ticket_id)})
+
+
+async def ticket_reply(req):
+    user_id, ticket_id = uid(req), int(req.match_info["ticket_id"])
+    item = db.ticket_get(ticket_id)
+    if not item or (int(item["uid"]) != user_id and not admin(req)):
+        return response("Обращение не найдено.", 404)
+    data = await payload(req)
+    text = str(data.get("body", "")).strip()[:4000]
+    if len(text) < 2:
+        return response("Сообщение слишком короткое.", 400)
+    db.ticket_reply(ticket_id, user_id, text)
+    if admin(req):
+        db.ticket_set_status(ticket_id, "answered")
+        target = int(item["uid"])
+    else:
+        admins = db.admin_ids()
+        target = int(admins[0]) if admins else None
+    if target:
+        try:
+            await tg.send_message(target, f"💬 Ответ по обращению #{ticket_id}:\n{text[:1200]}")
+        except Exception:
+            log.exception("Ticket reply notification failed")
+    return response({"sent": True})
+
+
+async def ticket_close(req):
+    user_id, ticket_id = uid(req), int(req.match_info["ticket_id"])
+    item = db.ticket_get(ticket_id)
+    if not item or (int(item["uid"]) != user_id and not admin(req)):
+        return response("Обращение не найдено.", 404)
+    db.ticket_set_status(ticket_id, "closed")
+    return response({"closed": True})
+
+
+async def notifications(req):
+    user_id = uid(req)
+    if req.method == "POST":
+        db.mark_notifications_read(user_id)
+        return response({"read": True})
+    return response(db.notifications_for_user(user_id, 50))
+
+
+async def achievements(req):
+    return response(db.achievements_for_user(uid(req)))
+
+
+async def media_info(req):
+    user_id = uid(req)
+    current = db.media_current(user_id) or {}
+    return response({
+        "application": current, "status": current.get("status", "none"),
+        "active_days": min(db.media_active_days(user_id), 7),
+        "total_views": db.media_video_views_total(user_id),
+        "videos": db.media_video_stats_for_user(user_id, 20),
+        "payouts": db.media_payouts_for_user(user_id, 20),
+        "can_apply": not current or current.get("status") == "rejected"
+    })
+
+
+async def media_apply(req):
+    user_id = uid(req)
+    current = db.media_current(user_id)
+    if current and current.get("status") in ("pending", "approved"):
+        return response("У тебя уже есть активная заявка или статус партнёра.", 409)
+    data = await payload(req)
+    channel = str(data.get("channel", "")).strip()[:500]
+    audience = str(data.get("audience", "")).strip()[:1000]
+    contact = str(data.get("contact", "")).strip()[:300]
+    if not channel.startswith(("https://", "http://")) or len(audience) < 3 or len(contact) < 3:
+        return response("Проверь ссылку на канал, описание аудитории и контакт.", 400)
+    app_id = db.media(user_id, channel, audience, contact)
+    for admin_id in db.admin_ids():
+        try:
+            await tg.send_message(admin_id, f"🤝 Новая заявка медиапартнёра #{app_id}\nID: {user_id}\nКанал: {channel}")
+        except Exception:
+            log.exception("Media application notification failed")
+    return response({"id": app_id})
+
+
+async def media_video(req):
+    user_id = uid(req)
+    current = db.media_current(user_id)
+    if not current or current.get("status") != "approved":
+        return response("Раздел доступен только одобренным медиапартнёрам.", 403)
+    data = await payload(req)
+    url = str(data.get("url", "")).strip()[:1000]
+    if not url.startswith(("https://", "http://")):
+        return response("Нужна ссылка на опубликованное видео.", 400)
+    added = db.media_add_day(user_id, url)
+    return response({"added": added, "active_days": min(db.media_active_days(user_id), 7)})
+
+
+async def media_payout(req):
+    user_id = uid(req)
+    eligible, reason = core.payout_eligible(user_id)
+    if not eligible:
+        return response(reason, 400)
+    data = await payload(req)
+    channel = str(data.get("channel", "")).strip()[:500]
+    video = str(data.get("video", "")).strip()[:1000]
+    requisites = str(data.get("requisites", "")).strip()[:1000]
+    if not channel.startswith(("https://", "http://")) or not video.startswith(("https://", "http://")) or len(requisites) < 5:
+        return response("Заполни ссылки на канал и видео, а также реквизиты.", 400)
+    payout_id = db.media_payout(user_id, "На рассмотрении", requisites)
+    db.media_payout_evidence(payout_id, channel, video)
+    for admin_id in db.admin_ids():
+        try:
+            await tg.send_message(admin_id, f"💸 Новая заявка на выплату #{payout_id}. ID игрока: {user_id}.")
+        except Exception:
+            log.exception("Payout notification failed")
+    return response({"id": payout_id})
+
+
+async def admin_overview(req):
+    if not admin(req):
+        return response("Недостаточно прав.", 403)
+    return response({"users": db.users_total(), "referrals": db.refs_total(), "media_applications": db.media_total(), "open_tickets": len(db.open_tickets(1000)), "pending_payouts": len(db.media_pending_payouts())})
+
+
+async def admin_tickets(req):
+    if not admin(req):
+        return response("Недостаточно прав.", 403)
+    rows = db.open_tickets(100)
+    for row in rows:
+        user = db.user(row["uid"]) or {}
+        row["nick"] = user.get("nick", str(row["uid"]))
+    return response(rows)
+
+
+async def admin_apps(req):
+    if not admin(req):
+        return response("Недостаточно прав.", 403)
+    ph = db._ph()
+    return response(db._all(f"SELECT m.*,u.nick FROM media m LEFT JOIN users u ON u.uid=m.uid WHERE m.status={ph} ORDER BY m.id DESC LIMIT 100", ("pending",)))
+
+
+async def admin_app_decision(req):
+    if not admin(req):
+        return response("Недостаточно прав.", 403)
+    app_id = int(req.match_info["application_id"])
+    item = db.media_get(app_id)
+    if not item or item.get("status") != "pending":
+        return response("Заявка уже обработана.", 409)
+    data = await payload(req)
+    decision = str(data.get("decision", ""))
+    if decision not in ("approved", "rejected"):
+        return response("Неизвестное решение.", 400)
+    db.media_status(app_id, decision)
+    note = str(data.get("note", "")).strip()[:700] or ("Тебе открыт кабинет медиапартнёра." if decision == "approved" else "Администрация рассмотрела заявку.")
+    title = "Заявка в медиапартнёры одобрена" if decision == "approved" else "Заявка в медиапартнёры отклонена"
+    db.add_notification(item["uid"], title, note)
+    try:
+        await tg.send_message(item["uid"], title + "\n" + note)
+    except Exception:
+        log.exception("Applicant notification failed")
+    return response({"status": decision})
+
+
+async def admin_payouts(req):
+    if not admin(req):
+        return response("Недостаточно прав.", 403)
+    rows = db._all("SELECT p.*,u.nick FROM media_payouts p LEFT JOIN users u ON u.uid=p.uid ORDER BY p.id DESC LIMIT 100")
+    for row in rows:
+        row["evidence"] = db.media_payout_evidence_get(row["id"])
+    return response(rows)
+
+
+async def admin_payout_decision(req):
+    if not admin(req):
+        return response("Недостаточно прав.", 403)
+    payout_id = int(req.match_info["payout_id"])
+    item = db.media_payout_get(payout_id)
+    if not item:
+        return response("Заявка не найдена.", 404)
+    data = await payload(req)
+    decision = str(data.get("decision", ""))
+    note = str(data.get("note", "")).strip()[:1500]
+    if decision == "paid" and item["status"] == "approved":
+        db.media_payout_review(payout_id, "paid", uid(req), item.get("review_note") or "")
+        message = f"Выплата #{payout_id} отправлена. Сумма: {item.get('amount')}"
+    elif decision == "approved" and item["status"] == "pending":
+        try:
+            amount = float(str(data.get("amount", "")).replace(",", "."))
+            if amount < 0 or amount > 10000000:
+                raise ValueError()
+        except Exception:
+            return response("Укажи корректную сумму в рублях.", 400)
+        if not note:
+            return response("Добавь комментарий к решению.", 400)
+        value = f"{amount:.2f} RUB"
+        db.media_payout_set_amount(payout_id, value)
+        db.media_payout_review(payout_id, "approved", uid(req), note)
+        message = f"Выплата #{payout_id} одобрена. Сумма: {value}. {note}"
+    elif decision == "rejected" and item["status"] == "pending":
+        if not note:
+            return response("Укажи причину отказа.", 400)
+        db.media_payout_review(payout_id, "rejected", uid(req), note)
+        message = f"Выплата #{payout_id} отклонена. {note}"
+    else:
+        return response("Недопустимый переход статуса.", 409)
+    db.add_notification(item["uid"], f"Обновление выплаты #{payout_id}", message)
+    try:
+        await tg.send_message(item["uid"], message)
+    except Exception:
+        log.exception("Payout user notification failed")
+    return response({"status": decision})
+
+
+async def admin_broadcast(req):
+    if not admin(req):
+        return response("Недостаточно прав.", 403)
+    data = await payload(req)
+    text = str(data.get("text", "")).strip()[:3500]
+    if len(text) < 2:
+        return response("Текст слишком короткий.", 400)
+    asyncio.create_task(core._broadcast_worker({"text": text, "photo": None, "bt": None, "bu": None}, uid(req)))
+    return response({"queued": True})
+
+
+async def admin_publish(req):
+    if not admin(req):
+        return response("Недостаточно прав.", 403)
+    if not core.CHANNEL:
+        return response("CHANNEL_ID не настроен.", 400)
+    data = await payload(req)
+    text = str(data.get("text", "")).strip()[:3500]
+    label = str(data.get("button_label", "")).strip()[:64]
+    url = str(data.get("button_url", "")).strip()
+    if len(text) < 2:
+        return response("Текст публикации слишком короткий.", 400)
+    if bool(label) != bool(url) or (url and not url.startswith(("https://", "http://"))):
+        return response("Для URL-кнопки заполни оба поля.", 400)
+    await core.send_composed(core.CHANNEL, {"text": text, "photo": None, "bt": label or None, "bu": url or None})
+    return response({"published": True})
+
+
+async def main():
+    if not TOKEN:
+        raise RuntimeError("BOT_TOKEN не задан")
+    db.init()
+    if WEBAPP_URL.startswith("https://"):
+        try:
+            await tg.set_chat_menu_button(menu_button=MenuButtonWebApp(text="FENIX ONLINE", web_app=WebAppInfo(url=WEBAPP_URL.rstrip("/") + "/app")))
+            log.info("Telegram Mini App menu button configured")
+        except Exception:
+            log.exception("Mini App menu button configuration failed")
+    else:
+        log.warning("Set WEBAPP_URL to the public HTTPS Render URL to enable the Mini App menu button")
+    app = web.Application(middlewares=[auth], client_max_size=1024 * 1024)
+    app.router.add_get("/", home)
+    app.router.add_get("/app", home)
+    app.router.add_get("/health", lambda _: web.json_response({"status": "ok", "service": "fenix-miniapp"}))
+    app.router.add_get("/api/bootstrap", bootstrap)
+    app.router.add_get("/api/stats", stats)
+    app.router.add_get("/api/top", top)
+    app.router.add_get("/api/tickets", tickets)
+    app.router.add_post("/api/tickets", ticket_create)
+    app.router.add_get("/api/tickets/{ticket_id}", ticket_detail)
+    app.router.add_post("/api/tickets/{ticket_id}/reply", ticket_reply)
+    app.router.add_post("/api/tickets/{ticket_id}/close", ticket_close)
+    app.router.add_get("/api/notifications", notifications)
+    app.router.add_post("/api/notifications/read", notifications)
+    app.router.add_get("/api/achievements", achievements)
+    app.router.add_get("/api/media", media_info)
+    app.router.add_post("/api/media/apply", media_apply)
+    app.router.add_post("/api/media/video", media_video)
+    app.router.add_post("/api/media/payout", media_payout)
+    app.router.add_get("/api/admin/overview", admin_overview)
+    app.router.add_get("/api/admin/tickets", admin_tickets)
+    app.router.add_get("/api/admin/media-applications", admin_apps)
+    app.router.add_post("/api/admin/media-applications/{application_id}", admin_app_decision)
+    app.router.add_get("/api/admin/payouts", admin_payouts)
+    app.router.add_post("/api/admin/payouts/{payout_id}", admin_payout_decision)
+    app.router.add_post("/api/admin/broadcast", admin_broadcast)
+    app.router.add_post("/api/admin/publish", admin_publish)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv("PORT", "10000"))
+    await web.TCPSite(runner, "0.0.0.0", port).start()
+    log.info("FENIX Mini App + bot running on port %s", port)
+    try:
+        await core.dp.start_polling(tg, allowed_updates=core.dp.resolve_used_update_types())
+    finally:
+        await runner.cleanup()
+        await tg.session.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
