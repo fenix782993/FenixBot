@@ -12,6 +12,7 @@ from urllib.parse import parse_qsl
 from aiohttp import web
 from aiogram.types import MenuButtonWebApp, WebAppInfo
 import bot as core
+import store as shop
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("fenix-miniapp")
@@ -53,6 +54,8 @@ def verify_init_data(raw):
 
 @web.middleware
 async def auth(request, handler):
+    if request.path == "/api/payments/robokassa/result":
+        return await handler(request)
     if request.path.startswith("/api/"):
         user = verify_init_data(request.headers.get("X-Telegram-Init-Data", ""))
         if not user:
@@ -372,6 +375,164 @@ async def admin_publish(req):
     return response({"published": True})
 
 
+
+# --- FENIX FNZ store / donations ---
+def store_prices():
+    return read_json_setting("store_prices", {})
+
+def fnz_rate():
+    try:
+        value=float(db.setting("fnz_per_rub","0") or 0)
+        return value if 0 < value <= 100000 else 0
+    except Exception:
+        return 0
+
+def catalog():
+    overrides=store_prices()
+    rows=[]
+    for p in shop.PRODUCTS:
+        item=dict(p)
+        if item["code"] in overrides:
+            try:item["price"]=max(1,int(overrides[item["code"]]))
+            except Exception:pass
+        rows.append(item)
+    return rows
+
+async def shop_home(req):
+    user_id=uid(req)
+    return response({
+        "products":catalog(),
+        "balance":shop.balance(db,user_id),
+        "history":shop.history(db,user_id,20),
+        "orders":shop.list_orders(db,uid=user_id,limit=30),
+        "donations":db._all(f"SELECT id,rub_amount,fnz_amount,method,status,created FROM donations WHERE uid={db._ph()} ORDER BY id DESC LIMIT 20",(user_id,)),
+        "fnz_per_rub":fnz_rate(),
+        "manual_phone":"+79067853860",
+        "manual_banks":["Сбербанк","Т-Банк"],
+        "robokassa_enabled":bool(os.getenv("ROBOKASSA_MERCHANT_LOGIN") and os.getenv("ROBOKASSA_PASSWORD1") and os.getenv("ROBOKASSA_PASSWORD2")),
+        "server":{"name":"BLACK","address":"185.207.214.14","port":4357}
+    })
+
+async def shop_buy(req):
+    user_id=uid(req)
+    data=await payload(req)
+    code=str(data.get("code",""))[:48]
+    item=next((p for p in catalog() if p["code"]==code),None)
+    if not item:return response("Товар не найден.",404)
+    if item["price"] is None:return response("Цена этого товара ещё не установлена. Напиши администрации.",409)
+    details=data.get("details") or {}
+    if not isinstance(details,dict):return response("Неверные параметры товара.",400)
+    nick=(db.user(user_id) or {}).get("nick") or ""
+    if not nick:return response("Сначала привяжи игровой ник.",400)
+    if code=="vehicle_plate":
+        return response("Конструктор номеров оформляется отдельной заявкой.",409)
+    order_id=shop.create_order(db,user_id,nick,code,item["name"],int(item["price"]),json.dumps(details,ensure_ascii=False)[:1500])
+    if not order_id:return response("Недостаточно FNZ. Сначала пополни кошелёк.",409)
+    msg=f"🛒 Заказ #{order_id} принят. Товар: {item['name']} · {item['price']} FNZ. Ник: {nick}. Ожидает выдачи администрацией."
+    db.add_notification(user_id,"Покупка оформлена",msg)
+    for aid in db.admin_ids():
+        try:await tg.send_message(aid,f"🛒 <b>НОВЫЙ ЗАКАЗ #{order_id}</b>\nИгрок: <code>{nick}</code>\nТовар: {item['name']}\nЦена: {item['price']} FNZ",parse_mode="HTML")
+        except Exception:log.exception("Shop order admin notification failed")
+    return response({"id":order_id,"balance":shop.balance(db,user_id)})
+
+async def wallet_donate(req):
+    user_id=uid(req)
+    data=await payload(req)
+    try:rub=round(float(str(data.get("rub","")).replace(",",".")),2)
+    except Exception:return response("Укажи сумму в рублях.",400)
+    if rub<10 or rub>100000:return response("Сумма должна быть от 10 до 100 000 ₽.",400)
+    rate=fnz_rate()
+    if not rate:return response("Курс FNZ ещё не настроен администрацией. Попробуй позже.",503)
+    fnz=int(round(rub*rate))
+    if fnz<1:return response("Сумма слишком мала для начисления FNZ.",400)
+    method=str(data.get("method","manual"))
+    if method not in {"manual","robokassa"}:return response("Неизвестный способ оплаты.",400)
+    proof=str(data.get("proof","")).strip()[:500]
+    if method=="manual" and len(proof)<3:return response("Укажи комментарий к переводу или последние 4 цифры операции.",400)
+    if method=="robokassa" and not (os.getenv("ROBOKASSA_MERCHANT_LOGIN") and os.getenv("ROBOKASSA_PASSWORD1") and os.getenv("ROBOKASSA_PASSWORD2")):
+        return response("Robokassa пока не подключена: отсутствуют данные магазина.",503)
+    did=shop.new_donation(db,user_id,rub,fnz,method,proof)
+    if method=="robokassa":
+        url=shop.robokassa_url(db,did,req.scheme+"://"+req.host)
+        if not url:return response("Не удалось сформировать платёжную ссылку.",503)
+        return response({"id":did,"payment_url":url,"fnz":fnz,"rub":rub})
+    text=f"💳 Новое ручное пополнение #{did}\nИгрок: {user_id}\nСумма: {rub:.2f} ₽\nНачисление после проверки: {fnz} FNZ\nПодтверждение: {proof}"
+    for aid in db.admin_ids():
+        try:await tg.send_message(aid,text)
+        except Exception:log.exception("Manual donation notification failed")
+    return response({"id":did,"fnz":fnz,"rub":rub,"phone":"+79067853860","banks":["Сбербанк","Т-Банк"]})
+
+async def robokassa_result(req):
+    try:
+        params=dict(await req.post()) if req.method=="POST" else dict(req.query)
+        item=shop.verify_result(db,params)
+        if not item:return web.Response(text="bad sign",status=400)
+        did=int(item["id"])
+        if shop.mark_paid(db,did,actor=None,note="Robokassa callback"):
+            uid0=int(item["uid"])
+            db.add_notification(uid0,"Пополнение зачислено",f"Платёж #{did} подтверждён. Начислено {int(item['fnz_amount'])} FNZ.")
+            try:await tg.send_message(uid0,f"✅ Пополнение #{did} подтверждено. Начислено <b>{int(item['fnz_amount'])} FNZ</b>.",parse_mode="HTML")
+            except Exception:log.exception("Robokassa user notification failed")
+        return web.Response(text=f"OK{did}")
+    except Exception:
+        log.exception("Robokassa ResultURL failed")
+        return web.Response(text="error",status=500)
+
+async def admin_store(req):
+    if not admin(req):return response("Недостаточно прав.",403)
+    if req.method=="GET":
+        return response({"orders":shop.list_orders(db,limit=150),"donations":shop.donations(db,"all",150),"balance_rate":fnz_rate(),"prices":store_prices(),"catalog":catalog()})
+    data=await payload(req)
+    try:rate=float(data.get("fnz_per_rub",0))
+    except Exception:return response("Некорректный курс FNZ.",400)
+    if rate<0 or rate>100000:return response("Курс вне допустимого диапазона.",400)
+    prices=data.get("prices") or {}
+    if not isinstance(prices,dict):return response("Неверный список цен.",400)
+    clean={}
+    allowed={p["code"] for p in shop.PRODUCTS}
+    for key,value in prices.items():
+        if key not in allowed:continue
+        try:
+            price=int(value)
+            if not 1<=price<=100000000:raise ValueError()
+            clean[key]=price
+        except Exception:return response(f"Некорректная цена для {key}.",400)
+    db.set_setting("fnz_per_rub",str(rate))
+    db.set_setting("store_prices",json.dumps(clean,ensure_ascii=False))
+    return response({"saved":True,"fnz_per_rub":rate,"prices":clean})
+
+async def admin_donation_decision(req):
+    if not admin(req):return response("Недостаточно прав.",403)
+    did=int(req.match_info["donation_id"]);data=await payload(req)
+    decision=str(data.get("decision",""));note=str(data.get("note","")).strip()[:500]
+    item=db._one(f"SELECT * FROM donations WHERE id={db._ph()}",(did,))
+    if not item:return response("Платёж не найден.",404)
+    if item["status"]!="pending":return response("Платёж уже обработан.",409)
+    if decision=="paid":ok=shop.mark_paid(db,did,uid(req),note or "Подтверждено администратором")
+    elif decision=="rejected":ok=shop.reject_donation(db,did,uid(req),note)
+    else:return response("Неизвестное решение.",400)
+    if not ok:return response("Не удалось изменить платёж.",409)
+    text=(f"Пополнение #{did} подтверждено. Зачислено {int(item['fnz_amount'])} FNZ." if decision=="paid" else f"Пополнение #{did} отклонено. {note}")
+    db.add_notification(item["uid"],"Статус пополнения",text)
+    try:await tg.send_message(item["uid"],text)
+    except Exception:log.exception("Donation decision notification failed")
+    return response({"status":decision})
+
+async def admin_order_decision(req):
+    if not admin(req):return response("Недостаточно прав.",403)
+    oid=int(req.match_info["order_id"]);data=await payload(req)
+    decision=str(data.get("decision",""));note=str(data.get("note","")).strip()[:700]
+    if decision not in {"processing","delivered"}:return response("Неизвестный статус.",400)
+    item=db._one(f"SELECT * FROM shop_orders WHERE id={db._ph()}",(oid,))
+    if not item:return response("Заказ не найден.",404)
+    if not shop.update_order(db,oid,decision,uid(req),note):return response("Статус заказа уже изменён.",409)
+    text=f"Заказ #{oid}: {'в обработке' if decision=='processing' else 'товар выдан'}."
+    if note:text+=" "+note
+    db.add_notification(item["uid"],"Обновление заказа",text)
+    try:await tg.send_message(item["uid"],text)
+    except Exception:log.exception("Shop order notification failed")
+    return response({"status":decision})
+
 DEFAULT_THEME = {
     "accent": "#f06a3d",
     "background": "#08090c",
@@ -494,6 +655,7 @@ async def admin_design(req):
 
 
 async def main():
+    shop.init(db)
     if not TOKEN:
         raise RuntimeError("BOT_TOKEN не задан")
     db.init()
@@ -532,6 +694,14 @@ async def main():
     app.router.add_post("/api/admin/payouts/{payout_id}", admin_payout_decision)
     app.router.add_post("/api/admin/broadcast", admin_broadcast)
     app.router.add_post("/api/admin/publish", admin_publish)
+    app.router.add_get("/api/shop", shop_home)
+    app.router.add_post("/api/shop/buy", shop_buy)
+    app.router.add_post("/api/wallet/donate", wallet_donate)
+    app.router.add_get("/api/admin/store", admin_store)
+    app.router.add_post("/api/admin/store", admin_store)
+    app.router.add_post("/api/admin/donations/{donation_id}", admin_donation_decision)
+    app.router.add_post("/api/admin/orders/{order_id}", admin_order_decision)
+    app.router.add_route("*", "/api/payments/robokassa/result", robokassa_result)
     app.router.add_get("/api/admin/design", admin_design)
     app.router.add_post("/api/admin/design", admin_design)
     runner = web.AppRunner(app)
