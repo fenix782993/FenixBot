@@ -469,6 +469,21 @@ async def start(m:Message,state:FSMContext):
             )
             return
         u=db.user(m.from_user.id)
+        args=(m.text or '').split(maxsplit=1)
+        payload=args[1] if len(args)>1 else ''
+        if u and payload.startswith('buy_'):
+            code=payload[4:]
+            item=next((dict(x) for x in shop.PRODUCTS if x['code']==code),None)
+            try: overrides=json.loads(db.setting('store_prices','{}') or '{}')
+            except Exception: overrides={}
+            if item and code in overrides:
+                try: item['price']=max(1,int(overrides[code]))
+                except Exception: pass
+            if not item or item.get('price') is None:
+                return await m.answer('Этот товар пока недоступен для покупки.')
+            kb=markup([[InlineKeyboardButton(text='✅ Подтвердить покупку',callback_data='buy_confirm:'+code)],
+                       [InlineKeyboardButton(text='❌ Отмена',callback_data='buy_cancel')]])
+            return await m.answer('🛒 Подтверждение покупки\n\nТовар: '+item['name']+'\nЦена: '+str(item['price'])+' NMZ\nИгровой ник: '+u['nick']+'\n\nПодтверди списание с баланса.',reply_markup=kb)
         if u:
             return await answer_visual(
                 m, "welcome", db.setting("welcome_text", "🔥 FENIX ONLINE\nТвой личный кабинет."),
@@ -494,6 +509,43 @@ async def start(m:Message,state:FSMContext):
 STARS_RUB_PRESETS = (100, 300, 500, 1000, 2500, 5000)
 
 
+@dp.callback_query(F.data.startswith('buy_confirm:'))
+async def buy_confirm(c):
+    user=db.user(c.from_user.id)
+    if not user: return await c.answer('Сначала зарегистрируйся через /start.',show_alert=True)
+    code=c.data.split(':',1)[1]
+    item=next((dict(x) for x in shop.PRODUCTS if x['code']==code),None)
+    try: overrides=json.loads(db.setting('store_prices','{}') or '{}')
+    except Exception: overrides={}
+    if item and code in overrides:
+        try: item['price']=max(1,int(overrides[code]))
+        except Exception: pass
+    if not item or item.get('price') is None: return await c.answer('Товар недоступен.',show_alert=True)
+    price=int(item['price'])
+    if shop.balance(db,c.from_user.id)<price: return await c.answer('Недостаточно NMZ. Пополни баланс.',show_alert=True)
+    oid=shop.create_order(db,c.from_user.id,user['nick'],code,item['name'],price,'')
+    if not oid: return await c.answer('Не удалось оформить заказ.',show_alert=True)
+    msg='Заказ #'+str(oid)+' принят: '+item['name']+' · '+str(price)+' NMZ. Ожидает выдачи.'
+    db.add_notification(c.from_user.id,'Покупка оформлена',msg)
+    for aid in OWNER_IDS:
+        try: await bot.send_message(aid,'🛒 НОВЫЙ ЗАКАЗ #'+str(oid)+'\nИгрок: '+user['nick']+'\nТовар: '+item['name']+'\nЦена: '+str(price)+' NMZ)
+        except Exception: logging.exception('Shop order notification failed')
+    await c.message.edit_text('✅ '+msg,reply_markup=markup([[InlineKeyboardButton(text='📦 Мои заказы',callback_data='shop_orders')]]))
+    await c.answer('Заказ оформлен')
+
+@dp.callback_query(F.data=='buy_cancel')
+async def buy_cancel(c):
+    await c.message.edit_text('Покупка отменена.')
+    await c.answer()
+
+@dp.callback_query(F.data=='shop_orders')
+async def shop_orders(c):
+    rows=shop.list_orders(db,uid=c.from_user.id,limit=20)
+    labels={'pending_delivery':'Ожидает выдачи','processing':'В обработке','delivered':'Выдан'}
+    body='📦 МОИ ЗАКАЗЫ\n\n' if rows else 'У тебя пока нет заказов.'
+    body += '\n'.join('#'+str(x['id'])+' · '+x['product_name']+' · '+str(x['price_fnz'])+' NMZ · '+labels.get(x['status'],x['status']) for x in rows)
+    await c.message.answer(body,reply_markup=markup([[InlineKeyboardButton(text='⬅️ Главное меню',callback_data='back_home')]]))
+    await c.answer()
 @dp.callback_query(F.data == "manual_donation")
 async def manual_donation_start(c,state:FSMContext):
     if not db.user(c.from_user.id):
