@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+from functools import lru_cache
 from datetime import datetime, timezone
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -13,30 +14,43 @@ class DB:
         self.path = path
         self.use_postgres = bool(DATABASE_URL)
         self._psycopg = None
+        self._pool = None
+        self._settings_cache = {}
         if self.use_postgres:
             try:
                 import psycopg
                 from psycopg.rows import dict_row
+                try:
+                    from psycopg_pool import ConnectionPool
+                except ImportError:
+                    ConnectionPool = None
             except ImportError as exc:
                 raise RuntimeError(
                     "DATABASE_URL задан, но psycopg не установлен. "
                     "Добавь psycopg[binary] в requirements.txt."
                 ) from exc
             self._psycopg = (psycopg, dict_row)
+            if ConnectionPool is not None:
+                self._pool = ConnectionPool(
+                    conninfo=DATABASE_URL,
+                    min_size=1,
+                    max_size=8,
+                    timeout=10,
+                    kwargs={"row_factory": dict_row, "connect_timeout": 12,
+                            "keepalives": 1, "keepalives_idle": 30,
+                            "keepalives_interval": 10, "keepalives_count": 3},
+                    open=True,
+                )
 
     def con(self):
         if self.use_postgres:
+            if self._pool is not None:
+                return self._pool.connection()
             psycopg, dict_row = self._psycopg
-            # Neon requires TLS. Keep each operation on a fresh connection and
-            # use conservative TCP keepalives to detect broken network paths.
             return psycopg.connect(
-                DATABASE_URL,
-                row_factory=dict_row,
-                connect_timeout=30,
-                keepalives=1,
-                keepalives_idle=30,
-                keepalives_interval=10,
-                keepalives_count=3,
+                DATABASE_URL, row_factory=dict_row, connect_timeout=12,
+                keepalives=1, keepalives_idle=30,
+                keepalives_interval=10, keepalives_count=3,
             )
         import sqlite3
         folder = os.path.dirname(os.path.abspath(self.path))
@@ -105,6 +119,11 @@ class DB:
                 c.execute("CREATE TABLE IF NOT EXISTS media_payouts (id BIGSERIAL PRIMARY KEY, uid BIGINT, amount TEXT, requisites TEXT, status TEXT, created TEXT, reviewed_by BIGINT, review_note TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS media_activity (uid BIGINT, day TEXT, video_url TEXT, PRIMARY KEY(uid,day))")
                 c.execute("CREATE TABLE IF NOT EXISTS media_payout_evidence (payout_id BIGINT PRIMARY KEY, channel_url TEXT, video_url TEXT)")
+                c.execute("CREATE TABLE IF NOT EXISTS tickets (id BIGSERIAL PRIMARY KEY, uid BIGINT, subject TEXT, body TEXT, status TEXT, created TEXT, updated TEXT)")
+                c.execute("CREATE TABLE IF NOT EXISTS ticket_messages (id BIGSERIAL PRIMARY KEY, ticket_id BIGINT, sender BIGINT, body TEXT, created TEXT)")
+                c.execute("CREATE TABLE IF NOT EXISTS notifications (id BIGSERIAL PRIMARY KEY, uid BIGINT, title TEXT, body TEXT, created TEXT, is_read INTEGER DEFAULT 0)")
+                c.execute("CREATE TABLE IF NOT EXISTS achievements (uid BIGINT, code TEXT, title TEXT, earned TEXT, PRIMARY KEY(uid,code))")
+                c.execute("CREATE TABLE IF NOT EXISTS media_video_stats (id BIGSERIAL PRIMARY KEY, uid BIGINT, video_url TEXT, views BIGINT DEFAULT 0, checked_by BIGINT, created TEXT)")
             else:
                 c.executescript("""
                     CREATE TABLE IF NOT EXISTS users(uid INTEGER PRIMARY KEY, username TEXT, nick TEXT UNIQUE, pwhash TEXT, ref INTEGER, created TEXT);
@@ -118,6 +137,11 @@ class DB:
                     CREATE TABLE IF NOT EXISTS media_payouts(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER, amount TEXT, requisites TEXT, status TEXT, created TEXT, reviewed_by INTEGER, review_note TEXT);
                     CREATE TABLE IF NOT EXISTS media_activity(uid INTEGER, day TEXT, video_url TEXT, PRIMARY KEY(uid,day));
                     CREATE TABLE IF NOT EXISTS media_payout_evidence(payout_id INTEGER PRIMARY KEY, channel_url TEXT, video_url TEXT);
+                    CREATE TABLE IF NOT EXISTS tickets(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER, subject TEXT, body TEXT, status TEXT, created TEXT, updated TEXT);
+                    CREATE TABLE IF NOT EXISTS ticket_messages(id INTEGER PRIMARY KEY AUTOINCREMENT, ticket_id INTEGER, sender INTEGER, body TEXT, created TEXT);
+                    CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER, title TEXT, body TEXT, created TEXT, is_read INTEGER DEFAULT 0);
+                    CREATE TABLE IF NOT EXISTS achievements(uid INTEGER, code TEXT, title TEXT, earned TEXT, PRIMARY KEY(uid,code));
+                    CREATE TABLE IF NOT EXISTS media_video_stats(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER, video_url TEXT, views INTEGER DEFAULT 0, checked_by INTEGER, created TEXT);
                 """)
             owners = [int(x) for x in os.getenv("ADMIN_IDS", "").replace(" ", "").split(",") if x]
             for uid in owners:
@@ -268,6 +292,7 @@ class DB:
             return [x["uid"] if self.use_postgres else x[0] for x in c.execute("SELECT uid FROM users").fetchall()]
 
     def set_setting(self, key, value):
+        self._settings_cache.pop(key, None)
         with self.con() as c:
             if self.use_postgres:
                 c.execute("INSERT INTO settings(k,v) VALUES(%s,%s) ON CONFLICT(k) DO UPDATE SET v=EXCLUDED.v", (key, value))
@@ -275,8 +300,14 @@ class DB:
                 c.execute("INSERT OR REPLACE INTO settings(k,v) VALUES(?,?)", (key, value))
 
     def setting(self, key, default=None):
+        cached = self._settings_cache.get(key)
+        now = time.monotonic()
+        if cached and now - cached[0] < 15:
+            return cached[1] if cached[1] is not None else default
         row = self._one(f"SELECT v FROM settings WHERE k={self._ph()}", (key,))
-        return row["v"] if row else default
+        value = row["v"] if row else None
+        self._settings_cache[key] = (now, value)
+        return value if value is not None else default
 
     def admin_ids(self):
         with self.con() as c:
@@ -365,3 +396,79 @@ class DB:
     def media_payout_set_amount(self, payout_id, amount):
         with self.con() as c:
             c.execute(f"UPDATE media_payouts SET amount={self._ph()} WHERE id={self._ph()}",(amount,payout_id))
+
+
+    # --- FENIX ONLINE 2.0: user cabinet, support, notifications and media stats ---
+    def create_ticket(self, uid, subject, body):
+        now = self._now()
+        with self.con() as c:
+            if self.use_postgres:
+                row = c.execute("INSERT INTO tickets(uid,subject,body,status,created,updated) VALUES(%s,%s,%s,'open',%s,%s) RETURNING id", (uid,subject,body,now,now)).fetchone()
+                tid = row["id"]
+                c.execute("INSERT INTO ticket_messages(ticket_id,sender,body,created) VALUES(%s,%s,%s,%s)", (tid,uid,body,now))
+                return tid
+            cur = c.execute("INSERT INTO tickets(uid,subject,body,status,created,updated) VALUES(?,?,?,'open',?,?)", (uid,subject,body,now,now))
+            tid = cur.lastrowid
+            c.execute("INSERT INTO ticket_messages(ticket_id,sender,body,created) VALUES(?,?,?,?)", (tid,uid,body,now))
+            return tid
+
+    def tickets_for_user(self, uid, limit=20):
+        return self._all(f"SELECT * FROM tickets WHERE uid={self._ph()} ORDER BY id DESC LIMIT {int(limit)}", (uid,))
+
+    def ticket_get(self, tid):
+        return self._one(f"SELECT * FROM tickets WHERE id={self._ph()}", (tid,))
+
+    def ticket_messages(self, tid):
+        return self._all(f"SELECT * FROM ticket_messages WHERE ticket_id={self._ph()} ORDER BY id ASC", (tid,))
+
+    def ticket_reply(self, tid, sender, body):
+        now = self._now()
+        with self.con() as c:
+            c.execute(f"INSERT INTO ticket_messages(ticket_id,sender,body,created) VALUES({self._ph()},{self._ph()},{self._ph()},{self._ph()})", (tid,sender,body,now))
+            c.execute(f"UPDATE tickets SET updated={self._ph()} WHERE id={self._ph()}", (now,tid))
+
+    def ticket_set_status(self, tid, status):
+        with self.con() as c:
+            c.execute(f"UPDATE tickets SET status={self._ph()},updated={self._ph()} WHERE id={self._ph()}", (status,self._now(),tid))
+
+    def add_notification(self, uid, title, body):
+        with self.con() as c:
+            c.execute(f"INSERT INTO notifications(uid,title,body,created,is_read) VALUES({','.join([self._ph()]*4)},0)", (uid,title,body,self._now()))
+
+    def notifications_for_user(self, uid, limit=20):
+        return self._all(f"SELECT * FROM notifications WHERE uid={self._ph()} ORDER BY id DESC LIMIT {int(limit)}", (uid,))
+
+    def unread_notifications(self, uid):
+        return int(self._scalar(f"SELECT COUNT(*) FROM notifications WHERE uid={self._ph()} AND is_read=0", (uid,)) or 0)
+
+    def mark_notifications_read(self, uid):
+        with self.con() as c:
+            c.execute(f"UPDATE notifications SET is_read=1 WHERE uid={self._ph()}", (uid,))
+
+    def achievement_award(self, uid, code, title):
+        with self.con() as c:
+            if self.use_postgres:
+                cur=c.execute("INSERT INTO achievements(uid,code,title,earned) VALUES(%s,%s,%s,%s) ON CONFLICT(uid,code) DO NOTHING", (uid,code,title,self._now()))
+            else:
+                cur=c.execute("INSERT OR IGNORE INTO achievements(uid,code,title,earned) VALUES(?,?,?,?)", (uid,code,title,self._now()))
+            return cur.rowcount > 0
+
+    def achievements_for_user(self, uid):
+        return self._all(f"SELECT * FROM achievements WHERE uid={self._ph()} ORDER BY earned DESC", (uid,))
+
+    def add_media_video_stat(self, uid, video_url, views, checked_by):
+        with self.con() as c:
+            if self.use_postgres:
+                cur=c.execute("INSERT INTO media_video_stats(uid,video_url,views,checked_by,created) VALUES(%s,%s,%s,%s,%s) RETURNING id", (uid,video_url,views,checked_by,self._now()))
+                return cur.fetchone()["id"]
+            cur=c.execute("INSERT INTO media_video_stats(uid,video_url,views,checked_by,created) VALUES(?,?,?,?,?)", (uid,video_url,views,checked_by,self._now()))
+            return cur.lastrowid
+
+    def media_video_stats_for_user(self, uid, limit=20):
+        return self._all(f"SELECT * FROM media_video_stats WHERE uid={self._ph()} ORDER BY id DESC LIMIT {int(limit)}", (uid,))
+
+    def media_video_views_total(self, uid):
+        return int(self._scalar(f"SELECT COALESCE(SUM(views),0) FROM media_video_stats WHERE uid={self._ph()}", (uid,)) or 0)
+
+    def open_tickets(self, limit=30):
+        return self._all("SELECT id,uid,subject,status,created,updated FROM tickets WHERE status IN ('open','answered') ORDER BY updated DESC LIMIT " + str(int(limit)))

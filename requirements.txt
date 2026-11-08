@@ -1,4 +1,1 @@
-aiogram>=3.13,<4.0
-python-dotenv>=1.0
-aiohttp>=3.9
-psycopg[binary]>=3.2
+aiogram>=3.13,<4.0\npython-dotenv>=1.0\naiohttp>=3.9\npsycopg[binary]>=3.2\npsycopg-pool>=3.2\n

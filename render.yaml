@@ -1,9 +1,10 @@
 services:
-  - type: worker
+  - type: web
     name: fenix-online-community-bot
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: python bot.py
+    healthCheckPath: /health
     disk:
       name: fenix-online-data
       mountPath: /var/data
@@ -16,6 +17,8 @@ services:
       - key: CHANNEL_ID
         sync: false
       - key: CHANNEL_URL
+        value: https://t.me/+1usTps-EXmxjNWRl
+      - key: DATABASE_URL
         sync: false
       - key: DATABASE_PATH
         value: /var/data/fenix.sqlite3

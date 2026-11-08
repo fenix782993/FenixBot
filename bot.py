@@ -95,6 +95,18 @@ async def answer_visual(message, asset_key, caption, reply_markup=None):
         logging.warning("Баннер не найден: %s", image_path)
     return await message.answer(caption, reply_markup=reply_markup)
 
+
+
+async def edit_panel(message, text, reply_markup=None, parse_mode="HTML"):
+    """Prefer editing the existing Telegram message to keep navigation compact."""
+    try:
+        return await message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+    except Exception:
+        try:
+            return await message.edit_caption(caption=text, reply_markup=reply_markup, parse_mode=parse_mode)
+        except Exception:
+            return await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
+
 def menu(uid):
     media_status=(db.media_current(uid) or {}).get("status")
     label=db.setting("home_label","📢 Новости FENIX ONLINE")
@@ -113,6 +125,7 @@ class S(StatesGroup):
     post_text=State(); post_photo_choice=State(); post_photo=State()
     post_button_choice=State(); post_button=State(); post_url=State()
     button_label=State(); button_url=State(); broadcast=State(); admin_add=State(); admin_remove=State()
+    support_subject=State(); support_body=State()
 def hashpw(p):
     salt=secrets.token_hex(16)
     return salt+"$"+hashlib.pbkdf2_hmac("sha256",p.encode(),salt.encode(),200000).hex()
@@ -168,7 +181,12 @@ async def password(m:Message,state:FSMContext):
     p=m.text or ""
     if len(p)<8: return await m.answer("Пароль должен быть не короче 8 символов.")
     d=await state.get_data(); db.add_user(m.from_user.id,m.from_user.username or "",d["nick"],hashpw(p),d.get("ref"))
-    if d.get("ref") and db.user(d["ref"]): db.add_ref(d["ref"],m.from_user.id)
+    db.achievement_award(m.from_user.id,"first_login","Первый вход в FENIX ONLINE")
+    if d.get("ref") and db.user(d["ref"]):
+        db.add_ref(d["ref"],m.from_user.id)
+        if db.ref_count(d["ref"]) >= 1:
+            db.achievement_award(d["ref"],"first_referral","Первый приглашённый игрок")
+            db.add_notification(d["ref"],"Новый реферал",f"По твоей ссылке зарегистрировался игрок {d['nick']}.")
     await state.clear()
     await answer_visual(m, "welcome", "✅ Регистрация завершена!", reply_markup=menu(m.from_user.id))
     if d.get("ref"):
@@ -181,12 +199,30 @@ async def cab(c):
         if not u:
             return await c.answer("Сначала зарегистрируйся через /start", show_alert=True)
         invited=db.ref_count(c.from_user.id)
-        await answer_visual(c.message, "profile",
-            f"👤 ЛИЧНЫЙ КАБИНЕТ\nНик: {u['nick']}\nПриглашено: {invited}")
+        unread=db.unread_notifications(c.from_user.id)
+        tickets=db.tickets_for_user(c.from_user.id,100)
+        active=sum(1 for t in tickets if t.get("status")=="open")
+        awards=db.achievements_for_user(c.from_user.id)
+        text=(f"👤 <b>ЛИЧНЫЙ КАБИНЕТ</b>\n━━━━━━━━━━━━━━━━━━\n"
+              f"🎮 <b>Игровой ник:</b> {html.escape(u['nick'])}\n"
+              f"🟢 <b>Статус:</b> Активен\n"
+              f"👥 <b>Приглашено:</b> {invited}\n"
+              f"🎫 <b>Активные заявки:</b> {active}\n"
+              f"🔔 <b>Новые уведомления:</b> {unread}\n"
+              f"🏆 <b>Достижения:</b> {len(awards)}")
+        await edit_panel(c.message,text,reply_markup=markup([
+            [InlineKeyboardButton(text="🎫 Мои заявки",callback_data="my_tickets"),
+             InlineKeyboardButton(text="🔔 Уведомления",callback_data="notifications")],
+            [InlineKeyboardButton(text="🏆 Достижения",callback_data="achievements"),
+             InlineKeyboardButton(text="📊 Статистика",callback_data="stats")],
+            [InlineKeyboardButton(text="⚙️ Настройки",callback_data="user_settings"),
+             InlineKeyboardButton(text="💬 Поддержка",callback_data="support")],
+            [InlineKeyboardButton(text="⬅️ Главное меню",callback_data="back_home")]
+        ]))
         await c.answer()
     except Exception:
         logging.exception("Ошибка открытия личного кабинета")
-        await c.answer("Ошибка базы данных. Попробуй позже.", show_alert=True)
+        await c.answer("Не удалось загрузить кабинет. Попробуй позже.", show_alert=True)
 
 @dp.callback_query(F.data=="ref")
 async def ref(c):
@@ -260,31 +296,216 @@ async def media_cabinet(c):
     current=db.media_current(c.from_user.id)
     if not current or current.get("status")!="approved":
         return await c.answer("Кабинет доступен только одобренным медиапартнёрам.",show_alert=True)
+    days=min(db.media_active_days(c.from_user.id),7)
+    views=db.media_video_views_total(c.from_user.id)
     payouts=db.media_payouts_for_user(c.from_user.id,5)
-    history="\\n".join(f"• Выплата #{x['id']} — {payout_status_label(x['status'])}" for x in payouts) or "Пока нет запросов на выплату."
-    text=(
-        "🎬 <b>КАБИНЕТ МЕДИАПАРТНЁРА</b>\\n━━━━━━━━━━━━━━━━━━\\n"
-        "🟢 <b>Статус:</b> Одобрен\\n"
-        f"🔗 <b>Канал:</b> {html.escape(neat_value(current.get('ch')))}\\n"
-        f"👥 <b>Аудитория:</b> {html.escape(neat_value(current.get('stats')))}\\n"
-        "━━━━━━━━━━━━━━━━━━\\n📌 <b>УСЛОВИЯ ВЫПЛАТ</b>\\n"
-        "🎥 7 активных дней с видеоотчётами\\n📅 Повторная заявка — не чаще 1 раза в 14 дней\\n"
-        "💰 1 000 подтверждённых просмотров = 50 ₽\\n"
-        "🧾 Итоговую сумму после проверки назначает администрация\\n"
-        "━━━━━━━━━━━━━━━━━━\\n💳 <b>ПОСЛЕДНИЕ ЗАПРОСЫ</b>\\n"
-        f"{html.escape(history)}"
-    )
-    await c.message.answer(text,parse_mode="HTML",reply_markup=markup([
+    pending=sum(1 for x in payouts if x.get("status")=="pending")
+    text=( "🎬 <b>КАБИНЕТ МЕДИАПАРТНЁРА</b>\n━━━━━━━━━━━━━━━━━━\n"
+           "🟢 <b>Статус:</b> Одобрен\n"
+           f"📅 <b>Активные дни:</b> {days}/7\n"
+           f"👁 <b>Подтверждённые просмотры:</b> {views:,}\n"
+           f"💳 <b>Заявки на выплату:</b> {len(payouts)}\n"
+           f"🕒 <b>На рассмотрении:</b> {pending}\n"
+           "━━━━━━━━━━━━━━━━━━\nВыбери нужный раздел:")
+    await edit_panel(c.message,text,reply_markup=markup([
+        [InlineKeyboardButton(text="📊 Статистика видео",callback_data="media_stats")],
+        [InlineKeyboardButton(text="🔗 Канал и примеры",callback_data="media_channel_info")],
+        [InlineKeyboardButton(text="📅 Календарь активности",callback_data="media_calendar")],
+        [InlineKeyboardButton(text="💳 История выплат",callback_data="media_history")],
         [InlineKeyboardButton(text="🎥 Отправить видеоотчёт",callback_data="media_video_report")],
-        [InlineKeyboardButton(text="💸 Запросить выплату",callback_data="media_payout")],
-        [InlineKeyboardButton(text="↩️ В главное меню",callback_data="back_home")]
+        [InlineKeyboardButton(text="💰 Запросить выплату",callback_data="media_payout")],
+        [InlineKeyboardButton(text="⬅️ Главное меню",callback_data="back_home")]
     ]))
     await c.answer()
 
 @dp.callback_query(F.data=="back_home")
 async def back_home(c):
-    await c.message.answer("🔥 <b>FENIX ONLINE</b>\\nГлавное меню проекта.",parse_mode="HTML",reply_markup=menu(c.from_user.id))
     await c.answer()
+    await edit_panel(c.message,"🔥 <b>FENIX ONLINE</b>\\n<i>Твой проект. Твои возможности.</i>\\n\\nВыбери нужный раздел:",reply_markup=menu(c.from_user.id))
+
+@dp.callback_query(F.data=="notifications")
+async def user_notifications(c):
+    await c.answer()
+    rows=db.notifications_for_user(c.from_user.id,10)
+    if not rows:
+        txt="🔔 <b>УВЕДОМЛЕНИЯ</b>\n\nПока новых уведомлений нет."
+    else:
+        txt="🔔 <b>УВЕДОМЛЕНИЯ</b>\n━━━━━━━━━━━━━━━━━━\n"
+        for n in rows:
+            mark="🆕" if not n.get("is_read") else "▫️"
+            txt += f"\n{mark} <b>{html.escape(n['title'])}</b>\n{html.escape(n['body'])}\n"
+        db.mark_notifications_read(c.from_user.id)
+    kb=markup([[InlineKeyboardButton(text="⬅️ В кабинет",callback_data="cab")],
+               [InlineKeyboardButton(text="🏠 Главное меню",callback_data="back_home")]])
+    try: await c.message.edit_text(txt,parse_mode="HTML",reply_markup=kb)
+    except Exception: await c.message.answer(txt,parse_mode="HTML",reply_markup=kb)
+
+@dp.callback_query(F.data=="my_tickets")
+async def my_tickets(c):
+    await c.answer()
+    rows=db.tickets_for_user(c.from_user.id,10)
+    status={"open":"🟡 Открыта","closed":"⚫ Закрыта","answered":"🟢 Есть ответ"}
+    txt="🎫 <b>МОИ ЗАЯВКИ</b>\n━━━━━━━━━━━━━━━━━━\n"
+    if not rows: txt+="У тебя пока нет обращений."
+    else:
+        for t in rows:
+            txt+=f"\n<b>#{t['id']} · {html.escape(t['subject'])}</b>\n{status.get(t['status'],t['status'])}\n"
+    kb=[[InlineKeyboardButton(text=f"Открыть #{t['id']}",callback_data=f"ticket_view:{t['id']}")] for t in rows[:8]]
+    kb += [[InlineKeyboardButton(text="➕ Создать обращение",callback_data="support")],
+           [InlineKeyboardButton(text="⬅️ В кабинет",callback_data="cab")]]
+    try: await c.message.edit_text(txt,parse_mode="HTML",reply_markup=markup(kb))
+    except Exception: await c.message.answer(txt,parse_mode="HTML",reply_markup=markup(kb))
+
+@dp.callback_query(F.data=="support")
+async def support_start(c,state:FSMContext):
+    await c.answer()
+    await state.clear()
+    await state.set_state(S.support_subject)
+    try: await c.message.edit_text("💬 <b>ЦЕНТР ПОДДЕРЖКИ</b>\n\nНапиши краткую тему обращения.",parse_mode="HTML")
+    except Exception: await c.message.answer("💬 <b>ЦЕНТР ПОДДЕРЖКИ</b>\n\nНапиши краткую тему обращения.",parse_mode="HTML")
+
+@dp.message(S.support_subject)
+async def support_subject(m,state:FSMContext):
+    subject=(m.text or "").strip()
+    if len(subject)<3 or len(subject)>100:
+        return await m.answer("Тема должна содержать от 3 до 100 символов.")
+    await state.update_data(ticket_subject=subject)
+    await state.set_state(S.support_body)
+    await m.answer("Опиши проблему подробнее (до 3000 символов).")
+
+@dp.message(S.support_body)
+async def support_body(m,state:FSMContext):
+    body=(m.text or "").strip()
+    if len(body)<5 or len(body)>3000:
+        return await m.answer("Сообщение должно содержать от 5 до 3000 символов.")
+    data=await state.get_data()
+    if data.get("ticket_reply_id"):
+        tid=int(data["ticket_reply_id"]); ticket=db.ticket_get(tid)
+        if not ticket:
+            await state.clear(); return await m.answer("Обращение не найдено.")
+        db.ticket_reply(tid,m.from_user.id,body)
+        recipient=ticket["uid"] if m.from_user.id!=ticket["uid"] else None
+        db.ticket_set_status(tid,"answered" if recipient else "open")
+        if recipient:
+            db.add_notification(recipient,f"Ответ по обращению #{tid}",body[:500])
+            try:
+                await bot.send_message(recipient,f"💬 <b>Новый ответ по обращению #{tid}</b>\n{html.escape(body[:2500])}",parse_mode="HTML",
+                    reply_markup=markup([[InlineKeyboardButton(text="Открыть обращение",callback_data=f"ticket_view:{tid}")]]))
+            except Exception: logging.exception("Не удалось отправить ответ пользователю")
+        await state.clear()
+        return await m.answer(f"✅ Ответ по обращению #{tid} отправлен.")
+    tid=db.create_ticket(m.from_user.id,data["ticket_subject"],body)
+    await state.clear()
+    await m.answer(f"✅ <b>Обращение #{tid} создано.</b>\nПоддержка ответит здесь, в боте.",parse_mode="HTML",
+                   reply_markup=markup([[InlineKeyboardButton(text="🎫 Мои заявки",callback_data="my_tickets")]]))
+    for aid in db.admin_ids():
+        try:
+            await bot.send_message(aid,f"🎫 <b>Новое обращение #{tid}</b>\nОт: <code>{m.from_user.id}</code>\nТема: {html.escape(data['ticket_subject'])}\n{html.escape(body[:1200])}",
+                parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text=f"Открыть #{tid}",callback_data=f"ticket_view:{tid}")]]))
+        except Exception: logging.exception("Не удалось уведомить администратора о тикете")
+
+
+@dp.callback_query(F.data.startswith("ticket_view:"))
+async def ticket_view(c):
+    await c.answer()
+    tid=int(c.data.split(":",1)[1])
+    t=db.ticket_get(tid)
+    if not t or (t["uid"]!=c.from_user.id and not is_admin(c.from_user.id)):
+        return await c.answer("Обращение не найдено или нет доступа.",show_alert=True)
+    messages=db.ticket_messages(tid)
+    txt=f"🎫 <b>ОБРАЩЕНИЕ #{tid}</b>\n<b>{html.escape(t['subject'])}</b>\nСтатус: {'Открыто' if t['status']=='open' else 'Закрыто'}\n━━━━━━━━━━━━━━━━━━\n"
+    for msg in messages[-8:]:
+        who="Ты" if msg["sender"]==t["uid"] else "Поддержка"
+        txt+=f"\n<b>{who}:</b> {html.escape(msg['body'][:900])}\n"
+    kb=[]
+    if t["status"]!="closed":
+        kb.append([InlineKeyboardButton(text="✉️ Ответить",callback_data=f"ticket_reply:{tid}")])
+    if is_admin(c.from_user.id) and t["status"]!="closed":
+        kb.append([InlineKeyboardButton(text="🔒 Закрыть обращение",callback_data=f"ticket_close:{tid}")])
+    kb.append([InlineKeyboardButton(text="⬅️ К моим заявкам",callback_data="my_tickets")])
+    try: await c.message.edit_text(txt,parse_mode="HTML",reply_markup=markup(kb))
+    except Exception: await c.message.answer(txt,parse_mode="HTML",reply_markup=markup(kb))
+
+@dp.callback_query(F.data.startswith("ticket_reply:"))
+async def ticket_reply_start(c,state:FSMContext):
+    tid=int(c.data.split(":",1)[1]); t=db.ticket_get(tid)
+    if not t or (t["uid"]!=c.from_user.id and not is_admin(c.from_user.id)):
+        return await c.answer("Нет доступа",show_alert=True)
+    await c.answer()
+    await state.clear(); await state.update_data(ticket_reply_id=tid); await state.set_state(S.support_body)
+    await c.message.answer(f"✉️ Напиши ответ для обращения #{tid}.")
+
+@dp.callback_query(F.data.startswith("ticket_close:"))
+async def ticket_close(c):
+    if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
+    tid=int(c.data.split(":",1)[1]); t=db.ticket_get(tid)
+    if not t: return await c.answer("Не найдено",show_alert=True)
+    db.ticket_set_status(tid,"closed")
+    db.add_notification(t["uid"],f"Обращение #{tid} закрыто","Администрация закрыла обращение. Если вопрос остался, создай новое.")
+    await c.answer("Обращение закрыто")
+    try: await c.message.edit_text(f"🔒 <b>Обращение #{tid} закрыто</b>",parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="🎫 К обращениям",callback_data="ticket_queue")]]))
+    except Exception: pass
+
+@dp.callback_query(F.data=="achievements")
+async def achievements(c):
+    await c.answer()
+    rows=db.achievements_for_user(c.from_user.id)
+    txt="🏆 <b>ДОСТИЖЕНИЯ</b>\n━━━━━━━━━━━━━━━━━━\n"
+    txt += "\n".join("🏅 "+html.escape(x["title"]) for x in rows) if rows else "Пока нет наград. Они будут появляться за активность в проекте."
+    try: await c.message.edit_text(txt,parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="⬅️ В кабинет",callback_data="cab")]]))
+    except Exception: await c.message.answer(txt,parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="⬅️ В кабинет",callback_data="cab")]]))
+
+@dp.callback_query(F.data=="user_settings")
+async def user_settings(c):
+    await c.answer()
+    txt=("⚙️ <b>НАСТРОЙКИ</b>\n━━━━━━━━━━━━━━━━━━\n"
+         "🌐 Язык: Русский\n🎨 Тема: FENIX Dark Blue\n🔔 Уведомления: Включены\n\n"
+         "Настройки оформления и уведомлений будут применяться ко всем разделам кабинета.")
+    try: await c.message.edit_text(txt,parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="⬅️ В кабинет",callback_data="cab")]]))
+    except Exception: await c.message.answer(txt,parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="⬅️ В кабинет",callback_data="cab")]]))
+
+@dp.callback_query(F.data=="media_stats")
+async def media_stats(c):
+    await c.answer()
+    rows=db.media_video_stats_for_user(c.from_user.id,10)
+    total=db.media_video_views_total(c.from_user.id)
+    txt=f"📊 <b>СТАТИСТИКА ВИДЕО</b>\nПодтверждено просмотров: <b>{total:,}</b>\n━━━━━━━━━━━━━━━━━━\n"
+    txt += "\n".join(f"👁 {r['views']:,} · {html.escape(r['video_url'][:90])}" for r in rows) if rows else "Проверенных видео пока нет."
+    try: await c.message.edit_text(txt,parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="⬅️ В кабинет медиапартнёра",callback_data="media_cabinet")]]))
+    except Exception: await c.message.answer(txt,parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="⬅️ В кабинет медиапартнёра",callback_data="media_cabinet")]]))
+
+@dp.callback_query(F.data=="media_channel_info")
+async def media_channel_info(c):
+    await c.answer()
+    current=db.media_current(c.from_user.id) or {}
+    txt=("🔗 <b>КАНАЛ И ПРИМЕРЫ</b>\n━━━━━━━━━━━━━━━━━━\n"
+         f"Канал: {html.escape(neat_value(current.get('ch')))}\n"
+         f"Аудитория и средние просмотры: {html.escape(neat_value(current.get('stats')))}\n"
+         f"Контакт: {html.escape(neat_value(current.get('contact')))}\n\n"
+         "Примеры видео можно добавить через обновление анкеты медиапартнёра.")
+    try: await c.message.edit_text(txt,parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="⬅️ В кабинет медиапартнёра",callback_data="media_cabinet")]]))
+    except Exception: await c.message.answer(txt,parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="⬅️ В кабинет медиапартнёра",callback_data="media_cabinet")]]))
+
+@dp.callback_query(F.data=="media_calendar")
+async def media_calendar(c):
+    await c.answer()
+    days=db.media_active_days(c.from_user.id)
+    txt="📅 <b>КАЛЕНДАРЬ АКТИВНОСТИ</b>\n\n"
+    txt+=f"Засчитано дней: <b>{min(days,7)}/7</b>\n"
+    txt+="\n".join(("🟦" if i<min(days,7) else "⬜️")+f" День {i+1}" for i in range(7))
+    try: await c.message.edit_text(txt,parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="🎥 Отправить видеоотчёт",callback_data="media_video_report")],[InlineKeyboardButton(text="⬅️ Назад",callback_data="media_cabinet")]]))
+    except Exception: await c.message.answer(txt,parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="🎥 Отправить видеоотчёт",callback_data="media_video_report")],[InlineKeyboardButton(text="⬅️ Назад",callback_data="media_cabinet")]]))
+
+@dp.callback_query(F.data=="media_history")
+async def media_history(c):
+    await c.answer()
+    rows=db.media_payouts_for_user(c.from_user.id,15)
+    labels={"pending":"🕒 На проверке","approved":"🟦 Одобрено, ожидает перевода","paid":"✅ Выплачено","rejected":"❌ Отклонено"}
+    txt="💳 <b>ИСТОРИЯ ВЫПЛАТ</b>\n━━━━━━━━━━━━━━━━━━\n"
+    txt+="\n".join(f"#{r['id']} · {labels.get(r['status'],'Обрабатывается')} · {html.escape(str(r['amount'] or 'Сумма не назначена'))}" for r in rows) if rows else "История пока пуста."
+    try: await c.message.edit_text(txt,parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="⬅️ Назад",callback_data="media_cabinet")]]))
+    except Exception: await c.message.answer(txt,parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="⬅️ Назад",callback_data="media_cabinet")]]))
+
 
 @dp.callback_query(F.data=="media_video_report")
 async def media_video_report_button(c,state:FSMContext):
@@ -294,7 +515,7 @@ async def media_video_report_button(c,state:FSMContext):
     await state.clear()
     await state.update_data(video_report=True)
     await state.set_state(S.payout_video)
-    await c.message.answer("🎥 <b>ВИДЕООТЧЁТ</b>\\n\\nОтправь ссылку на опубликованное видео или загрузи видеофайл. Один подтверждённый отчёт в день засчитывается как активный день.",parse_mode="HTML")
+    await c.message.answer("🎥 <b>ВИДЕООТЧЁТ</b>\n\nОтправь ссылку на опубликованное видео или загрузи видеофайл. Один подтверждённый отчёт в день засчитывается как активный день.",parse_mode="HTML")
     await c.answer()
 
 def payout_eligible(uid):
@@ -418,6 +639,11 @@ async def payout_views(m,state:FSMContext):
     if not raw.isdigit(): return await m.answer('Введи число просмотров.')
     views=int(raw)
     if views>1000000000: return await m.answer('Слишком большое число.')
+    data=await state.get_data()
+    payout=db.media_payout_get(data.get("review_pid"))
+    evidence=db.media_payout_evidence_get(data.get("review_pid"))
+    if payout and evidence.get("video_url"):
+        db.add_media_video_stat(payout["uid"],evidence["video_url"],views,m.from_user.id)
     amount=views*0.05
     await state.update_data(views=views)
     await state.set_state(S.payout_amount)
@@ -442,6 +668,7 @@ async def payout_note(m,state:FSMContext):
     if not r or r['status']!='pending': await state.clear(); return await m.answer('Заявка уже обработана.')
     if data.get('reject'):
         db.media_payout_review(pid,'rejected',m.from_user.id,note[:1500])
+        db.add_notification(r['uid'],f'Выплата #{pid} отклонена',note[:1000])
         await state.clear()
         await m.answer(f'❌ Заявка #{pid} отклонена.')
         try: await bot.send_message(r['uid'],f'❌ <b>ВЫПЛАТА ОТКЛОНЕНА</b>\n\n📝 {html.escape(note)}',parse_mode='HTML')
@@ -449,6 +676,7 @@ async def payout_note(m,state:FSMContext):
         return
     db.media_payout_set_amount(pid,data['approved_amount'])
     db.media_payout_review(pid,'approved',m.from_user.id,note[:1500])
+    db.add_notification(r["uid"], f"Выплата #{pid} одобрена", "Сумма: " + str(data["approved_amount"]) + ". " + note[:700])
     await state.clear()
     await m.answer(f'✅ Заявка #{pid} одобрена. Сумма: {data["approved_amount"]}. После фактического перевода отметь выплату.',reply_markup=markup([[InlineKeyboardButton(text='💸 Отметить отправку денег',callback_data=f'mpaid:{pid}')]]))
     try: await bot.send_message(r['uid'],f'🎉 <b>ВЫПЛАТА ОДОБРЕНА!</b>\n\n💰 Сумма: <b>{data["approved_amount"]}</b>\n📝 {html.escape(note)}\n\n⏳ Ожидай фактического перевода.',parse_mode='HTML')
@@ -471,6 +699,7 @@ async def media_payout_paid(c):
     pid=int(c.data.split(':')[1]); r=db.media_payout_get(pid)
     if not r or r['status']!='approved': return await c.answer('Сначала одобри заявку.',show_alert=True)
     db.media_payout_review(pid,'paid',c.from_user.id,r.get('review_note') or '')
+    db.add_notification(r['uid'],f'Выплата #{pid} отправлена',f"Перевод на сумму {r['amount']} отмечен администрацией как выполненный.")
     try: await bot.send_message(r['uid'],f'💸 <b>ВЫПЛАТА ОТПРАВЛЕНА!</b>\n\nАдминистрация отметила перевод по заявке #{pid} на сумму <b>{html.escape(r["amount"])}</b>.',parse_mode='HTML')
     except Exception: logging.exception('Не удалось уведомить о выплате')
     await c.message.edit_reply_markup(reply_markup=None)
@@ -483,6 +712,7 @@ async def mok(c):
     if not a or a.get("status") != "pending": return await c.answer("Заявка уже обработана или не найдена.",show_alert=True)
     db.media_status(int(c.data.split(":")[1]),"approved")
     if a:
+        db.add_notification(a["uid"],"Заявка в медиапартнёры одобрена","Тебе открыт доступ к кабинету медиапартнёра.")
         try: await bot.send_message(a["uid"],"🎉 Твоя заявка в медиапартнёры FENIX ONLINE одобрена!")
         except: pass
     await c.message.edit_reply_markup(reply_markup=None); await c.answer("Одобрено")
@@ -493,6 +723,7 @@ async def mno(c):
     if not a or a.get("status") != "pending": return await c.answer("Заявка уже обработана или не найдена.",show_alert=True)
     db.media_status(aid,"rejected")
     if a:
+        db.add_notification(a["uid"],"Заявка в медиапартнёры отклонена","Администрация рассмотрела заявку. При необходимости можно подать её повторно.")
         try: await bot.send_message(a["uid"],"Заявка в медиапартнёры отклонена.")
         except: pass
     await c.message.edit_reply_markup(reply_markup=None); await c.answer("Отклонено")
@@ -503,12 +734,23 @@ async def owner(c):
         [InlineKeyboardButton(text="📣 Опубликовать пост",callback_data="post")],
         [InlineKeyboardButton(text="📨 Рассылка",callback_data="broadcast")],
         [InlineKeyboardButton(text="💸 Заявки на выплаты",callback_data="payout_queue")],
+        [InlineKeyboardButton(text="🎫 Обращения игроков",callback_data="ticket_queue")],
         [InlineKeyboardButton(text="🎨 Кастомизация бота",callback_data="customize")],
         [InlineKeyboardButton(text="👥 Составы и чаты",callback_data="staff_setup")],
         [InlineKeyboardButton(text="📈 Общая статистика",callback_data="ostats")],
         [InlineKeyboardButton(text="👮 Управление администраторами",callback_data="admins_manage")]
     ]))
     await c.answer()
+
+@dp.callback_query(F.data=="ticket_queue")
+async def ticket_queue(c):
+    if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
+    await c.answer()
+    rows=db.open_tickets(30)
+    if not rows:
+        return await c.message.answer("🎫 Открытых обращений нет.")
+    kb=[[InlineKeyboardButton(text=f"#{r['id']} · ID {r['uid']} · {str(r['subject'])[:28]}",callback_data=f"ticket_view:{r['id']}")] for r in rows]
+    await c.message.answer("🎫 <b>ОБРАЩЕНИЯ ИГРОКОВ</b>\nВыбери обращение:",parse_mode="HTML",reply_markup=markup(kb))
 
 @dp.callback_query(F.data=="admins_manage")
 async def admins_manage(c):
@@ -642,17 +884,17 @@ async def staff_setup(c):
     admin_id=db.setting("admin_chat_id","")
     leader_id=db.setting("leader_chat_id","")
     text=(
-        "👥 <b>УПРАВЛЕНИЕ СОСТАВАМИ И ЧАТАМИ</b>\\n━━━━━━━━━━━━━━━━━━\\n"
-        f"🛡 <b>Административный чат:</b> {'✅ Привязан' if admin_id else '⚪ Не привязан'}\\n"
-        f"<code>{html.escape(str(admin_id) if admin_id else '—')}</code>\\n\\n"
-        f"👑 <b>Лидерский чат:</b> {'✅ Привязан' if leader_id else '⚪ Не привязан'}\\n"
-        f"<code>{html.escape(str(leader_id) if leader_id else '—')}</code>\\n"
-        "━━━━━━━━━━━━━━━━━━\\n📌 <b>ПОДКЛЮЧЕНИЕ</b>\\n"
-        "1. Добавь бота в нужную группу.\\n"
-        "2. В админ-чате выполни /bind_admin_chat.\\n"
-        "3. В лидерском чате выполни /bind_leader_chat.\\n"
-        "━━━━━━━━━━━━━━━━━━\\n⌨️ <b>КОМАНДЫ СОСТАВА</b>\\n"
-        "/nnick ИгровойНик Должность — назначить\\n/stafflist — список состава\\n/staffremove ИгровойНик — снять должность"
+        "👥 <b>УПРАВЛЕНИЕ СОСТАВАМИ И ЧАТАМИ</b>\n━━━━━━━━━━━━━━━━━━\n"
+        f"🛡 <b>Административный чат:</b> {'✅ Привязан' if admin_id else '⚪ Не привязан'}\n"
+        f"<code>{html.escape(str(admin_id) if admin_id else '—')}</code>\n\n"
+        f"👑 <b>Лидерский чат:</b> {'✅ Привязан' if leader_id else '⚪ Не привязан'}\n"
+        f"<code>{html.escape(str(leader_id) if leader_id else '—')}</code>\n"
+        "━━━━━━━━━━━━━━━━━━\n📌 <b>ПОДКЛЮЧЕНИЕ</b>\n"
+        "1. Добавь бота в нужную группу.\n"
+        "2. В админ-чате выполни /bind_admin_chat.\n"
+        "3. В лидерском чате выполни /bind_leader_chat.\n"
+        "━━━━━━━━━━━━━━━━━━\n⌨️ <b>КОМАНДЫ СОСТАВА</b>\n"
+        "/nnick ИгровойНик Должность — назначить\n/stafflist — список состава\n/staffremove ИгровойНик — снять должность"
     )
     await c.message.answer(text,parse_mode="HTML",reply_markup=markup([
         [InlineKeyboardButton(text="🔄 Обновить статус чатов",callback_data="staff_setup")],
@@ -796,21 +1038,21 @@ def split_message(text,limit=4000):
     return chunks
 
 async def send_composed(chat_id,data):
-    """Formats the author's text as a quoted FENIX publication."""
+    """Авторский текст остаётся обычным; фирменная подпись FENIX цитируется внизу."""
     keyboard=None
     if data.get("bt") and data.get("bu"):
         keyboard=markup([[InlineKeyboardButton(text=data["bt"],url=data["bu"])]])
     raw=(data.get("text") or "").strip()
-    safe=html.escape(raw)
-    quote=f"<blockquote>{safe}</blockquote>" if safe else "<blockquote>Новости проекта FENIX ONLINE</blockquote>"
+    author=html.escape(raw)
     footer=(
-        "\n\n━━━━━━━━━━━━━━━━━━\n<b>🔥 FENIX ONLINE</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n<b>🔥 FENIX ONLINE</b>\n"
         "<i>Твой проект. Твои возможности.</i>\n\n"
         "🛡 <b>VPN:</b> @fenixVPNrobot\n"
         "⭐ <b>Stars:</b> @Fenix_stars_bot\n"
         '💬 <b>Форум:</b> <a href="http://forum.wh35740.web1.maze-tech.ru/index.php">Открыть форум</a>'
     )
-    text=quote+footer
+    signature=f"<blockquote>{footer}</blockquote>"
+    text=(author+"\n\n" if author else "")+signature
     photo=data.get("photo")
     if photo and len(text)<=1024:
         await bot.send_photo(chat_id,photo,caption=text,reply_markup=keyboard,parse_mode="HTML")
@@ -822,11 +1064,32 @@ async def send_composed(chat_id,data):
         return
     chunks=split_message(raw)
     for i,chunk in enumerate(chunks):
-        body=f"<blockquote>{html.escape(chunk)}</blockquote>"
+        body=html.escape(chunk)
         if i==len(chunks)-1:
-            body+=footer
+            body+="\n\n"+signature
         await bot.send_message(chat_id,body,parse_mode="HTML",
                                reply_markup=keyboard if i==len(chunks)-1 else None)
+
+async def _broadcast_worker(data, initiator):
+    ids=db.user_ids()
+    sem=asyncio.Semaphore(8)
+    sent=0
+    failed=0
+    async def deliver(target_id):
+        nonlocal sent, failed
+        async with sem:
+            try:
+                await send_composed(target_id,data)
+                sent += 1
+            except Exception:
+                failed += 1
+                logging.exception("Ошибка рассылки пользователю %s",target_id)
+            await asyncio.sleep(0.04)
+    await asyncio.gather(*(deliver(uid) for uid in ids))
+    try:
+        await bot.send_message(initiator,f"✅ <b>Рассылка завершена</b>\nДоставлено: {sent}\nНе доставлено: {failed}",parse_mode="HTML")
+    except Exception: logging.exception("Не удалось отправить итог рассылки")
+
 
 async def finish_composition(message,state,uid):
     data=await state.get_data()
@@ -836,14 +1099,8 @@ async def finish_composition(message,state,uid):
             await send_composed(CHANNEL,data)
             await message.answer("✅ Публикация отправлена в канал.")
         else:
-            sent=0
-            for target_id in db.user_ids():
-                try:
-                    await send_composed(target_id,data)
-                    sent+=1
-                except Exception:
-                    logging.exception("Не удалось отправить рассылку пользователю %s",target_id)
-            await message.answer(f"✅ Рассылка завершена. Доставлено: {sent}")
+            asyncio.create_task(_broadcast_worker(data.copy(),uid))
+            await message.answer("🚀 Рассылка поставлена в очередь. Бот продолжит обслуживать команды, а результат придёт отдельным сообщением.")
     except Exception as e:
         logging.exception("Ошибка отправки публикации/рассылки")
         await message.answer("❌ Ошибка отправки: "+str(e)[:800])
