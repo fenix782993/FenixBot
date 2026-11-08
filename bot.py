@@ -20,7 +20,7 @@ ADMINS={int(x) for x in os.getenv("ADMIN_IDS","").replace(" ","").split(",") if 
 if not TOKEN: raise RuntimeError("BOT_TOKEN не задан")
 logging.basicConfig(level=logging.INFO)
 bot=Bot(TOKEN); dp=Dispatcher(storage=MemoryStorage()); db=DB(os.getenv("DATABASE_PATH","fenix.sqlite3"))
-OWNER_IDS=ADMINS.copy()
+OWNER_IDS={int(x) for x in os.getenv('OWNER_IDS', os.getenv('ADMIN_IDS','')).replace(' ','').split(',') if x}
 REQUIRED_CHANNEL_URL = CHANNEL_URL or "https://t.me/+1usTps-EXmxjNWRl"
 def is_admin(uid): return db.is_admin(uid)
 
