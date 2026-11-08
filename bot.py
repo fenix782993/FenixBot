@@ -1,4 +1,4 @@
-import asyncio, logging, os, re, secrets, hashlib, html
+import asyncio, logging, os, re, secrets, hashlib, html, json
 from datetime import datetime, timezone, timedelta
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
@@ -30,7 +30,29 @@ def neat_value(value, fallback="Не указано"):
     value=str(value or "").strip()
     return value if value else fallback
 def is_owner(uid): return uid in OWNER_IDS
-def markup(rows): return InlineKeyboardMarkup(inline_keyboard=rows)
+def premium_button_icons():
+    try:
+        return json.loads(db.setting("button_custom_emoji_map", "{}") or "{}")
+    except Exception:
+        return {}
+
+def markup(rows):
+    """Apply a distinct Premium Custom Emoji to buttons by their exact label."""
+    icons = premium_button_icons()
+    styled_rows = []
+    for row in rows:
+        styled_row = []
+        for button in row:
+            try:
+                if isinstance(button, InlineKeyboardButton):
+                    custom_id = icons.get(button.text or "")
+                    if custom_id:
+                        button = button.model_copy(update={"icon_custom_emoji_id": str(custom_id)})
+            except Exception:
+                logging.exception("Не удалось применить Premium Emoji к кнопке")
+            styled_row.append(button)
+        styled_rows.append(styled_row)
+    return InlineKeyboardMarkup(inline_keyboard=styled_rows)
 
 async def subscribed(uid: int) -> bool:
     # Для приватного канала CHANNEL_ID должен быть задан числовым ID в окружении.
@@ -126,12 +148,193 @@ class S(StatesGroup):
     post_text=State(); post_photo_choice=State(); post_photo=State()
     post_button_choice=State(); post_button=State(); post_url=State()
     button_label=State(); button_url=State(); broadcast=State(); admin_add=State(); admin_remove=State()
+    button_emoji=State(); button_emoji_sequence=State()
     support_subject=State(); support_body=State()
 def hashpw(p):
     salt=secrets.token_hex(16)
     return salt+"$"+hashlib.pbkdf2_hmac("sha256",p.encode(),salt.encode(),200000).hex()
 @dp.message(Command("id"))
 async def cmd_id(m): await m.answer(f"Твой Telegram ID: {m.from_user.id}")
+
+PREMIUM_BUTTON_CATALOG = ['📢 Подписаться', '✅ Проверить подписку', '🎫 Мои заявки', '🔔 Уведомления', '🏆 Достижения', '📊 Статистика', '⚙️ Настройки', '💬 Поддержка', '⬅️ Главное меню', '🎬 Кабинет медиапартнёра', '📊 Статистика видео', '🔗 Канал и примеры', '📅 Календарь активности', '💳 История выплат', '🎥 Отправить видеоотчёт', '💰 Запросить выплату', '⬅️ В кабинет', '🏠 Главное меню', '➕ Создать обращение', 'Открыть обращение', '✉️ Ответить', '🔒 Закрыть обращение', '⬅️ К моим заявкам', '🎫 К обращениям', '⬅️ В кабинет медиапартнёра', '⬅️ Назад', '📋 Заявки на выплаты', '⬅️ В панель владельца', '✅ Одобрить / рассчитать', '❌ Отклонить', '📋 К списку', '💸 Отметить отправку денег', '📣 Опубликовать пост', '📨 Рассылка', '💸 Заявки на выплаты', '🎫 Обращения игроков', '🎨 Кастомизация бота', '👥 Составы и чаты', '📈 Общая статистика', '👮 Управление администраторами', '💎 Premium Emoji для всех кнопок', '➕ Добавить администратора', '➖ Снять администратора', '🔄 Обновить статус чатов', '↩️ В панель владельца', '✅ Да', '❌ Нет']
+
+def _load_emoji_pack():
+    try:
+        return json.loads(db.setting("premium_emoji_pack", "[]") or "[]")
+    except Exception:
+        return []
+
+def _save_button_emoji_map(mapping):
+    db.set_setting("button_custom_emoji_map", json.dumps(mapping, ensure_ascii=False))
+
+@dp.message(Command("emojipack"))
+async def import_emoji_pack(m: Message):
+    if not is_owner(m.from_user.id):
+        return await m.answer("⛔ Импортировать наборы эмодзи может только владелец.")
+    parts = (m.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        return await m.answer(
+            "💎 <b>ИМПОРТ PREMIUM-ПАКА</b>\n\n"
+            "Отправь ссылку на набор:\n"
+            "<code>/emojipack https://t.me/addemoji/НАЗВАНИЕ_ПАКА</code>\n\n"
+            "Также поддерживается ссылка <code>t.me/addstickers/...</code>.",
+            parse_mode="HTML"
+        )
+    link = parts[1].strip()
+    match = re.search(r"(?:t\\.me|telegram\\.me)/(?:addemoji|addstickers)/([A-Za-z0-9_]+)", link)
+    if not match:
+        return await m.answer("❌ Не распознал ссылку. Нужна ссылка вида https://t.me/addemoji/название_пака")
+    pack_name = match.group(1)
+    try:
+        sticker_set = await bot.get_sticker_set(pack_name)
+    except Exception as e:
+        logging.exception("Не удалось получить Telegram sticker set %s", pack_name)
+        return await m.answer(
+            "❌ Не удалось загрузить набор через Telegram Bot API. "
+            "Проверь ссылку и доступность набора для бота."
+        )
+    items = []
+    for sticker in sticker_set.stickers:
+        custom_id = getattr(sticker, "custom_emoji_id", None)
+        if custom_id:
+            items.append({"id": str(custom_id), "emoji": getattr(sticker, "emoji", None) or "💎"})
+    if not items:
+        return await m.answer(
+            "⚠️ Набор получен, но Telegram не вернул для его элементов custom_emoji_id. "
+            "Убедись, что это именно набор Custom Emoji, а не обычных стикеров."
+        )
+    db.set_setting("premium_emoji_pack", json.dumps(items, ensure_ascii=False))
+    preview = "\n".join(f"{i}. {html.escape(x['emoji'])} — <code>{x['id']}</code>" for i,x in enumerate(items[:30],1))
+    if len(items) > 30:
+        preview += f"\n… и ещё {len(items)-30}"
+    await m.answer(
+        f"✅ <b>НАБОР СОХРАНЁН</b>\n"
+        f"📦 {html.escape(pack_name)}\n"
+        f"💎 Эмодзи загружено: <b>{len(items)}</b>\n\n"
+        f"{preview}\n\n"
+        "Назначить значок кнопке:\n<code>/setbtnemoji НОМЕР_КНОПКИ НОМЕР_ЭМОДЗИ</code>\n"
+        "Список кнопок: <code>/btnlist</code>\n"
+        "Список эмодзи: <code>/emojilist</code>",
+        parse_mode="HTML"
+    )
+
+@dp.message(Command("emojilist"))
+async def list_pack_emojis(m: Message):
+    if not is_owner(m.from_user.id):
+        return await m.answer("⛔ Нет доступа.")
+    items = _load_emoji_pack()
+    if not items:
+        return await m.answer("Пак ещё не загружен. Используй /emojipack ссылка")
+    lines = [f"{i}. {html.escape(x.get('emoji','💎'))} — <code>{html.escape(x['id'])}</code>" for i,x in enumerate(items,1)]
+    await m.answer("💎 <b>ЭМОДЗИ ИЗ СОХРАНЁННОГО ПАКА</b>\n\n" + "\n".join(lines), parse_mode="HTML")
+
+@dp.message(Command("btnlist"))
+async def list_premium_buttons(m: Message):
+    if not is_owner(m.from_user.id):
+        return await m.answer("⛔ Нет доступа.")
+    mapping = premium_button_icons()
+    lines = []
+    for i,label in enumerate(PREMIUM_BUTTON_CATALOG,1):
+        status = "💎 назначен" if mapping.get(label) else "— не назначен"
+        lines.append(f"{i}. {html.escape(label)} — {status}")
+    await m.answer("🎛 <b>КНОПКИ БОТА</b>\n\n" + "\n".join(lines), parse_mode="HTML")
+
+@dp.message(Command("setbtnemoji"))
+async def set_button_custom_emoji(m: Message):
+    if not is_owner(m.from_user.id):
+        return await m.answer("⛔ Нет доступа.")
+    parts = (m.text or "").split()
+    if len(parts) != 3 or not parts[1].isdigit() or not parts[2].isdigit():
+        return await m.answer("Формат: <code>/setbtnemoji НОМЕР_КНОПКИ НОМЕР_ЭМОДЗИ</code>\nНапример: <code>/setbtnemoji 1 4</code>", parse_mode="HTML")
+    button_index, emoji_index = int(parts[1]), int(parts[2])
+    if not 1 <= button_index <= len(PREMIUM_BUTTON_CATALOG):
+        return await m.answer(f"Номер кнопки должен быть от 1 до {len(PREMIUM_BUTTON_CATALOG)}.")
+    pack = _load_emoji_pack()
+    if not 1 <= emoji_index <= len(pack):
+        return await m.answer(f"В сохранённом паке нет эмодзи №{emoji_index}. Смотри /emojilist.")
+    label = PREMIUM_BUTTON_CATALOG[button_index-1]
+    mapping = premium_button_icons()
+    mapping[label] = str(pack[emoji_index-1]["id"])
+    _save_button_emoji_map(mapping)
+    await m.answer(
+        f"✅ <b>ЗНАЧОК НАЗНАЧЕН</b>\n\n"
+        f"Кнопка №{button_index}: <b>{html.escape(label)}</b>\n"
+        f"Эмодзи №{emoji_index}: {html.escape(pack[emoji_index-1].get('emoji','💎'))}\n\n"
+        "Открой соответствующее меню заново, чтобы увидеть изменение.",
+        parse_mode="HTML"
+    )
+
+@dp.message(Command("resetbtnemoji"))
+async def reset_button_custom_emoji(m: Message):
+    if not is_owner(m.from_user.id):
+        return await m.answer("⛔ Нет доступа.")
+    parts = (m.text or "").split()
+    if len(parts) != 2 or not parts[1].isdigit():
+        return await m.answer("Формат: <code>/resetbtnemoji НОМЕР_КНОПКИ</code>", parse_mode="HTML")
+    index = int(parts[1])
+    if not 1 <= index <= len(PREMIUM_BUTTON_CATALOG):
+        return await m.answer("Неверный номер кнопки.")
+    label = PREMIUM_BUTTON_CATALOG[index-1]
+    mapping = premium_button_icons()
+    mapping.pop(label, None)
+    _save_button_emoji_map(mapping)
+    await m.answer(f"✅ Premium Emoji снят с кнопки: <b>{html.escape(label)}</b>", parse_mode="HTML")
+
+@dp.message(Command("premiumall"))
+async def premium_all_start(m: Message, state: FSMContext):
+    if not is_owner(m.from_user.id):
+        return await m.answer("⛔ Настраивать Premium Emoji может только владелец бота.")
+    await state.set_state(S.button_emoji_sequence)
+    await state.update_data(premium_button_index=0, premium_button_map={})
+    lines = ["💎 <b>НАСТРОЙКА PREMIUM EMOJI ДЛЯ КАЖДОЙ КНОПКИ</b>", "━━━━━━━━━━━━━━━━━━"]
+    for i, label in enumerate(PREMIUM_BUTTON_CATALOG, 1):
+        lines.append(f"{i}. {html.escape(label)}")
+    lines += ["━━━━━━━━━━━━━━━━━━", "Отправляй Premium Emoji по одному, строго по порядку: сначала №1, затем №2, №3 и так далее.", "После каждого эмодзи бот подтвердит номер. Команда /premiumstop отменит настройку."]
+    await m.answer("\\n".join(lines), parse_mode="HTML")
+
+@dp.message(S.button_emoji_sequence)
+async def premium_all_receive(m: Message, state: FSMContext):
+    if not is_owner(m.from_user.id):
+        await state.clear()
+        return await m.answer("⛔ Нет доступа.")
+    data = await state.get_data()
+    index = int(data.get("premium_button_index", 0))
+    if index >= len(PREMIUM_BUTTON_CATALOG):
+        await state.clear()
+        return await m.answer("✅ Все кнопки уже настроены. Используй /premiumall, чтобы начать заново.")
+    entities = list(m.entities or []) + list(m.caption_entities or [])
+    custom = next((e for e in entities if e.type == "custom_emoji" and e.custom_emoji_id), None)
+    if not custom:
+        return await m.answer(f"💎 Пришли именно Premium Emoji для кнопки №{index+1}: <b>{html.escape(PREMIUM_BUTTON_CATALOG[index])}</b>", parse_mode="HTML")
+    mapping = data.get("premium_button_map", {})
+    mapping[PREMIUM_BUTTON_CATALOG[index]] = str(custom.custom_emoji_id)
+    index += 1
+    await state.update_data(premium_button_index=index, premium_button_map=mapping)
+    if index >= len(PREMIUM_BUTTON_CATALOG):
+        db.set_setting("button_custom_emoji_map", json.dumps(mapping, ensure_ascii=False))
+        await state.clear()
+        return await m.answer(f"🎉 <b>ГОТОВО!</b> Настроены Premium Emoji для всех {len(mapping)} кнопок. Открой меню заново, чтобы увидеть значки.", parse_mode="HTML")
+    await m.answer(
+        f"✅ Эмодзи №{index} сохранён.\n"
+        f"💎 Теперь отправь №{index+1} для кнопки:\n<b>{html.escape(PREMIUM_BUTTON_CATALOG[index])}</b>\n"
+        f"Осталось: {len(PREMIUM_BUTTON_CATALOG)-index}",
+        parse_mode="HTML"
+    )
+
+@dp.message(Command("premiumstop"))
+async def premium_all_stop(m: Message, state: FSMContext):
+    if not is_owner(m.from_user.id):
+        return await m.answer("⛔ Нет доступа.")
+    await state.clear()
+    await m.answer("Настройка Premium Emoji остановлена. Уже сохранённые настройки не изменены.")
+
+@dp.message(Command("clearbuttonemoji"))
+async def clear_button_emoji(m: Message):
+    if not is_owner(m.from_user.id):
+        return await m.answer("⛔ Нет доступа.")
+    db.set_setting("button_custom_emoji_map", "{}")
+    db.set_setting("button_custom_emoji_id", "")
+    await m.answer("✅ Все Premium Emoji для кнопок удалены.")
 @dp.message(CommandStart())
 async def start(m:Message,state:FSMContext):
     try:
@@ -728,6 +931,21 @@ async def mno(c):
         try: await bot.send_message(a["uid"],"Заявка в медиапартнёры отклонена.")
         except: pass
     await c.message.edit_reply_markup(reply_markup=None); await c.answer("Отклонено")
+@dp.callback_query(F.data=="button_emoji_setup")
+async def button_emoji_setup(c, state: FSMContext):
+    if not is_owner(c.from_user.id):
+        return await c.answer("Только владелец может менять Premium Emoji.", show_alert=True)
+    await state.set_state(S.button_emoji)
+    await edit_panel(
+        c.message,
+        "💎 <b>PREMIUM EMOJI ДЛЯ ВСЕХ КНОПОК</b>\\n\\n"
+        "Отправь следующим сообщением один Premium Custom Emoji. "
+        "Он будет автоматически добавлен ко всем кнопкам бота.\\n\\n"
+        "Отключить: /clearbuttonemoji",
+        parse_mode="HTML"
+    )
+    await c.answer()
+
 @dp.callback_query(F.data=="owner")
 async def owner(c):
     if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
@@ -739,7 +957,8 @@ async def owner(c):
         [InlineKeyboardButton(text="🎨 Кастомизация бота",callback_data="customize")],
         [InlineKeyboardButton(text="👥 Составы и чаты",callback_data="staff_setup")],
         [InlineKeyboardButton(text="📈 Общая статистика",callback_data="ostats")],
-        [InlineKeyboardButton(text="👮 Управление администраторами",callback_data="admins_manage")]
+        [InlineKeyboardButton(text="👮 Управление администраторами",callback_data="admins_manage")],
+        [InlineKeyboardButton(text="💎 Premium Emoji для всех кнопок",callback_data="button_emoji_setup")]
     ]))
     await c.answer()
 
