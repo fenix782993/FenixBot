@@ -3,7 +3,7 @@ import store as shop
 from datetime import datetime, timezone, timedelta
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, MessageEntity, WebAppInfo
+from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, MessageEntity, WebAppInfo, LabeledPrice
 from pathlib import Path
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
@@ -203,7 +203,7 @@ def menu(uid):
     label=db.setting("home_label","📢 Новости FENIX ONLINE")
     url=db.setting("home_url",CHANNEL_URL)
     store_url=os.getenv("WEBAPP_URL","https://fenixbot-vyqo.onrender.com").rstrip("/")+"/store"
-    rows=[[InlineKeyboardButton(text="🛍 Донат и товары",url=store_url)],
+    rows=[[InlineKeyboardButton(text="🛍 Донат и товары",url=store_url)],\n          [InlineKeyboardButton(text="⭐ Пополнить Stars",callback_data="donate_stars")],
           [InlineKeyboardButton(text=db.setting("cab_label","👤 Личный кабинет"),callback_data="cab"),
            InlineKeyboardButton(text=db.setting("ref_label","🔗 Моя реферальная ссылка"),callback_data="ref")],
           [InlineKeyboardButton(text=db.setting("stats_label","📊 Статистика"),callback_data="stats"),
@@ -485,6 +485,70 @@ async def start(m:Message,state:FSMContext):
     except Exception:
         logging.exception("Ошибка /start")
         await m.answer("Не удалось открыть бота. Попробуй ещё раз позже.")
+
+# Telegram Stars top-up. 100 RUB is priced at 105 Stars; NMZ are credited
+# only after Telegram confirms successful_payment (not on pre-checkout).
+STARS_RUB_PRESETS = (100, 300, 500, 1000, 2500, 5000)
+
+@dp.callback_query(F.data == "donate_stars")
+async def donate_stars_menu(c):
+    if not db.user(c.from_user.id):
+        return await c.answer("Сначала зарегистрируйся через /start.", show_alert=True)
+    rows=[[InlineKeyboardButton(text=f"{rub} ₽ · {int(rub*1.05)} ⭐", callback_data=f"stars_rub:{rub}")]
+          for rub in STARS_RUB_PRESETS]
+    rows.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data="back_home")])
+    await c.message.answer("⭐ <b>Пополнение Telegram Stars</b>\nМинимум 100 ₽. Курс начисления: 1 ₽ = 2 NMZ.\nОплата проходит через Telegram.",parse_mode="HTML",reply_markup=markup(rows))
+    await c.answer()
+
+@dp.callback_query(F.data.startswith("stars_rub:"))
+async def stars_invoice(c):
+    if not db.user(c.from_user.id):
+        return await c.answer("Сначала зарегистрируйся через /start.", show_alert=True)
+    try: rub=int(c.data.split(":",1)[1])
+    except Exception: return await c.answer("Некорректная сумма.",show_alert=True)
+    if rub<100 or rub>100000: return await c.answer("Сумма должна быть от 100 ₽.",show_alert=True)
+    stars=int(rub*1.05)
+    nmz=rub*2
+    await bot.send_invoice(
+        chat_id=c.from_user.id,
+        title=f"FENIX ONLINE — {nmz} NMZ",
+        description=f"Пополнение игрового баланса на {nmz} NMZ. Оплата {rub} RUB в Telegram Stars.",
+        payload=f"fenix_nmz:{c.from_user.id}:{rub}:{stars}",
+        provider_token="",
+        currency="XTR",
+        prices=[LabeledPrice(label=f"{nmz} NMZ", amount=stars)],
+    )
+    await c.answer("Счёт Telegram Stars отправлен.")
+
+@dp.pre_checkout_query()
+async def stars_pre_checkout(q):
+    try:
+        parts=q.invoice_payload.split(":")
+        valid=(len(parts)==4 and parts[0]=="fenix_nmz" and int(parts[1])==q.from_user.id
+               and int(parts[2])>=100 and int(parts[3])==q.total_amount and q.currency=="XTR")
+    except Exception: valid=False
+    await q.answer(ok=bool(valid), error_message=None if valid else "Счёт недействителен. Открой пополнение заново.")
+
+@dp.message(F.successful_payment)
+async def stars_success(m):
+    payment=m.successful_payment
+    try:
+        parts=payment.invoice_payload.split(":")
+        if len(parts)!=4 or parts[0]!="fenix_nmz" or int(parts[1])!=m.from_user.id:
+            raise ValueError("invalid invoice payload")
+        rub,stars=int(parts[2]),int(parts[3])
+        if payment.currency!="XTR" or payment.total_amount!=stars or rub<100:
+            raise ValueError("payment amount mismatch")
+        nmz=rub*2
+        did=shop.new_donation(db,m.from_user.id,rub,nmz,"telegram_stars",f"telegram_payment_charge_id:{payment.telegram_payment_charge_id}")
+        if not shop.mark_paid(db,did,m.from_user.id,"Telegram Stars successful_payment"):
+            raise RuntimeError("could not credit confirmed Stars payment")
+        db.add_notification(m.from_user.id,"Пополнение Stars",f"Оплата {stars} Stars подтверждена. Начислено {nmz} NMZ.")
+        await m.answer(f"✅ Оплата подтверждена Telegram. На баланс начислено <b>{nmz} NMZ</b>.",parse_mode="HTML")
+    except Exception:
+        logging.exception("Telegram Stars payment processing failed")
+        await m.answer("Платёж получен, но автоматическое зачисление не завершилось. Обратись к владельцу с чеком Telegram.")
+
 @dp.callback_query(F.data.startswith("donation_paid:"))
 async def donation_paid(c):
     if not is_owner(c.from_user.id): return await c.answer("Только владелец.",show_alert=True)
