@@ -415,8 +415,8 @@ async def admin_design(req):
             "button_icons": icons,
             "emoji_pack": pack,
             "buttons": core.PREMIUM_BUTTON_CATALOG,
-            "welcome_text": db.setting("welcome_text", "🔥 FENIX ONLINE\\nТвой личный кабинет."),
-            "registration_text": db.setting("registration_text", "🔥 FENIX ONLINE — регистрация\\n\\nВведи игровой никнейм (3–24 символа, латиница, цифры и _)."),
+            "welcome_text": db.setting("welcome_text", "🔥 FENIX ONLINE\nТвой личный кабинет."),
+            "registration_text": db.setting("registration_text", "🔥 FENIX ONLINE — регистрация\n\nВведи игровой никнейм (3–24 символа, латиница, цифры и _)."),
             "labels": {key: db.setting(key, default) for key, default in {
                 "cab_label": "👤 Личный кабинет",
                 "ref_label": "🔗 Моя реферальная ссылка",
