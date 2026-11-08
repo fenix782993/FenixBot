@@ -677,19 +677,15 @@ async def main():
         raise RuntimeError("BOT_TOKEN не задан")
     db.init()
     shop.init(db)
-    if WEBAPP_URL.startswith("https://"):
-        try:
-            await tg.set_chat_menu_button(menu_button=MenuButtonWebApp(text="FENIX ONLINE", web_app=WebAppInfo(url=WEBAPP_URL.rstrip("/") + "/app")))
-            log.info("Telegram Mini App menu button configured")
-        except Exception:
-            log.exception("Mini App menu button configuration failed")
-    else:
-        log.warning("Set WEBAPP_URL to the public HTTPS Render URL to enable the Mini App menu button")
+    try:
+        await tg.set_chat_menu_button(menu_button=MenuButtonCommands())
+        log.info("Mini App menu button disabled; standalone website mode")
+    except Exception:
+        log.exception("Could not remove Mini App menu button")
     app = web.Application(middlewares=[auth], client_max_size=1024 * 1024)
     app.router.add_get("/", home)
     app.router.add_get("/app", home)
     app.router.add_get("/store", lambda _: web.FileResponse(WEB_DIR / "store.html"))
-    app.router.add_post("/public/manual-donation", public_manual_donation)
     app.router.add_get("/health", lambda _: web.json_response({"status": "ok", "service": "fenix-miniapp"}))
     app.router.add_get("/api/bootstrap", bootstrap)
     app.router.add_get("/api/stats", stats)
