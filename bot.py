@@ -873,7 +873,14 @@ async def set_staff_title(m):
         return await m.answer("Игрок с таким ником не найден. Он должен сначала запустить бота и зарегистрироваться.")
     db.set_staff_role(user["uid"], kind, title, m.from_user.id)
     if kind == "admin": db.add_admin(user["uid"], m.from_user.id)
-    await m.answer(f"✅ Должность назначена\nИгрок: {db.staff_display(user['uid'])}\nДолжность: {title}")
+    await m.answer(
+        "✅ <b>ДОЛЖНОСТЬ НАЗНАЧЕНА</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"🎮 Игрок: <b>{html.escape(str(user.get('nick') or 'Без ника'))}</b>\n"
+        f"🏅 Должность: <b>{html.escape(str(title))}</b>\n"
+        "━━━━━━━━━━━━━━━━━━",
+        parse_mode="HTML"
+    )
     try: await bot.send_message(user["uid"], f"🎖 Вам назначена должность: {title}")
     except Exception: pass
 
@@ -881,37 +888,70 @@ async def set_staff_title(m):
 async def staff_list(m):
     kind = staff_chat_kind(m.chat.id)
     if kind is None:
-        return await m.answer("Команда доступна только в привязанных административном или лидерском чатах.")
+        return await m.answer("⛔ Эта команда доступна только в привязанном чате состава.")
+
     rows = db.staff_list(kind)
-    heading = "👮 СОСТАВ АДМИНИСТРАЦИИ" if kind == "admin" else "👑 СОСТАВ ЛИДЕРОВ"
+    is_admin_roster = kind == "admin"
+    heading = "👮‍♂️ СОСТАВ АДМИНИСТРАЦИИ" if is_admin_roster else "👑 СОСТАВ ЛИДЕРОВ"
+    divider = "━━━━━━━━━━━━━━━━━━"
+
     if not rows:
-        return await m.answer(heading + "\\n\\nСостав пока пуст.\\nДобавить: /nnick ИгровойНик Должность")
+        return await m.answer(
+            f"{heading}\n{divider}\n\n"
+            "Пока список пуст.\n\n"
+            "➕ Добавить игрока:\n"
+            "<code>/nnick ИгровойНик Должность</code>",
+            parse_mode="HTML"
+        )
+
     lines = []
     for i, row in enumerate(rows, 1):
         user = db.user(row["uid"]) or {}
-        nick = user.get("nick") or "Игровой ник не указан"
-        username = ("@" + user["username"]) if user.get("username") else "username не указан"
-        title = row.get("title") or ("Администратор" if kind == "admin" else "Лидер")
+        nick = html.escape(str(user.get("nick") or "Игровой ник не указан"))
+        raw_username = user.get("username")
+        username = "@" + html.escape(str(raw_username).lstrip("@")) if raw_username else "Не указан"
+        title = html.escape(str(row.get("title") or ("Администратор" if is_admin_roster else "Лидер")))
+        uid = html.escape(str(row["uid"]))
         lines.append(
-            f"{i}. 🎮 {nick}\\n"
-            f"   Telegram: {username}\\n"
-            f"   Должность: {title}\\n"
-            f"   ID: <code>{row['uid']}</code>"
+            f"<b>{i}. 🎮 {nick}</b>\n"
+            f"   👤 Telegram: {username}\n"
+            f"   🏅 Должность: <b>{title}</b>\n"
+            f"   🆔 ID: <code>{uid}</code>"
         )
-    await m.answer(heading + "\\n\\n" + "\\n\\n".join(lines), parse_mode="HTML")
+
+    footer = (
+        f"\n{divider}\n"
+        f"👥 Всего в составе: <b>{len(rows)}</b>\n\n"
+        "🛠 Управление составом:\n"
+        "<code>/nnick ИгровойНик Должность</code> — добавить или изменить\n"
+        "<code>/staffremove ИгровойНик</code> — снять должность"
+    )
+    await m.answer(
+        f"{heading}\n{divider}\n\n" + "\n\n".join(lines) + footer,
+        parse_mode="HTML"
+    )
+
 
 @dp.message(Command("staffhelp"))
 async def staff_help(m):
     kind = staff_chat_kind(m.chat.id)
     if kind is None:
-        return await m.answer("Сначала привяжите этот чат: /bind_admin_chat или /bind_leader_chat.")
+        return await m.answer("⛔ Сначала привяжите эту группу командой /bind_admin_chat или /bind_leader_chat.")
+
     await m.answer(
-        "📋 <b>КОМАНДЫ СОСТАВА</b>\\n\\n"
-        "/nnick ИгровойНик Должность — добавить игрока в состав или изменить должность\\n"
-        "/stafflist — показать игровой ник, Telegram username, должность и ID\\n"
-        "/staffremove ИгровойНик — удалить игрока из состава\\n"
-        "/chatid — показать ID этого чата\\n\\n"
-        "Пример: <code>/nnick Fenix_Rudcov Главный администратор</code>",
+        "📋 <b>УПРАВЛЕНИЕ СОСТАВОМ</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "➕ <b>Добавить игрока / изменить должность</b>\n"
+        "<code>/nnick ИгровойНик Должность</code>\n\n"
+        "📋 <b>Посмотреть весь состав</b>\n"
+        "<code>/stafflist</code>\n\n"
+        "➖ <b>Снять игрока с должности</b>\n"
+        "<code>/staffremove ИгровойНик</code>\n\n"
+        "🆔 <b>Узнать ID группы</b>\n"
+        "<code>/chatid</code>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "Пример:\n"
+        "<code>/nnick Fenix_Rudcov Главный администратор</code>",
         parse_mode="HTML"
     )
 
@@ -925,7 +965,13 @@ async def staff_remove(m):
     if not user: return await m.answer("Игрок не найден.")
     db.remove_staff_role(user["uid"],kind)
     if kind == "admin" and user["uid"] not in OWNER_IDS: db.remove_admin(user["uid"])
-    await m.answer(f"✅ Должность снята: {db.staff_display(user['uid'])}")
+    await m.answer(
+        "✅ <b>ДОЛЖНОСТЬ СНЯТА</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"🎮 Игрок: <b>{html.escape(str(user.get('nick') or 'Без ника'))}</b>\n"
+        "━━━━━━━━━━━━━━━━━━",
+        parse_mode="HTML"
+    )
 
 @dp.callback_query(F.data == "staff_setup")
 async def staff_setup(c):
