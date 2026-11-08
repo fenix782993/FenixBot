@@ -489,18 +489,19 @@ async def shop_buy(req):
         region=str(details.get("region",""))
         if country not in {"Россия","Казахстан","Беларусь","Украина","Грузия"}:
             return response("Выбери страну из списка.",400)
-        if len(first)!=1 or first not in shop.PLATE_LETTERS or len(last)!=2 or any(x not in shop.PLATE_LETTERS for x in last):
-            return response("Недопустимые буквы номера.",400)
+        letters=str(details.get("letters", first+last)).upper()
+        if len(letters)!=3 or any(x not in shop.PLATE_LETTERS for x in letters):
+            return response("Укажи ровно 3 латинские буквы A–Z.",400)
         if len(digits)!=3 or not digits.isdigit() or region not in shop.REGIONS:
-            return response("Проверь цифры и регион.",400)
+            return response("Укажи 3 цифры и выбери регион.",400)
         multiplier=1.0
         if len(set(digits))==1:multiplier+=1.0
-        if len(set(first+last))==1:multiplier+=1.5
+        if len(set(letters))==1:multiplier+=1.5
         if len(set(region))==1:multiplier+=0.2
         price=int(round(700*multiplier))
-        plate=f"{first}{digits}{last} {region}"
+        plate=f"{letters} {digits} {region}"
         product_name=f"Автомобильный номер {plate} · {country}"
-        details={"country":country,"plate":plate,"first":first,"digits":digits,"last":last,"region":region,"price_formula":"700 NMZ + бонусы за повторения"}
+        details={"country":country,"plate":plate,"letters":letters,"digits":digits,"region":region,"price_formula":"700 NMZ + бонусы за повторения"}
     order_id=shop.create_order(db,user_id,nick,code,product_name,price,json.dumps(details,ensure_ascii=False)[:1500])
     if not order_id:return response("Недостаточно NMZ. Сначала пополни кошелёк.",409)
     msg=f"🛒 Заказ #{order_id} принят. Товар: {product_name} · {price} NMZ. Ник: {nick}. Ожидает выдачи администрацией."
