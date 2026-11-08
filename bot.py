@@ -203,7 +203,7 @@ def menu(uid):
     label=db.setting("home_label","📢 Новости FENIX ONLINE")
     url=db.setting("home_url",CHANNEL_URL)
     store_url=os.getenv("WEBAPP_URL","https://fenixbot-vyqo.onrender.com").rstrip("/")+"/store"
-    rows=[[InlineKeyboardButton(text="🛍 Донат и товары",url=store_url)],\n          [InlineKeyboardButton(text="⭐ Пополнить Stars",callback_data="donate_stars")],
+    rows=[[InlineKeyboardButton(text="🛍 Донат и товары",url=store_url)],\n          [InlineKeyboardButton(text="⭐ Пополнить Stars",callback_data="donate_stars")],\n          [InlineKeyboardButton(text="💳 Ручное пополнение",callback_data="manual_donation")],
           [InlineKeyboardButton(text=db.setting("cab_label","👤 Личный кабинет"),callback_data="cab"),
            InlineKeyboardButton(text=db.setting("ref_label","🔗 Моя реферальная ссылка"),callback_data="ref")],
           [InlineKeyboardButton(text=db.setting("stats_label","📊 Статистика"),callback_data="stats"),
@@ -213,6 +213,7 @@ def menu(uid):
     if is_admin(uid): rows.append([InlineKeyboardButton(text=db.setting("owner_label","⚙️ Панель владельца"),callback_data="owner")])
     return markup(rows)
 class S(StatesGroup):
+    manual_rub=State(); manual_proof=State()
     nick=State(); password=State(); media_channel=State(); media_stats=State(); media_contact=State()
     payout_channel=State(); payout_video=State(); media_payout_requisites=State(); payout_views=State(); payout_amount=State(); payout_note=State(); customize_label=State()
     post_text=State(); post_photo_choice=State(); post_photo=State()
@@ -489,6 +490,49 @@ async def start(m:Message,state:FSMContext):
 # Telegram Stars top-up. 100 RUB is priced at 105 Stars; NMZ are credited
 # only after Telegram confirms successful_payment (not on pre-checkout).
 STARS_RUB_PRESETS = (100, 300, 500, 1000, 2500, 5000)
+
+
+@dp.callback_query(F.data == "manual_donation")
+async def manual_donation_start(c,state:FSMContext):
+    if not db.user(c.from_user.id):
+        return await c.answer("Сначала зарегистрируйся через /start.",show_alert=True)
+    await state.set_state(S.manual_rub)
+    await c.message.answer("Введи сумму перевода в рублях. Минимум 100 ₽.")
+    await c.answer()
+
+@dp.message(S.manual_rub)
+async def manual_donation_rub(m,state:FSMContext):
+    raw=(m.text or "").strip().replace(" ","")
+    if not raw.isdigit() or not 100<=int(raw)<=100000:
+        return await m.answer("Укажи целую сумму от 100 до 100 000 ₽.")
+    await state.update_data(manual_rub=int(raw))
+    await state.set_state(S.manual_proof)
+    await m.answer("Переведи деньги на Сбербанк / Т-Банк: +7 906 785-38-60. Затем пришли комментарий к платежу или последние 4 цифры операции. Не отправляй полный номер карты.")
+
+@dp.message(S.manual_proof)
+async def manual_donation_proof(m,state:FSMContext):
+    proof=(m.text or "").strip()[:500]
+    if len(proof)<3:return await m.answer("Добавь комментарий или последние 4 цифры перевода.")
+    data=await state.get_data(); rub=int(data["manual_rub"]); uid=m.from_user.id
+    nmz=rub*2
+    did=shop.new_donation(db,uid,rub,nmz,"manual",proof)
+    user=db.user(uid) or {}
+    text_admin=(f"💳 <b>Новая заявка на ручное пополнение #{did}</b>\n"
+      f"Игрок: {html.escape(user.get('nick','—'))}\nTelegram ID: <code>{uid}</code>\n"
+      f"Сумма: <b>{rub} ₽</b>\nК начислению: <b>{nmz} NMZ</b>\nПодтверждение: {html.escape(proof)}\n\n"
+      "Сверь поступление в банке. Только после проверки нажимай «Одобрить».")
+    kb=markup([[InlineKeyboardButton(text="✅ Одобрить",callback_data=f"donation_paid:{did}"),
+               InlineKeyboardButton(text="❌ Отклонить",callback_data=f"donation_rejected:{did}")]])
+    sent=0
+    for aid in db.admin_ids():
+        try: await bot.send_message(aid,text_admin,parse_mode="HTML",reply_markup=kb); sent+=1
+        except Exception: logging.exception("manual donation owner notification failed")
+    await state.clear()
+    if sent:
+        await m.answer(f"Заявка #{did} отправлена владельцу. {nmz} NMZ будут начислены только после его личного одобрения.")
+    else:
+        shop.reject_donation(db,did,uid,"Не удалось уведомить владельца")
+        await m.answer("Не удалось отправить заявку владельцу. Попробуй позже или напиши в поддержку.")
 
 @dp.callback_query(F.data == "donate_stars")
 async def donate_stars_menu(c):
