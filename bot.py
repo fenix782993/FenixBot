@@ -67,6 +67,20 @@ def markup(rows):
                     keys = [button.text or "", callback, aliases.get(callback, "")]
                     custom_id = next((icons.get(key) for key in keys if icons.get(key)), None)
                     style = next((styles.get(key) for key in keys if styles.get(key)), None)
+                    # Default palette mirrors the color-coded Telegram reference.
+                    default_styles = {
+                        "cab": "primary", "ref": "success", "stats": "primary",
+                        "top": "success", "media": "success", "media_cabinet": "success",
+                        "owner": "danger", "check_subscription": "success",
+                        "support": "danger", "back_home": "primary",
+                        "my_tickets": "primary", "notifications": "primary",
+                        "achievements": "success", "user_settings": "primary",
+                        "ticket_close": "danger", "payout_reject": "danger",
+                        "payout_approve": "success", "ticket_queue": "primary",
+                        "ticket_reply": "primary", "media_payout": "success",
+                    }
+                    if not style:
+                        style = default_styles.get(callback) or default_styles.get(callback.split(":", 1)[0])
                     if custom_id and str(custom_id).isdigit():
                         updates["icon_custom_emoji_id"] = str(custom_id)
                     if style in {"primary", "success", "danger"}:
