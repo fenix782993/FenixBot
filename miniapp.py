@@ -392,10 +392,27 @@ async def admin_design(req):
         return response("Недостаточно прав.", 403)
     if req.method == "GET":
         pack = read_json_setting("premium_emoji_pack", [])
+        styles = read_json_setting("button_style_map", {})
+        icons = read_json_setting("button_custom_emoji_map", {})
+        label_defaults = {
+            "cab_label": "👤 Личный кабинет",
+            "ref_label": "🔗 Моя реферальная ссылка",
+            "stats_label": "📊 Статистика",
+            "top_label": "🏆 Рейтинг",
+            "media_label": "🤝 Стать медиапартнёром",
+            "owner_label": "⚙️ Панель владельца",
+            "home_label": "📢 Новости FENIX ONLINE",
+        }
+        for key, default in label_defaults.items():
+            current = db.setting(key, default)
+            if current in styles:
+                styles[default] = styles[current]
+            if current in icons:
+                icons[default] = icons[current]
         return response({
             "theme": read_json_setting("ui_theme", DEFAULT_THEME),
-            "button_styles": read_json_setting("button_style_map", {}),
-            "button_icons": read_json_setting("button_custom_emoji_map", {}),
+            "button_styles": styles,
+            "button_icons": icons,
             "emoji_pack": pack,
             "buttons": core.PREMIUM_BUTTON_CATALOG,
             "welcome_text": db.setting("welcome_text", "🔥 FENIX ONLINE\\nТвой личный кабинет."),
