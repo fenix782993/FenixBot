@@ -16,7 +16,9 @@ ADMINS={int(x) for x in os.getenv("ADMIN_IDS","").replace(" ","").split(",") if 
 if not TOKEN: raise RuntimeError("BOT_TOKEN не задан")
 logging.basicConfig(level=logging.INFO)
 bot=Bot(TOKEN); dp=Dispatcher(storage=MemoryStorage()); db=DB(os.getenv("DATABASE_PATH","data.sqlite3"))
-def is_admin(uid): return uid in ADMINS
+OWNER_IDS=ADMINS.copy()
+def is_admin(uid): return db.is_admin(uid)
+def is_owner(uid): return uid in OWNER_IDS
 def markup(rows): return InlineKeyboardMarkup(inline_keyboard=rows)
 def menu(uid):
     label=db.setting("home_label","📢 Новости FENIX ONLINE")
@@ -32,7 +34,7 @@ def menu(uid):
 class S(StatesGroup):
     nick=State(); password=State(); media_channel=State(); media_stats=State(); media_contact=State()
     post_text=State(); post_photo=State(); post_button=State(); post_url=State()
-    button_label=State(); button_url=State(); broadcast=State()
+    button_label=State(); button_url=State(); broadcast=State(); admin_add=State(); admin_remove=State()
 def hashpw(p):
     salt=secrets.token_hex(16)
     return salt+"$"+hashlib.pbkdf2_hmac("sha256",p.encode(),salt.encode(),200000).hex()
@@ -115,7 +117,7 @@ async def media2(m,state:FSMContext):
 async def media3(m,state:FSMContext):
     d=await state.get_data(); aid=db.media(m.from_user.id,d["ch"],d["st"],m.text or ""); await state.clear()
     await m.answer("✅ Заявка отправлена администрации.")
-    for a in ADMINS:
+    for a in db.admin_ids():
         try: await bot.send_message(a,f"🤝 <b>Заявка медиапартнёра #{aid}</b>\nID: <code>{m.from_user.id}</code>\nКанал: {d['ch']}\nАудитория: {d['st']}\nКонтакт: {m.text}",parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="Одобрить",callback_data=f"mok:{aid}"),InlineKeyboardButton(text="Отклонить",callback_data=f"mno:{aid}")]]))
         except: pass
 @dp.callback_query(F.data.startswith("mok:"))
@@ -141,7 +143,73 @@ async def owner(c):
     [InlineKeyboardButton(text="📣 Опубликовать пост",callback_data="post")],
     [InlineKeyboardButton(text="📨 Рассылка",callback_data="broadcast")],
     [InlineKeyboardButton(text="🎨 Настроить кнопку меню",callback_data="editbutton")],
-    [InlineKeyboardButton(text="📈 Общая статистика",callback_data="ostats")]])); await c.answer()
+    [InlineKeyboardButton(text="📈 Общая статистика",callback_data="ostats")],
+    [InlineKeyboardButton(text="👮 Управление администраторами",callback_data="admins_manage")]])); await c.answer()
+@dp.callback_query(F.data=="admins_manage")
+async def admins_manage(c):
+    if not is_owner(c.from_user.id):
+        return await c.answer("Управлять администраторами может только владелец.",show_alert=True)
+    ids=db.admin_ids()
+    text="👮 <b>УПРАВЛЕНИЕ АДМИНИСТРАТОРАМИ</b>\\n\\n"
+    text += "\\n".join(f"• <code>{uid}</code>" for uid in ids) if ids else "Администраторов пока нет."
+    await c.message.answer(text,parse_mode="HTML",reply_markup=markup([
+        [InlineKeyboardButton(text="➕ Добавить администратора",callback_data="admin_add")],
+        [InlineKeyboardButton(text="➖ Снять администратора",callback_data="admin_remove")]
+    ]))
+    await c.answer()
+
+@dp.callback_query(F.data=="admin_add")
+async def admin_add_start(c,state:FSMContext):
+    if not is_owner(c.from_user.id):
+        return await c.answer("Только владелец может добавлять администраторов.",show_alert=True)
+    await state.set_state(S.admin_add)
+    await c.message.answer("Отправь Telegram ID нового администратора. Узнать ID можно командой /id.")
+    await c.answer()
+
+@dp.message(S.admin_add)
+async def admin_add_finish(m,state:FSMContext):
+    if not is_owner(m.from_user.id):
+        await state.clear()
+        return await m.answer("Нет доступа.")
+    raw=(m.text or "").strip()
+    if not raw.isdigit():
+        return await m.answer("Нужен числовой Telegram ID. Попробуй ещё раз или /cancel.")
+    uid=int(raw)
+    if uid<=0: return await m.answer("Некорректный ID.")
+    if not db.user(uid):
+        return await m.answer("Этот человек ещё не зарегистрировался в боте. Пусть сначала нажмёт /start, затем повтори.")
+    added=db.add_admin(uid,m.from_user.id)
+    await state.clear()
+    await m.answer("✅ Администратор добавлен." if added else "Этот пользователь уже администратор.")
+    try: await bot.send_message(uid,"👮 Тебе выданы права администратора FENIX ONLINE.")
+    except: pass
+
+@dp.callback_query(F.data=="admin_remove")
+async def admin_remove_start(c,state:FSMContext):
+    if not is_owner(c.from_user.id):
+        return await c.answer("Только владелец может снимать администраторов.",show_alert=True)
+    await state.set_state(S.admin_remove)
+    await c.message.answer("Отправь Telegram ID администратора, которого нужно снять.")
+    await c.answer()
+
+@dp.message(S.admin_remove)
+async def admin_remove_finish(m,state:FSMContext):
+    if not is_owner(m.from_user.id):
+        await state.clear()
+        return await m.answer("Нет доступа.")
+    raw=(m.text or "").strip()
+    if not raw.isdigit(): return await m.answer("Нужен числовой Telegram ID. Попробуй ещё раз или /cancel.")
+    uid=int(raw)
+    if uid in OWNER_IDS:
+        await state.clear()
+        return await m.answer("Основного владельца нельзя снять через эту панель.")
+    removed=db.remove_admin(uid)
+    await state.clear()
+    await m.answer("✅ Права администратора сняты." if removed else "Такого администратора нет.")
+    if removed:
+        try: await bot.send_message(uid,"Ваши права администратора FENIX ONLINE были сняты.")
+        except: pass
+
 @dp.callback_query(F.data=="ostats")
 async def ostats(c):
     if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
