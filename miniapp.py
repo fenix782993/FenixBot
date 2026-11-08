@@ -378,9 +378,9 @@ async def admin_publish(req):
 def store_prices():
     return read_json_setting("store_prices", {})
 
-def nmz_rate():
+def fnz_rate():
     try:
-        value=float(db.setting("nmz_per_rub","2") or 2)
+        value=float(db.setting("fnz_per_rub","2") or 2)
         if value <= 0: value = 2
         return value if 0 < value <= 100000 else 0
     except Exception:
@@ -404,8 +404,8 @@ async def shop_home(req):
         "balance":shop.balance(db,user_id),
         "history":shop.history(db,user_id,20),
         "orders":shop.list_orders(db,uid=user_id,limit=30),
-        "donations":[dict(x, rub_amount=float(x["rub_amount"])) for x in db._all(f"SELECT id,rub_amount,nmz_amount,method,status,created FROM donations WHERE uid={db._ph()} ORDER BY id DESC LIMIT 20",(user_id,))],
-        "nmz_per_rub":nmz_rate(),
+        "donations":[dict(x, rub_amount=float(x["rub_amount"])) for x in db._all(f"SELECT id,rub_amount,fnz_amount,method,status,created FROM donations WHERE uid={db._ph()} ORDER BY id DESC LIMIT 20",(user_id,))],
+        "fnz_per_rub":fnz_rate(),
         "manual_phone":"+79067853860",
         "manual_banks":["Сбербанк","Т-Банк"],
         "robokassa_enabled":False,
@@ -459,7 +459,7 @@ async def wallet_donate(req):
     try:rub=round(float(str(data.get("rub","")).replace(",",".")),2)
     except Exception:return response("Укажи сумму в рублях.",400)
     if rub<10 or rub>100000:return response("Сумма должна быть от 10 до 100 000 ₽.",400)
-    rate=nmz_rate()
+    rate=fnz_rate()
     if not rate:return response("Курс NMZ не настроен. Используется базовый курс 1 ₽ = 2 NMZ.",503)
     nmz=int(round(rub*rate))
     if nmz<1:return response("Сумма слишком мала для начисления NMZ.",400)
@@ -472,14 +472,14 @@ async def wallet_donate(req):
     for aid in db.admin_ids():
         try:await tg.send_message(aid,text)
         except Exception:log.exception("Manual donation notification failed")
-    return response({"id":did,"nmz":nmz,"rub":rub,"phone":"+79067853860","banks":["Сбербанк","Т-Банк"]})
+    return response({"id":did,"fnz":nmz,"rub":rub,"phone":"+79067853860","banks":["Сбербанк","Т-Банк"]})
 
 async def admin_store(req):
     if not admin(req):return response("Недостаточно прав.",403)
     if req.method=="GET":
-        return response({"orders":shop.list_orders(db,limit=150),"donations":shop.donations(db,"all",150),"balance_rate":nmz_rate(),"prices":store_prices(),"catalog":catalog()})
+        return response({"orders":shop.list_orders(db,limit=150),"donations":shop.donations(db,"all",150),"balance_rate":fnz_rate(),"prices":store_prices(),"catalog":catalog()})
     data=await payload(req)
-    try:rate=float(data.get("nmz_per_rub",0))
+    try:rate=float(data.get("fnz_per_rub",2))
     except Exception:return response("Некорректный курс NMZ.",400)
     if rate<0 or rate>100000:return response("Курс вне допустимого диапазона.",400)
     prices=data.get("prices") or {}
@@ -493,9 +493,9 @@ async def admin_store(req):
             if not 1<=price<=100000000:raise ValueError()
             clean[key]=price
         except Exception:return response(f"Некорректная цена для {key}.",400)
-    db.set_setting("nmz_per_rub",str(rate))
+    db.set_setting("fnz_per_rub",str(rate))
     db.set_setting("store_prices",json.dumps(clean,ensure_ascii=False))
-    return response({"saved":True,"nmz_per_rub":rate,"prices":clean})
+    return response({"saved":True,"fnz_per_rub":rate,"prices":clean})
 
 async def admin_donation_decision(req):
     if not admin(req):return response("Недостаточно прав.",403)
@@ -508,7 +508,7 @@ async def admin_donation_decision(req):
     elif decision=="rejected":ok=shop.reject_donation(db,did,uid(req),note)
     else:return response("Неизвестное решение.",400)
     if not ok:return response("Не удалось изменить платёж.",409)
-    text=(f"Пополнение #{did} подтверждено. Зачислено {int(item['nmz_amount'])} NMZ." if decision=="paid" else f"Пополнение #{did} отклонено. {note}")
+    text=(f"Пополнение #{did} подтверждено. Зачислено {int(item['fnz_amount'])} NMZ." if decision=="paid" else f"Пополнение #{did} отклонено. {note}")
     db.add_notification(item["uid"],"Статус пополнения",text)
     try:await tg.send_message(item["uid"],text)
     except Exception:log.exception("Donation decision notification failed")
