@@ -826,17 +826,31 @@ async def admin_remove_finish(m,state:FSMContext):
         try: await bot.send_message(uid,"Ваши права администратора FENIX ONLINE были сняты.")
         except: pass
 
+@dp.message(Command("chatid"))
+async def show_chat_ids(m):
+    if not is_admin(m.from_user.id):
+        return await m.answer("⛔ Нет доступа.")
+    await m.answer(
+        "🔎 <b>ДАННЫЕ ЧАТА</b>\\n"
+        f"Тип: <code>{html.escape(str(m.chat.type))}</code>\\n"
+        f"Chat ID: <code>{m.chat.id}</code>\\n"
+        f"Ваш Telegram ID: <code>{m.from_user.id}</code>\\n"
+        f"Админ-чат: <code>{html.escape(str(db.setting('admin_chat_id','—')))}</code>\\n"
+        f"Лидерский чат: <code>{html.escape(str(db.setting('leader_chat_id','—')))}</code>",
+        parse_mode="HTML"
+    )
+
 @dp.message(Command("bind_admin_chat"))
 async def bind_admin_chat(m):
-    if not is_owner(m.from_user.id) or m.chat.type == "private":
-        return await m.answer("Команду может выполнить владелец непосредственно в административном чате.")
+    if not is_admin(m.from_user.id) or m.chat.type == "private":
+        return await m.answer("Команду может выполнить администратор бота непосредственно в административном групповом чате.")
     db.set_setting("admin_chat_id", str(m.chat.id))
     await m.answer("✅ Этот чат назначен административным. Здесь доступны команды управления администрацией.")
 
 @dp.message(Command("bind_leader_chat"))
 async def bind_leader_chat(m):
-    if not is_owner(m.from_user.id) or m.chat.type == "private":
-        return await m.answer("Команду может выполнить владелец непосредственно в лидерском чате.")
+    if not is_admin(m.from_user.id) or m.chat.type == "private":
+        return await m.answer("Команду может выполнить администратор бота непосредственно в лидерском групповом чате.")
     db.set_setting("leader_chat_id", str(m.chat.id))
     await m.answer("✅ Этот чат назначен лидерским. Здесь доступны команды управления лидерами.")
 

@@ -116,6 +116,11 @@ class DB:
                 c.execute("CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS admins (uid BIGINT PRIMARY KEY, added_by BIGINT, created TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS staff_roles (uid BIGINT, kind TEXT, title TEXT, assigned_by BIGINT, updated TEXT, PRIMARY KEY(uid,kind))")
+                # Upgrade legacy Neon installations without dropping existing staff data.
+                # Older versions may have created staff_roles without title/metadata columns.
+                c.execute("ALTER TABLE staff_roles ADD COLUMN IF NOT EXISTS title TEXT")
+                c.execute("ALTER TABLE staff_roles ADD COLUMN IF NOT EXISTS assigned_by BIGINT")
+                c.execute("ALTER TABLE staff_roles ADD COLUMN IF NOT EXISTS updated TEXT")
                 c.execute("CREATE TABLE IF NOT EXISTS media_payouts (id BIGSERIAL PRIMARY KEY, uid BIGINT, amount TEXT, requisites TEXT, status TEXT, created TEXT, reviewed_by BIGINT, review_note TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS media_activity (uid BIGINT, day TEXT, video_url TEXT, PRIMARY KEY(uid,day))")
                 c.execute("CREATE TABLE IF NOT EXISTS media_payout_evidence (payout_id BIGINT PRIMARY KEY, channel_url TEXT, video_url TEXT)")
