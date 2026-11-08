@@ -1,4 +1,5 @@
-import asyncio, logging, os, re, secrets, hashlib
+import asyncio, logging, os, re, secrets, hashlib, html
+from datetime import datetime, timezone, timedelta
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
@@ -48,6 +49,7 @@ def can_manage_chat(message, kind):
 
 BASE_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = BASE_DIR / "assets"
+ASSET_CACHE = {}
 ASSET_FILES = {
     "welcome": "welcome.jpg",
     "profile": "profile.jpg",
@@ -71,12 +73,14 @@ async def answer_visual(message, asset_key, caption, reply_markup=None):
     if image_path and image_path.is_file():
         try:
             if len(caption or "") <= 1024:
-                return await message.answer_photo(
-                    FSInputFile(str(image_path)),
+                result=await message.answer_photo(
+                    ASSET_CACHE.get(str(image_path)) or FSInputFile(str(image_path)),
                     caption=caption or None,
                     reply_markup=reply_markup
                 )
-            await message.answer_photo(FSInputFile(str(image_path)))
+                if result.photo: ASSET_CACHE[str(image_path)]=result.photo[-1].file_id
+                return result
+            await message.answer_photo(ASSET_CACHE.get(str(image_path)) or FSInputFile(str(image_path)))
             return await message.answer(caption, reply_markup=reply_markup)
         except Exception:
             logging.exception("Не удалось отправить баннер %s", image_path)
@@ -85,19 +89,20 @@ async def answer_visual(message, asset_key, caption, reply_markup=None):
     return await message.answer(caption, reply_markup=reply_markup)
 
 def menu(uid):
+    media_status=(db.media_current(uid) or {}).get("status")
     label=db.setting("home_label","📢 Новости FENIX ONLINE")
     url=db.setting("home_url",CHANNEL_URL)
     rows=[[InlineKeyboardButton(text=db.setting("cab_label","👤 Личный кабинет"),callback_data="cab"),
            InlineKeyboardButton(text=db.setting("ref_label","🔗 Моя реферальная ссылка"),callback_data="ref")],
           [InlineKeyboardButton(text=db.setting("stats_label","📊 Статистика"),callback_data="stats"),
            InlineKeyboardButton(text=db.setting("top_label","🏆 Рейтинг"),callback_data="top")],
-          [InlineKeyboardButton(text=("🎬 Кабинет медиапартнёра" if (db.media_current(uid) and db.media_current(uid).get("status")=="approved") else db.setting("media_label","🤝 Стать медиапартнёром")),callback_data=("media_cabinet" if (db.media_current(uid) and db.media_current(uid).get("status")=="approved") else "media"))]]
+          [InlineKeyboardButton(text=("🎬 Кабинет медиапартнёра" if (media_status=="approved") else db.setting("media_label","🤝 Стать медиапартнёром")),callback_data=("media_cabinet" if (media_status=="approved") else "media"))]]
     if url: rows.append([InlineKeyboardButton(text=label,url=url)])
-    if is_admin(uid): rows.append([InlineKeyboardButton(text="⚙️ Панель владельца",callback_data="owner")])
+    if is_admin(uid): rows.append([InlineKeyboardButton(text=db.setting("owner_label","⚙️ Панель владельца"),callback_data="owner")])
     return markup(rows)
 class S(StatesGroup):
     nick=State(); password=State(); media_channel=State(); media_stats=State(); media_contact=State()
-    media_payout_amount=State(); media_payout_requisites=State()
+    payout_channel=State(); payout_video=State(); media_payout_requisites=State(); payout_views=State(); payout_amount=State(); payout_note=State(); customize_label=State()
     post_text=State(); post_photo_choice=State(); post_photo=State()
     post_button_choice=State(); post_button=State(); post_url=State()
     button_label=State(); button_url=State(); broadcast=State(); admin_add=State(); admin_remove=State()
@@ -249,64 +254,188 @@ async def media_cabinet(c):
         return await c.answer("Кабинет доступен только одобренным медиапартнёрам.",show_alert=True)
     payouts=db.media_payouts_for_user(c.from_user.id,5)
     history="\n".join(f"#{x['id']} — {x['amount']} — {x['status']}" for x in payouts) or "Пока запросов выплат нет."
-    await c.message.answer("🎬 КАБИНЕТ МЕДИАПАРТНЁРА\n\nСтатус: ✅ Одобрен\nКанал: "+str(current.get('ch') or '—')+"\nАудитория: "+str(current.get('stats') or '—')+"\n\n💳 ИСТОРИЯ ЗАПРОСОВ ВЫПЛАТ\n"+history,reply_markup=markup([[InlineKeyboardButton(text="💸 Запросить выплату",callback_data="media_payout")]]))
+    await c.message.answer("🎬 КАБИНЕТ МЕДИАПАРТНЁРА\n\n🎥 Видеоотчёт: /media_video\n📅 Выплаты после 7 активных дней, раз в 14 дней\n💰 1000 просмотров = 50 ₽\n\nСтатус: ✅ Одобрен\nКанал: "+str(current.get('ch') or '—')+"\nАудитория: "+str(current.get('stats') or '—')+"\n\n💳 ИСТОРИЯ ЗАПРОСОВ ВЫПЛАТ\n"+history,reply_markup=markup([[InlineKeyboardButton(text="💸 Запросить выплату",callback_data="media_payout")]]))
     await c.answer()
+
+def payout_eligible(uid):
+    current=db.media_current(uid)
+    if not current or current.get('status')!='approved': return False, 'Кабинет медиапартнёра ещё не одобрен.'
+    if db.media_payout_pending(uid): return False, 'Твоя заявка на выплату уже рассматривается.'
+    days=db.media_active_days(uid)
+    if days<7: return False, f'Для выплаты нужно 7 активных дней с публикациями видео. Сейчас подтверждено: {days}/7.'
+    last=db.media_last_payout_request(uid)
+    if last:
+        try:
+            dt=datetime.fromisoformat(last['created'])
+            if datetime.now(timezone.utc)-dt < timedelta(days=14):
+                return False, 'Заявку на выплату можно подавать только раз в 14 дней.'
+        except (ValueError,TypeError): pass
+    return True,''
 
 @dp.callback_query(F.data=="media_payout")
 async def media_payout_start(c,state:FSMContext):
-    current=db.media_current(c.from_user.id)
-    if not current or current.get("status")!="approved": return await c.answer("Нет доступа.",show_alert=True)
-    if db.media_payout_pending(c.from_user.id): return await c.answer("У тебя уже есть запрос выплаты на рассмотрении.",show_alert=True)
-    await state.set_state(S.media_payout_amount)
-    await c.message.answer("💸 Введи сумму выплаты в рублях (только число).")
+    ok,reason=payout_eligible(c.from_user.id)
+    if not ok: return await c.answer(reason,show_alert=True)
+    await state.set_state(S.payout_channel)
+    await c.message.answer('💸 <b>ЗАПРОС ВЫПЛАТЫ</b>\n\nОтправь ссылку на свой канал, где размещены видео.',parse_mode='HTML')
     await c.answer()
 
-@dp.message(S.media_payout_amount)
-async def media_payout_amount(m,state:FSMContext):
-    raw=(m.text or '').strip().replace(',','.')
-    try: amount=float(raw)
-    except ValueError: return await m.answer("Введи сумму числом, например 1500.")
-    if amount<=0 or amount>10000000: return await m.answer("Сумма должна быть больше 0 и не превышать 10 000 000.")
-    await state.update_data(payout_amount=f"{amount:g} RUB")
+@dp.message(S.payout_channel)
+async def payout_channel(m,state:FSMContext):
+    url=(m.text or '').strip()
+    if not url.startswith(('https://','http://')): return await m.answer('Нужна ссылка на канал, начинающаяся с https://')
+    await state.update_data(payout_channel=url)
+    await state.set_state(S.payout_video)
+    await m.answer('🎥 Теперь отправь ссылку на опубликованное видео или само видео файлом. Для каждого нового дня публикаций используй /media_video.')
+
+@dp.message(S.payout_video, F.text | F.video)
+async def media_video_activity(m,state:FSMContext):
+    data=await state.get_data()
+    if not data.get('video_report'): return await payout_video(m,state)
+    link=(m.text or '').strip()
+    if m.video: link='telegram-file:'+m.video.file_id
+    if not link.startswith(('https://','http://','telegram-file:')): return await m.answer('Пришли ссылку на видео или видеофайл.')
+    added=db.media_add_day(m.from_user.id,link)
+    await state.clear()
+    await m.answer(('✅ Видеоотчёт сохранён. ' if added else 'ℹ️ За сегодня отчёт уже есть. ')+f'Активных дней: {db.media_active_days(m.from_user.id)}/7.')
+
+@dp.message(S.payout_video)
+async def payout_video(m,state:FSMContext):
+    link=(m.text or '').strip()
+    if m.video: link='telegram-file:'+m.video.file_id
+    if not (link.startswith(('https://','http://','telegram-file:'))): return await m.answer('Отправь ссылку на видео или видео файлом.')
+    await state.update_data(payout_video=link)
     await state.set_state(S.media_payout_requisites)
-    await m.answer("Отправь реквизиты и способ перевода. Их увидит только администрация.")
+    await m.answer('💳 Отправь реквизиты для выплаты (например, банк и номер телефона). Их увидит только администрация.')
 
 @dp.message(S.media_payout_requisites)
 async def media_payout_requisites(m,state:FSMContext):
     requisites=(m.text or '').strip()
-    if len(requisites)<5 or len(requisites)>1000: return await m.answer("Проверь реквизиты (от 5 до 1000 символов).")
-    current=db.media_current(m.from_user.id)
-    if not current or current.get('status')!='approved':
-        await state.clear(); return await m.answer("Статус медиапартнёра не подтверждён.")
-    if db.media_payout_pending(m.from_user.id):
-        await state.clear(); return await m.answer("У тебя уже есть запрос выплаты на рассмотрении.")
-    data=await state.get_data(); pid=db.media_payout(m.from_user.id,data['payout_amount'],requisites); await state.clear()
-    await m.answer(f"✅ Запрос выплаты #{pid} отправлен администрации. Статус: на рассмотрении.")
-    u=db.user(m.from_user.id); nick=u['nick'] if u else 'Неизвестно'
+    if len(requisites)<5 or len(requisites)>1000: return await m.answer('Проверь реквизиты (5–1000 символов).')
+    ok,reason=payout_eligible(m.from_user.id)
+    if not ok: await state.clear(); return await m.answer(reason)
+    data=await state.get_data()
+    pid=db.media_payout(m.from_user.id,'На рассмотрении',requisites)
+    db.media_payout_evidence(pid,data['payout_channel'],data['payout_video'])
+    await state.clear()
+    await m.answer(f'✅ <b>Заявка #{pid} принята!</b>\n\nАдминистратор проверит канал, видео и просмотры, определит сумму и отправит решение.\n\n💰 Тариф: <b>1 000 просмотров = 50 ₽</b>.',parse_mode='HTML')
     for admin_id in db.admin_ids():
-        try:
-            await bot.send_message(admin_id,f"💸 ЗАПРОС ВЫПЛАТЫ МЕДИАПАРТНЁРУ #{pid}\nИгровой ник: {nick}\nTelegram ID: {m.from_user.id}\nСумма: {data['payout_amount']}\nРеквизиты: {requisites}",reply_markup=markup([[InlineKeyboardButton(text="✅ Выплачено",callback_data=f"mpaid:{pid}"),InlineKeyboardButton(text="❌ Отклонить",callback_data=f"mreject:{pid}")]]))
-        except Exception: pass
+        try: await bot.send_message(admin_id,f'💸 Новая заявка на выплату #{pid}. Открой список в панели администратора.',reply_markup=markup([[InlineKeyboardButton(text='📋 Заявки на выплаты',callback_data='payout_queue')]]))
+        except Exception: logging.exception('Ошибка уведомления администратора')
 
-@dp.callback_query(F.data.startswith("mpaid:"))
+@dp.message(Command('media_video'))
+async def media_video_cmd(m,state:FSMContext):
+    current=db.media_current(m.from_user.id)
+    if not current or current.get('status')!='approved': return await m.answer('Доступно только медиапартнёрам.')
+    await state.set_state(S.payout_video)
+    await state.update_data(video_report=True)
+    await m.answer('🎬 Отправь ссылку на опубликованное сегодня видео или само видео. Один активный день учитывается один раз.')
+
+# separate handler for activity reports, ahead of payout video handler
+@dp.callback_query(F.data=='payout_queue')
+async def payout_queue(c):
+    if not is_admin(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
+    rows=db.media_pending_payouts()
+    if not rows: await c.message.answer('📋 Заявок на выплату пока нет.')
+    else:
+        kb=[[InlineKeyboardButton(text=f'#{r["id"]} · ID {r["uid"]}',callback_data=f'payout_view:{r["id"]}')] for r in rows[:30]]
+        await c.message.answer(f'💸 <b>ЗАЯВКИ НА ВЫПЛАТУ</b>\nВ очереди: {len(rows)}\nВыбирай заявку для проверки по одной.',reply_markup=markup(kb),parse_mode='HTML')
+    await c.answer()
+
+@dp.callback_query(F.data.startswith('payout_view:'))
+async def payout_view(c):
+    if not is_admin(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
+    pid=int(c.data.split(':')[1]); r=db.media_payout_get(pid)
+    if not r: return await c.answer('Заявка не найдена',show_alert=True)
+    ev=db.media_payout_evidence_get(pid)
+    u=db.user(r['uid']); nick=u['nick'] if u else str(r['uid'])
+    txt=(f'💸 <b>ЗАЯВКА #{pid}</b>\n👤 {html.escape(nick)} | <code>{r["uid"]}</code>\n'
+         f'📺 Канал: {html.escape(ev.get("channel_url", "—"))}\n'
+         f'🎥 Видео: {html.escape(ev.get("video_url", "—"))}\n'
+         f'💳 Реквизиты: {html.escape(r["requisites"])}\n'
+         f'📅 Активных дней: {db.media_active_days(r["uid"])}\n'
+         f'📌 Статус: {r["status"]}\n💰 Тариф: 1 000 просмотров = 50 ₽')
+    kb=[[InlineKeyboardButton(text='✅ Одобрить / рассчитать',callback_data=f'payout_approve:{pid}')],
+        [InlineKeyboardButton(text='❌ Отклонить',callback_data=f'payout_reject:{pid}')],
+        [InlineKeyboardButton(text='📋 К списку',callback_data='payout_queue')]] if r['status']=='pending' else [[InlineKeyboardButton(text='📋 К списку',callback_data='payout_queue')]]
+    await c.message.answer(txt,parse_mode='HTML',reply_markup=markup(kb))
+    await c.answer()
+
+@dp.callback_query(F.data.startswith('payout_approve:'))
+async def payout_approve(c,state:FSMContext):
+    if not is_admin(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
+    pid=int(c.data.split(':')[1]); r=db.media_payout_get(pid)
+    if not r or r['status']!='pending': return await c.answer('Заявка уже обработана',show_alert=True)
+    await state.update_data(review_pid=pid)
+    await state.set_state(S.payout_views)
+    await c.message.answer('👁 Введи подтверждённое число просмотров (целое число). Расчёт: 1 000 просмотров = 50 ₽.')
+    await c.answer()
+
+@dp.message(S.payout_views)
+async def payout_views(m,state:FSMContext):
+    if not is_admin(m.from_user.id): return
+    raw=(m.text or '').strip().replace(' ','')
+    if not raw.isdigit(): return await m.answer('Введи число просмотров.')
+    views=int(raw)
+    if views>1000000000: return await m.answer('Слишком большое число.')
+    amount=views*0.05
+    await state.update_data(views=views)
+    await state.set_state(S.payout_amount)
+    await m.answer(f'📊 Расчёт по тарифу: {amount:.2f} ₽.\nНапиши итоговую сумму выплаты в рублях (администратор может скорректировать её).')
+
+@dp.message(S.payout_amount)
+async def payout_amount(m,state:FSMContext):
+    if not is_admin(m.from_user.id): return
+    try: amount=float((m.text or '').strip().replace(',','.'))
+    except ValueError: return await m.answer('Введи сумму числом.')
+    if amount<0 or amount>10000000: return await m.answer('Некорректная сумма.')
+    await state.update_data(approved_amount=f'{amount:.2f} RUB')
+    await state.set_state(S.payout_note)
+    await m.answer('✍️ Напиши текст решения для медиапартнёра. После этого заявка будет одобрена. Деньги переводи вручную по реквизитам.')
+
+@dp.message(S.payout_note)
+async def payout_note(m,state:FSMContext):
+    if not is_admin(m.from_user.id): return
+    note=(m.text or '').strip()
+    if not note: return await m.answer('Напиши текст решения.')
+    data=await state.get_data(); pid=data['review_pid']; r=db.media_payout_get(pid)
+    if not r or r['status']!='pending': await state.clear(); return await m.answer('Заявка уже обработана.')
+    if data.get('reject'):
+        db.media_payout_review(pid,'rejected',m.from_user.id,note[:1500])
+        await state.clear()
+        await m.answer(f'❌ Заявка #{pid} отклонена.')
+        try: await bot.send_message(r['uid'],f'❌ <b>ВЫПЛАТА ОТКЛОНЕНА</b>\n\n📝 {html.escape(note)}',parse_mode='HTML')
+        except Exception: logging.exception('Не удалось отправить отказ')
+        return
+    db.media_payout_set_amount(pid,data['approved_amount'])
+    db.media_payout_review(pid,'approved',m.from_user.id,note[:1500])
+    await state.clear()
+    await m.answer(f'✅ Заявка #{pid} одобрена. Сумма: {data["approved_amount"]}. После фактического перевода отметь выплату.',reply_markup=markup([[InlineKeyboardButton(text='💸 Отметить отправку денег',callback_data=f'mpaid:{pid}')]]))
+    try: await bot.send_message(r['uid'],f'🎉 <b>ВЫПЛАТА ОДОБРЕНА!</b>\n\n💰 Сумма: <b>{data["approved_amount"]}</b>\n📝 {html.escape(note)}\n\n⏳ Ожидай фактического перевода.',parse_mode='HTML')
+    except Exception: logging.exception('Не удалось уведомить медиапартнёра')
+
+@dp.callback_query(F.data.startswith('payout_reject:'))
+async def payout_reject(c,state:FSMContext):
+    if not is_admin(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
+    pid=int(c.data.split(':')[1]); r=db.media_payout_get(pid)
+    if not r or r['status']!='pending': return await c.answer('Заявка уже обработана',show_alert=True)
+    await state.update_data(review_pid=pid)
+    await state.set_state(S.payout_note)
+    await state.update_data(reject=True)
+    await c.message.answer('❌ Напиши причину отказа для медиапартнёра.')
+    await c.answer()
+
+@dp.callback_query(F.data.startswith('mpaid:'))
 async def media_payout_paid(c):
-    if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
-    pid=int(c.data.split(':')[1]); req=db.media_payout_get(pid)
-    if not req or req['status']!='pending': return await c.answer("Запрос уже обработан или не найден.",show_alert=True)
-    db.media_payout_review(pid,'paid',c.from_user.id)
-    try: await bot.send_message(req['uid'],f"✅ Запрос выплаты #{pid} отмечен администрацией как выплаченный.")
-    except Exception: pass
-    await c.message.edit_reply_markup(reply_markup=None); await c.answer("Отмечено как выплачено")
+    if not is_admin(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
+    pid=int(c.data.split(':')[1]); r=db.media_payout_get(pid)
+    if not r or r['status']!='approved': return await c.answer('Сначала одобри заявку.',show_alert=True)
+    db.media_payout_review(pid,'paid',c.from_user.id,r.get('review_note') or '')
+    try: await bot.send_message(r['uid'],f'💸 <b>ВЫПЛАТА ОТПРАВЛЕНА!</b>\n\nАдминистрация отметила перевод по заявке #{pid} на сумму <b>{html.escape(r["amount"])}</b>.',parse_mode='HTML')
+    except Exception: logging.exception('Не удалось уведомить о выплате')
+    await c.message.edit_reply_markup(reply_markup=None)
+    await c.answer('Выплата отмечена')
 
-@dp.callback_query(F.data.startswith("mreject:"))
-async def media_payout_reject(c):
-    if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
-    pid=int(c.data.split(':')[1]); req=db.media_payout_get(pid)
-    if not req or req['status']!='pending': return await c.answer("Запрос уже обработан или не найден.",show_alert=True)
-    db.media_payout_review(pid,'rejected',c.from_user.id,'Отклонено администрацией')
-    try: await bot.send_message(req['uid'],f"❌ Запрос выплаты #{pid} отклонён администрацией.")
-    except Exception: pass
-    await c.message.edit_reply_markup(reply_markup=None); await c.answer("Отклонено")
 @dp.callback_query(F.data.startswith("mok:"))
 async def mok(c):
     if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
@@ -333,6 +462,7 @@ async def owner(c):
     await answer_visual(c.message, "news", "⚙️ ПАНЕЛЬ ВЛАДЕЛЬЦА", reply_markup=markup([
         [InlineKeyboardButton(text="📣 Опубликовать пост",callback_data="post")],
         [InlineKeyboardButton(text="📨 Рассылка",callback_data="broadcast")],
+        [InlineKeyboardButton(text="💸 Заявки на выплаты",callback_data="payout_queue")],
         [InlineKeyboardButton(text="🎨 Кастомизация бота",callback_data="customize")],
         [InlineKeyboardButton(text="👥 Составы и чаты",callback_data="staff_setup")],
         [InlineKeyboardButton(text="📈 Общая статистика",callback_data="ostats")],
@@ -472,11 +602,34 @@ async def staff_setup(c):
     await c.message.answer("👥 ПРИВЯЗКА ЧАТОВ\nДобавь бота в нужные группы и выполни в них соответствующие команды:\n/bind_admin_chat — административный чат\n/bind_leader_chat — лидерский чат\n\nВ каждом чате: /nnick ник должность, /stafflist — состав, /staffremove ник — снять должность.")
     await c.answer()
 
+CUSTOM_LABELS={"cab":("cab_label","👤 Личный кабинет"),"ref":("ref_label","🔗 Реферальная ссылка"),"stats":("stats_label","📊 Статистика"),"top":("top_label","🏆 Рейтинг"),"media":("media_label","🤝 Стать медиапартнёром"),"owner":("owner_label","⚙️ Панель владельца"),"home":("home_label","📢 Новости FENIX ONLINE")}
 @dp.callback_query(F.data == "customize")
 async def customize(c):
-    if not is_owner(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
-    await c.message.answer("🎨 КАСТОМИЗАЦИЯ БОТА\nИзменение названий кнопок: /setlabel key новое название\nКлючи: cab, ref, stats, top, media.\nОбычные эмодзи можно добавлять прямо в название. Telegram не позволяет назначать произвольные шрифты или Premium Custom Emoji как значки inline-кнопок.")
+    if not is_owner(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
+    rows=[[InlineKeyboardButton(text=label,callback_data=f'custom_pick:{key}')] for key,(_,label) in CUSTOM_LABELS.items()]
+    await c.message.answer('🎨 <b>КАСТОМИЗАЦИЯ КНОПОК</b>\n\nВыбери кнопку, название которой хочешь изменить:',parse_mode='HTML',reply_markup=markup(rows))
     await c.answer()
+
+@dp.callback_query(F.data.startswith('custom_pick:'))
+async def custom_pick(c,state:FSMContext):
+    if not is_owner(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
+    key=c.data.split(':')[1]
+    if key not in CUSTOM_LABELS: return await c.answer('Неизвестная кнопка',show_alert=True)
+    setting,default=CUSTOM_LABELS[key]
+    await state.update_data(custom_key=key)
+    await state.set_state(S.customize_label)
+    await c.message.answer(f'✏️ Текущее название: {db.setting(setting,default)}\n\nОтправь новое название (до 64 символов, можно с эмодзи).')
+    await c.answer()
+
+@dp.message(S.customize_label)
+async def custom_label_save(m,state:FSMContext):
+    if not is_owner(m.from_user.id): return
+    label=(m.text or '').strip()
+    if not label or len(label)>64: return await m.answer('Название должно содержать 1–64 символа.')
+    data=await state.get_data(); key=data['custom_key']
+    db.set_setting(CUSTOM_LABELS[key][0],label)
+    await state.clear()
+    await m.answer('✅ Название сохранено. Открой /start, чтобы увидеть обновлённое меню.')
 
 @dp.message(Command("setlabel"))
 async def setlabel(m):
@@ -589,16 +742,22 @@ async def send_composed(chat_id,data):
     keyboard=None
     if data.get("bt") and data.get("bu"):
         keyboard=markup([[InlineKeyboardButton(text=data["bt"],url=data["bu"]) ]])
-    text=data.get("text") or " "
+    footer=("\n\n━━━━━━━━━━━━━━\n<b>🔥 FENIX ONLINE</b>\n"
+            "🛡 <b>VPN:</b> @fenixVPNrobot\n"
+            "⭐ <b>Stars:</b> @Fenix_stars_bot\n"
+            "💬 <b>Форум:</b> <a href=\"http://forum.wh35740.web1.maze-tech.ru/index.php\">Перейти на форум</a>")
+    text=html.escape(data.get("text") or " ")+footer
     photo=data.get("photo")
     if photo and len(text)<=1024:
-        await bot.send_photo(chat_id,photo,caption=text,reply_markup=keyboard)
+        await bot.send_photo(chat_id,photo,caption=text,reply_markup=keyboard,parse_mode="HTML")
         return
     if photo:
         await bot.send_photo(chat_id,photo)
-    chunks=split_message(text)
+    chunks=[html.escape(chunk) for chunk in split_message(data.get("text") or " ")]
+    if len(chunks[-1])+len(footer)>4000: chunks.append(footer)
+    else: chunks[-1]+=footer
     for i,chunk in enumerate(chunks):
-        await bot.send_message(chat_id,chunk,
+        await bot.send_message(chat_id,chunk,parse_mode="HTML",
                                reply_markup=keyboard if i==len(chunks)-1 else None)
 
 async def finish_composition(message,state,uid):

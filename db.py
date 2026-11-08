@@ -103,6 +103,8 @@ class DB:
                 c.execute("CREATE TABLE IF NOT EXISTS admins (uid BIGINT PRIMARY KEY, added_by BIGINT, created TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS staff_roles (uid BIGINT, kind TEXT, title TEXT, assigned_by BIGINT, updated TEXT, PRIMARY KEY(uid,kind))")
                 c.execute("CREATE TABLE IF NOT EXISTS media_payouts (id BIGSERIAL PRIMARY KEY, uid BIGINT, amount TEXT, requisites TEXT, status TEXT, created TEXT, reviewed_by BIGINT, review_note TEXT)")
+                c.execute("CREATE TABLE IF NOT EXISTS media_activity (uid BIGINT, day TEXT, video_url TEXT, PRIMARY KEY(uid,day))")
+                c.execute("CREATE TABLE IF NOT EXISTS media_payout_evidence (payout_id BIGINT PRIMARY KEY, channel_url TEXT, video_url TEXT)")
             else:
                 c.executescript("""
                     CREATE TABLE IF NOT EXISTS users(uid INTEGER PRIMARY KEY, username TEXT, nick TEXT UNIQUE, pwhash TEXT, ref INTEGER, created TEXT);
@@ -114,6 +116,8 @@ class DB:
                     CREATE TABLE IF NOT EXISTS admins(uid INTEGER PRIMARY KEY, added_by INTEGER, created TEXT);
                     CREATE TABLE IF NOT EXISTS staff_roles(uid INTEGER, kind TEXT, title TEXT, assigned_by INTEGER, updated TEXT, PRIMARY KEY(uid,kind));
                     CREATE TABLE IF NOT EXISTS media_payouts(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER, amount TEXT, requisites TEXT, status TEXT, created TEXT, reviewed_by INTEGER, review_note TEXT);
+                    CREATE TABLE IF NOT EXISTS media_activity(uid INTEGER, day TEXT, video_url TEXT, PRIMARY KEY(uid,day));
+                    CREATE TABLE IF NOT EXISTS media_payout_evidence(payout_id INTEGER PRIMARY KEY, channel_url TEXT, video_url TEXT);
                 """)
             owners = [int(x) for x in os.getenv("ADMIN_IDS", "").replace(" ", "").split(",") if x]
             for uid in owners:
@@ -328,3 +332,36 @@ class DB:
         with self.con() as c:
             cur = c.execute(f"DELETE FROM staff_roles WHERE uid={self._ph()} AND kind={self._ph()}", (uid, kind))
             return cur.rowcount > 0
+
+    def media_add_day(self, uid, video_url):
+        # UTC calendar day, one report per day. The admin must independently verify publications.
+        day=datetime.now(timezone.utc).date().isoformat()
+        with self.con() as c:
+            if self.use_postgres:
+                cur=c.execute("INSERT INTO media_activity(uid,day,video_url) VALUES(%s,%s,%s) ON CONFLICT(uid,day) DO NOTHING",(uid,day,video_url))
+            else:
+                cur=c.execute("INSERT OR IGNORE INTO media_activity(uid,day,video_url) VALUES(?,?,?)",(uid,day,video_url))
+            return cur.rowcount>0
+
+    def media_active_days(self, uid):
+        return int(self._scalar(f"SELECT COUNT(*) FROM media_activity WHERE uid={self._ph()}",(uid,)) or 0)
+
+    def media_last_payout_request(self, uid):
+        return self._one(f"SELECT created FROM media_payouts WHERE uid={self._ph()} ORDER BY id DESC LIMIT 1",(uid,))
+
+    def media_payout_evidence(self, payout_id, channel_url, video_url):
+        with self.con() as c:
+            if self.use_postgres:
+                c.execute("INSERT INTO media_payout_evidence(payout_id,channel_url,video_url) VALUES(%s,%s,%s) ON CONFLICT(payout_id) DO UPDATE SET channel_url=EXCLUDED.channel_url,video_url=EXCLUDED.video_url",(payout_id,channel_url,video_url))
+            else:
+                c.execute("INSERT OR REPLACE INTO media_payout_evidence(payout_id,channel_url,video_url) VALUES(?,?,?)",(payout_id,channel_url,video_url))
+
+    def media_payout_evidence_get(self, payout_id):
+        return self._one(f"SELECT channel_url,video_url FROM media_payout_evidence WHERE payout_id={self._ph()}",(payout_id,)) or {}
+
+    def media_pending_payouts(self):
+        return self._all("SELECT id,uid,created FROM media_payouts WHERE status='pending' ORDER BY id ASC")
+
+    def media_payout_set_amount(self, payout_id, amount):
+        with self.con() as c:
+            c.execute(f"UPDATE media_payouts SET amount={self._ph()} WHERE id={self._ph()}",(amount,payout_id))
