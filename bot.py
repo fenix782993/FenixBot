@@ -1278,6 +1278,7 @@ async def owner(c):
         [InlineKeyboardButton(text="🎨 Кастомизация бота",callback_data="customize")],
         [InlineKeyboardButton(text="👥 Составы и чаты",callback_data="staff_setup")],
         [InlineKeyboardButton(text="📈 Общая статистика",callback_data="ostats")],
+        [InlineKeyboardButton(text="💰 Выручка и продажи",callback_data="owner_revenue")],
         [InlineKeyboardButton(text="👮 Управление администраторами",callback_data="admins_manage")],
         [InlineKeyboardButton(text="💎 Premium Emoji для всех кнопок",callback_data="button_emoji_setup")]
     ]))
@@ -1576,6 +1577,26 @@ async def setlabel(m):
     if key not in keys: return await m.answer("Неизвестный ключ. Используй: cab, ref, stats, top, media")
     db.set_setting(keys[key],parts[2][:64])
     await m.answer("✅ Название кнопки обновлено.")
+
+@dp.callback_query(F.data=="owner_revenue")
+async def owner_revenue(c):
+    if not is_owner(c.from_user.id):
+        return await c.answer("Только владелец может просматривать финансовую статистику.",show_alert=True)
+    ph=db._ph()
+    paid=db._one("SELECT COUNT(*) AS n, COALESCE(SUM(rub_amount),0) AS rub, COALESCE(SUM(fnz_amount),0) AS nmz FROM donations WHERE status='paid'") or {}
+    pending=db._one("SELECT COUNT(*) AS n, COALESCE(SUM(rub_amount),0) AS rub, COALESCE(SUM(fnz_amount),0) AS nmz FROM donations WHERE status='pending'") or {}
+    sales=db._one("SELECT COUNT(*) AS n, COALESCE(SUM(price_fnz),0) AS nmz FROM shop_orders") or {}
+    delivered=db._one("SELECT COUNT(*) AS n, COALESCE(SUM(price_fnz),0) AS nmz FROM shop_orders WHERE status='delivered'") or {}
+    text=("💰 <b>ФИНАНСЫ FENIX ONLINE</b>\\n\\n"
+          f"Подтверждённые пополнения: <b>{int(paid.get('n') or 0)}</b>\\n"
+          f"Получено по заявкам: <b>{float(paid.get('rub') or 0):.2f} ₽</b>\\n"
+          f"Начислено игрокам: <b>{int(paid.get('nmz') or 0)} NMZ</b>\\n\\n"
+          f"Ожидают решения: <b>{int(pending.get('n') or 0)}</b>\\n"
+          f"Ожидаемая сумма: <b>{float(pending.get('rub') or 0):.2f} ₽</b> / {int(pending.get('nmz') or 0)} NMZ\\n\\n"
+          f"Заказы магазина: <b>{int(sales.get('n') or 0)}</b> на {int(sales.get('nmz') or 0)} NMZ\\n"
+          f"Выдано заказов: <b>{int(delivered.get('n') or 0)}</b> на {int(delivered.get('nmz') or 0)} NMZ")
+    await edit_panel(c.message,text,reply_markup=markup([[InlineKeyboardButton(text="⬅️ В панель владельца",callback_data="owner")]]),parse_mode="HTML")
+    await c.answer()
 
 @dp.callback_query(F.data=="ostats")
 async def ostats(c):
