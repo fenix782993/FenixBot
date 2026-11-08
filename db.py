@@ -91,7 +91,11 @@ class DB:
 
     def _scalar(self, sql, params=()):
         with self.con() as c:
-            return c.execute(sql, params).fetchone()[0]
+            row = c.execute(sql, params).fetchone()
+            if row is None:
+                return None
+            # psycopg uses dict_row; SQLite returns sqlite3.Row.
+            return next(iter(row.values())) if isinstance(row, dict) else row[0]
 
     def _all(self, sql, params=()):
         with self.con() as c:
