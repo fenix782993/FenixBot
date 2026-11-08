@@ -435,12 +435,26 @@ async def admin_design(req):
         if label in allowed and custom_id and custom_id in pack_ids:
             icons[label] = custom_id
     labels = data.get("labels") or {}
-    label_keys = {"cab_label", "ref_label", "stats_label", "top_label", "media_label", "owner_label", "home_label"}
+    label_defaults = {
+        "cab_label": "👤 Личный кабинет",
+        "ref_label": "🔗 Моя реферальная ссылка",
+        "stats_label": "📊 Статистика",
+        "top_label": "🏆 Рейтинг",
+        "media_label": "🤝 Стать медиапартнёром",
+        "owner_label": "⚙️ Панель владельца",
+        "home_label": "📢 Новости FENIX ONLINE",
+    }
+    label_keys = set(label_defaults)
+    label_remap = {}
     for key, value in labels.items():
         if key in label_keys:
             value = str(value).strip()
             if not value or len(value) > 64:
                 return response(f"Проверь название кнопки {key}: от 1 до 64 символов.", 400)
+            old_label = db.setting(key, label_defaults[key])
+            if old_label != value:
+                label_remap[old_label] = value
+                label_remap[label_defaults[key]] = value
             db.set_setting(key, value)
     for key, limit in (("welcome_text", 900), ("registration_text", 900)):
         if key in data:
@@ -448,6 +462,11 @@ async def admin_design(req):
             if len(value) < 2 or len(value) > limit:
                 return response(f"Поле {key} должно содержать от 2 до {limit} символов.", 400)
             db.set_setting(key, value)
+    for old_label, new_label in label_remap.items():
+        if old_label in styles:
+            styles[new_label] = styles.pop(old_label)
+        if old_label in icons:
+            icons[new_label] = icons.pop(old_label)
     db.set_setting("ui_theme", json.dumps(clean_theme, ensure_ascii=False))
     db.set_setting("button_style_map", json.dumps(styles, ensure_ascii=False))
     db.set_setting("button_custom_emoji_map", json.dumps(icons, ensure_ascii=False))
