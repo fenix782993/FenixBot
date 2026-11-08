@@ -246,7 +246,7 @@ def branded_panel(text):
     """Give every interactive bot screen one consistent FENIX header."""
     value = str(text or "")
     # Finance is already a compact owner-only report; do not prepend a second banner.
-    if value.lstrip().startswith("💰 <b>ФИНАНСЫ FENIX ONLINE</b>"):
+    if value.lstrip().startswith(("💰 <b>ФИНАНСЫ", "💰 ФИНАНСЫ")):
         return value
     if not value.startswith("🔥 FENIX ONLINE"):
         value = "🔥 FENIX ONLINE  •  BLACK\n━━━━━━━━━━━━━━━━━━\n" + value
@@ -1689,13 +1689,13 @@ async def owner_revenue(c):
     pending=db._one("SELECT COUNT(*) AS n, COALESCE(SUM(rub_amount),0) AS rub, COALESCE(SUM(fnz_amount),0) AS nmz FROM donations WHERE status='pending'") or {}
     sales=db._one("SELECT COUNT(*) AS n, COALESCE(SUM(price_fnz),0) AS nmz FROM shop_orders") or {}
     delivered=db._one("SELECT COUNT(*) AS n, COALESCE(SUM(price_fnz),0) AS nmz FROM shop_orders WHERE status='delivered'") or {}
-    text=("💰 <b>ФИНАНСЫ FENIX ONLINE</b>\\n\\n"
-          f"Подтверждённые пополнения: <b>{int(paid.get('n') or 0)}</b>\\n"
-          f"Получено по заявкам: <b>{float(paid.get('rub') or 0):.2f} ₽</b>\\n"
-          f"Начислено игрокам: <b>{int(paid.get('nmz') or 0)} NMZ</b>\\n\\n"
-          f"Ожидают решения: <b>{int(pending.get('n') or 0)}</b>\\n"
-          f"Ожидаемая сумма: <b>{float(pending.get('rub') or 0):.2f} ₽</b> / {int(pending.get('nmz') or 0)} NMZ\\n\\n"
-          f"Оплачено заказов магазина: <b>{int(sales.get('n') or 0)}</b> на {int(sales.get('nmz') or 0)} NMZ\\n"
+    text=("💰 <b>ФИНАНСЫ</b>\n\n"
+          f"Подтверждённые пополнения: <b>{int(paid.get('n') or 0)}</b>\n"
+          f"Получено по заявкам: <b>{float(paid.get('rub') or 0):.2f} ₽</b>\n"
+          f"Начислено игрокам: <b>{int(paid.get('nmz') or 0)} NMZ</b>\n\n"
+          f"Ожидают решения: <b>{int(pending.get('n') or 0)}</b>\n"
+          f"Ожидаемая сумма: <b>{float(pending.get('rub') or 0):.2f} ₽</b> / {int(pending.get('nmz') or 0)} NMZ\n\n"
+          f"Оплачено заказов магазина: <b>{int(sales.get('n') or 0)}</b> на {int(sales.get('nmz') or 0)} NMZ\n"
           f"Отмечено выданными: <b>{int(delivered.get('n') or 0)}</b> на {int(delivered.get('nmz') or 0)} NMZ")
     await edit_panel(c.message,text,reply_markup=markup([[InlineKeyboardButton(text="⬅️ В панель владельца",callback_data="owner")]]),parse_mode="HTML")
     await c.answer()
