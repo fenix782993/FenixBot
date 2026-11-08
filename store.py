@@ -1,9 +1,6 @@
 """FENIX ONLINE wallet, manual donations and NMZ shop."""
-import hashlib
-import hmac
 import json
 import os
-from urllib.parse import urlencode
 
 PRODUCTS = [
  {"code":"bmw_m3","name":"BMW M3","description":"Спортивный BMW для городских поездок и тюнинга.","rarity":"Эпический","price":None,"image":""},
@@ -132,35 +129,3 @@ def update_order(db, order_id, status, actor, note=""):
     with db.con() as c:
         cur=c.execute(f"UPDATE shop_orders SET status={db._ph()},reviewed_by={db._ph()},review_note={db._ph()},updated={db._ph()} WHERE id={db._ph()} AND status IN ('pending_delivery','processing')",(status,actor,note,db._now(),order_id))
         return cur.rowcount==1
-
-def robokassa_url(db, donation_id, base_url):
-    d=db._one(f"SELECT * FROM donations WHERE id={db._ph()}",(donation_id,))
-    login=os.getenv("ROBOKASSA_MERCHANT_LOGIN","").strip()
-    password=os.getenv("ROBOKASSA_PASSWORD1","").strip()
-    if not d or not login or not password:return None
-    amount=f"{float(d['rub_amount']):.2f}"
-    raw=f"{login}:{amount}:{d['invoice_id']}:{password}:Shp_uid={d['uid']}"
-    algo=os.getenv("ROBOKASSA_HASH_ALGORITHM","md5").lower()
-    signature=hashlib.new(algo,raw.encode()).hexdigest().upper()
-    params={"MerchantLogin":login,"OutSum":amount,"InvId":str(d["invoice_id"]),"Description":f"FENIX ONLINE · пополнение #{donation_id}","SignatureValue":signature,"Culture":"ru","Encoding":"utf-8","Shp_uid":str(d["uid"])}
-    if os.getenv("ROBOKASSA_TEST_MODE","0").lower() in {"1","true","yes"}:params["IsTest"]="1"
-    return "https://auth.robokassa.ru/Merchant/Index.aspx?"+urlencode(params)
-
-def verify_result(db, params):
-    password=os.getenv("ROBOKASSA_PASSWORD2","").strip()
-    if not password:return None
-    inv=str(params.get("InvId",""))
-    d=donation_by_invoice(db,inv)
-    if not d:return None
-    amount=str(params.get("OutSum",""))
-    try:
-        if round(float(amount),2)!=round(float(d["rub_amount"]),2):return None
-    except Exception:return None
-    extra=[]
-    for k in sorted(k for k in params if k.startswith("Shp_")):
-        extra.append(f"{k}={params[k]}")
-    raw=":".join([amount,inv,password]+extra)
-    algo=os.getenv("ROBOKASSA_HASH_ALGORITHM","md5").lower()
-    expected=hashlib.new(algo,raw.encode()).hexdigest().upper()
-    if not hmac.compare_digest(expected,str(params.get("SignatureValue","")).upper()):return None
-    return d
