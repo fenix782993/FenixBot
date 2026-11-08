@@ -405,7 +405,7 @@ async def shop_home(req):
         "balance":shop.balance(db,user_id),
         "history":shop.history(db,user_id,20),
         "orders":shop.list_orders(db,uid=user_id,limit=30),
-        "donations":db._all(f"SELECT id,rub_amount,fnz_amount,method,status,created FROM donations WHERE uid={db._ph()} ORDER BY id DESC LIMIT 20",(user_id,)),
+        "donations":[dict(x, rub_amount=float(x["rub_amount"])) for x in db._all(f"SELECT id,rub_amount,fnz_amount,method,status,created FROM donations WHERE uid={db._ph()} ORDER BY id DESC LIMIT 20",(user_id,))],
         "fnz_per_rub":fnz_rate(),
         "manual_phone":"+79067853860",
         "manual_banks":["Сбербанк","Т-Банк"],
