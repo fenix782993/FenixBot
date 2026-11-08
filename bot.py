@@ -1214,7 +1214,7 @@ async def media_video_cmd(m,state:FSMContext):
 # separate handler for activity reports, ahead of payout video handler
 @dp.callback_query(F.data=='payout_queue')
 async def payout_queue(c):
-    if not is_admin(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
+    if not is_owner(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
     rows=db.media_pending_payouts()
     if not rows: await edit_panel(c.message,'📋 Заявок на выплату пока нет.',reply_markup=markup([[InlineKeyboardButton(text='⬅️ В панель владельца',callback_data='owner')]]))
     else:
@@ -1224,7 +1224,7 @@ async def payout_queue(c):
 
 @dp.callback_query(F.data.startswith('payout_view:'))
 async def payout_view(c):
-    if not is_admin(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
+    if not is_owner(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
     pid=int(c.data.split(':')[1]); r=db.media_payout_get(pid)
     if not r: return await c.answer('Заявка не найдена',show_alert=True)
     ev=db.media_payout_evidence_get(pid)
@@ -1243,7 +1243,7 @@ async def payout_view(c):
 
 @dp.callback_query(F.data.startswith('payout_approve:'))
 async def payout_approve(c,state:FSMContext):
-    if not is_admin(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
+    if not is_owner(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
     pid=int(c.data.split(':')[1]); r=db.media_payout_get(pid)
     if not r or r['status']!='pending': return await c.answer('Заявка уже обработана',show_alert=True)
     await state.update_data(review_pid=pid)
@@ -1253,7 +1253,7 @@ async def payout_approve(c,state:FSMContext):
 
 @dp.message(S.payout_views)
 async def payout_views(m,state:FSMContext):
-    if not is_admin(m.from_user.id): return
+    if not is_owner(m.from_user.id): return
     raw=(m.text or '').strip().replace(' ','')
     if not raw.isdigit(): return await m.answer('Введи число просмотров.')
     views=int(raw)
@@ -1270,7 +1270,7 @@ async def payout_views(m,state:FSMContext):
 
 @dp.message(S.payout_amount)
 async def payout_amount(m,state:FSMContext):
-    if not is_admin(m.from_user.id): return
+    if not is_owner(m.from_user.id): return
     try: amount=float((m.text or '').strip().replace(',','.'))
     except ValueError: return await m.answer('Введи сумму числом.')
     if amount<0 or amount>10000000: return await m.answer('Некорректная сумма.')
@@ -1280,7 +1280,7 @@ async def payout_amount(m,state:FSMContext):
 
 @dp.message(S.payout_note)
 async def payout_note(m,state:FSMContext):
-    if not is_admin(m.from_user.id): return
+    if not is_owner(m.from_user.id): return
     note=(m.text or '').strip()
     if not note: return await m.answer('Напиши текст решения.')
     data=await state.get_data(); pid=data['review_pid']; r=db.media_payout_get(pid)
@@ -1303,7 +1303,7 @@ async def payout_note(m,state:FSMContext):
 
 @dp.callback_query(F.data.startswith('payout_reject:'))
 async def payout_reject(c,state:FSMContext):
-    if not is_admin(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
+    if not is_owner(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
     pid=int(c.data.split(':')[1]); r=db.media_payout_get(pid)
     if not r or r['status']!='pending': return await c.answer('Заявка уже обработана',show_alert=True)
     await state.update_data(review_pid=pid)
@@ -1314,7 +1314,7 @@ async def payout_reject(c,state:FSMContext):
 
 @dp.callback_query(F.data.startswith('mpaid:'))
 async def media_payout_paid(c):
-    if not is_admin(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
+    if not is_owner(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
     pid=int(c.data.split(':')[1]); r=db.media_payout_get(pid)
     if not r or r['status']!='approved': return await c.answer('Сначала одобри заявку.',show_alert=True)
     db.media_payout_review(pid,'paid',c.from_user.id,r.get('review_note') or '')
@@ -1687,8 +1687,8 @@ async def owner_revenue(c):
           f"Начислено игрокам: <b>{int(paid.get('nmz') or 0)} NMZ</b>\\n\\n"
           f"Ожидают решения: <b>{int(pending.get('n') or 0)}</b>\\n"
           f"Ожидаемая сумма: <b>{float(pending.get('rub') or 0):.2f} ₽</b> / {int(pending.get('nmz') or 0)} NMZ\\n\\n"
-          f"Заказы магазина: <b>{int(sales.get('n') or 0)}</b> на {int(sales.get('nmz') or 0)} NMZ\\n"
-          f"Выдано заказов: <b>{int(delivered.get('n') or 0)}</b> на {int(delivered.get('nmz') or 0)} NMZ")
+          f"Оплачено заказов магазина: <b>{int(sales.get('n') or 0)}</b> на {int(sales.get('nmz') or 0)} NMZ\\n"
+          f"Отмечено выданными: <b>{int(delivered.get('n') or 0)}</b> на {int(delivered.get('nmz') or 0)} NMZ")
     await edit_panel(c.message,text,reply_markup=markup([[InlineKeyboardButton(text="⬅️ В панель владельца",callback_data="owner")]]),parse_mode="HTML")
     await c.answer()
 
