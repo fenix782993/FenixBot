@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl
 
 from aiohttp import web
-from aiogram.types import MenuButtonWebApp, WebAppInfo, InlineKeyboardButton
+from aiogram.types import MenuButtonCommands, MenuButtonWebApp, WebAppInfo, InlineKeyboardButton
 import bot as core
 import store as shop
 
