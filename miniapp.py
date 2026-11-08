@@ -724,6 +724,21 @@ async def main():
         raise RuntimeError("BOT_TOKEN не задан")
     db.init()
     shop.init(db)
+    # Load the exact OutlineEmoji custom-emoji pack in the real Render entrypoint.
+    # bot.py's standalone main() is not used here; miniapp.main() owns startup.
+    try:
+        sticker_set = await tg.get_sticker_set("OutlineEmoji")
+        pack_items = [
+            {"id": str(sticker.custom_emoji_id), "emoji": getattr(sticker, "emoji", None) or "💎"}
+            for sticker in sticker_set.stickers
+            if getattr(sticker, "custom_emoji_id", None)
+        ]
+        if not pack_items:
+            raise RuntimeError("OutlineEmoji returned zero custom_emoji_id values")
+        db.set_setting("premium_emoji_pack", json.dumps(pack_items, ensure_ascii=False))
+        log.info("FENIX Premium Emoji: imported %s IDs from OutlineEmoji", len(pack_items))
+    except Exception:
+        log.exception("FENIX Premium Emoji: OutlineEmoji import failed; existing icon map retained")
     try:
         await tg.set_chat_menu_button(menu_button=MenuButtonCommands())
         log.info("Mini App menu button disabled; standalone website mode")
