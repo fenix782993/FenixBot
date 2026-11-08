@@ -509,7 +509,7 @@ async def manual_donation_rub(m,state:FSMContext):
         return await m.answer("Укажи целую сумму от 100 до 100 000 ₽.")
     await state.update_data(manual_rub=int(raw))
     await state.set_state(S.manual_proof)
-    await m.answer("Переведи деньги на Сбербанк / Т-Банк: +7 906 785-38-60. Затем пришли комментарий к платежу или последние 4 цифры операции. Не отправляй полный номер карты.")
+    await m.answer(db.setting("manual_payment_details", "Реквизиты для ручного пополнения пока не настроены. Обратись в поддержку."))
 
 @dp.message(S.manual_proof)
 async def manual_donation_proof(m,state:FSMContext):
@@ -526,7 +526,7 @@ async def manual_donation_proof(m,state:FSMContext):
     kb=markup([[InlineKeyboardButton(text="✅ Одобрить",callback_data=f"donation_paid:{did}"),
                InlineKeyboardButton(text="❌ Отклонить",callback_data=f"donation_rejected:{did}")]])
     sent=0
-    for aid in db.admin_ids():
+    for aid in OWNER_IDS:
         try: await bot.send_message(aid,text_admin,parse_mode="HTML",reply_markup=kb); sent+=1
         except Exception: logging.exception("manual donation owner notification failed")
     await state.clear()
@@ -586,7 +586,12 @@ async def stars_success(m):
         if payment.currency!="XTR" or payment.total_amount!=stars or rub<100:
             raise ValueError("payment amount mismatch")
         nmz=rub*2
-        did=shop.new_donation(db,m.from_user.id,rub,nmz,"telegram_stars",f"telegram_payment_charge_id:{payment.telegram_payment_charge_id}")
+        charge_key=f"telegram_payment_charge_id:{payment.telegram_payment_charge_id}"
+        existing=db._one(f"SELECT id,status FROM donations WHERE method={db._ph()} AND proof={db._ph()}",("telegram_stars",charge_key))
+        if existing:
+            await m.answer("Этот платёж уже обработан. Повторного начисления не будет.")
+            return
+        did=shop.new_donation(db,m.from_user.id,rub,nmz,"telegram_stars",charge_key)
         if not shop.mark_paid(db,did,m.from_user.id,"Telegram Stars successful_payment"):
             raise RuntimeError("could not credit confirmed Stars payment")
         db.add_notification(m.from_user.id,"Пополнение Stars",f"Оплата {stars} Stars подтверждена. Начислено {nmz} NMZ.")
