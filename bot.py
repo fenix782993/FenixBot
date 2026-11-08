@@ -565,7 +565,7 @@ async def manual_donation_rub(m,state:FSMContext):
         return await m.answer("Укажи целую сумму от 100 до 100 000 ₽.")
     await state.update_data(manual_rub=int(raw))
     await state.set_state(S.manual_proof)
-    await m.answer(db.setting("manual_payment_details", "Реквизиты для ручного пополнения пока не настроены. Обратись в поддержку."))
+    await m.answer(os.getenv("MANUAL_PAYMENT_DETAILS") or db.setting("manual_payment_details", "Реквизиты для ручного пополнения пока не настроены. Обратись в поддержку."))
 
 @dp.message(S.manual_proof)
 async def manual_donation_proof(m,state:FSMContext):
