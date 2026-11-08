@@ -263,7 +263,7 @@ async def list_pack_emojis(m: Message):
         # Telegram entity offsets are measured in UTF-16 code units.
         utf16_offset += len(line.encode("utf-16-le")) // 2 + 1
 
-    text = "\\n".join(lines)
+    text = "\n".join(lines)
     await m.answer(text, entities=entities)
 
 @dp.message(Command("btnlist"))
@@ -328,7 +328,7 @@ async def premium_all_start(m: Message, state: FSMContext):
     for i, label in enumerate(PREMIUM_BUTTON_CATALOG, 1):
         lines.append(f"{i}. {html.escape(label)}")
     lines += ["━━━━━━━━━━━━━━━━━━", "Отправляй Premium Emoji по одному, строго по порядку: сначала №1, затем №2, №3 и так далее.", "После каждого эмодзи бот подтвердит номер. Команда /premiumstop отменит настройку."]
-    await m.answer("\\n".join(lines), parse_mode="HTML")
+    await m.answer("\n".join(lines), parse_mode="HTML")
 
 @dp.message(S.button_emoji_sequence)
 async def premium_all_receive(m: Message, state: FSMContext):
@@ -407,7 +407,7 @@ async def start(m:Message,state:FSMContext):
         u=db.user(m.from_user.id)
         if u:
             return await answer_visual(
-                m, "welcome", db.setting("welcome_text", "🔥 FENIX ONLINE\\nТвой личный кабинет."),
+                m, "welcome", db.setting("welcome_text", "🔥 FENIX ONLINE\nТвой личный кабинет."),
                 reply_markup=menu(m.from_user.id)
             )
         p=(m.text or "").split(maxsplit=1); ref=None
@@ -419,7 +419,7 @@ async def start(m:Message,state:FSMContext):
         await state.set_state(S.nick)
         await answer_visual(
             m, "welcome",
-            db.setting("registration_text", "🔥 FENIX ONLINE — регистрация\\n\\nВведи игровой никнейм (3–24 символа, латиница, цифры и _).")
+            db.setting("registration_text", "🔥 FENIX ONLINE — регистрация\n\nВведи игровой никнейм (3–24 символа, латиница, цифры и _).")
         )
     except Exception:
         logging.exception("Ошибка /start")
@@ -996,9 +996,9 @@ async def button_emoji_setup(c, state: FSMContext):
     await state.set_state(S.button_emoji)
     await edit_panel(
         c.message,
-        "💎 <b>PREMIUM EMOJI ДЛЯ ВСЕХ КНОПОК</b>\\n\\n"
+        "💎 <b>PREMIUM EMOJI ДЛЯ ВСЕХ КНОПОК</b>\n\n"
         "Отправь следующим сообщением один Premium Custom Emoji. "
-        "Он будет автоматически добавлен ко всем кнопкам бота.\\n\\n"
+        "Он будет автоматически добавлен ко всем кнопкам бота.\n\n"
         "Отключить: /clearbuttonemoji",
         parse_mode="HTML"
     )
