@@ -167,7 +167,9 @@ def markup(rows):
                     if style in {"primary", "success", "danger"}:
                         updates["style"] = style
                     if updates:
-                        button = button.model_copy(update=updates)
+                        data = button.model_dump(exclude_none=True)
+                        data.update(updates)
+                        button = InlineKeyboardButton.model_validate(data)
             except Exception:
                 logging.exception("Не удалось применить оформление кнопки")
             styled_row.append(button)
@@ -243,6 +245,9 @@ async def answer_visual(message, asset_key, caption, reply_markup=None):
 def branded_panel(text):
     """Give every interactive bot screen one consistent FENIX header."""
     value = str(text or "")
+    # Finance is already a compact owner-only report; do not prepend a second banner.
+    if value.lstrip().startswith("💰 <b>ФИНАНСЫ FENIX ONLINE</b>"):
+        return value
     if not value.startswith("🔥 FENIX ONLINE"):
         value = "🔥 FENIX ONLINE  •  BLACK\n━━━━━━━━━━━━━━━━━━\n" + value
     return value
