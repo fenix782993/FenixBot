@@ -87,11 +87,16 @@ def premium_button_icons():
     saved = saved if isinstance(saved, dict) else {}
     pack = _load_emoji_pack()
     pack_ids = [str(item.get("id")) for item in pack if isinstance(item, dict) and str(item.get("id", "")).isdigit()]
-    result = {**defaults, **saved}
-    for label in PREMIUM_BUTTON_CATALOG:
-        result.setdefault(label, _emoji_for_button_label(label, pack_ids))
+    result = {}
+    labels = list(dict.fromkeys(list(defaults) + list(PREMIUM_BUTTON_CATALOG)))
+    for index, label in enumerate(labels):
+        # Every button receives an ID from the imported OutlineEmoji pack.
+        result[label] = pack_ids[index % len(pack_ids)] if pack_ids else _emoji_for_button_label(label)
+    # Keep explicit assignments only when they point into the currently imported pack.
+    for label, emoji_id in saved.items():
+        if str(emoji_id).isdigit() and (not pack_ids or str(emoji_id) in pack_ids):
+            result[label] = str(emoji_id)
     return result
-
 def premium_button_styles():
     value = _json_setting("button_style_map", {})
     return value if isinstance(value, dict) else {}
@@ -1897,6 +1902,20 @@ async def start_health_server():
 
 async def main():
     db.init()
+    # Import the owner's OutlineEmoji custom-emoji pack automatically on startup.
+    try:
+        sticker_set = await bot.get_sticker_set("OutlineEmoji")
+        pack_items = [
+            {"id": str(sticker.custom_emoji_id), "emoji": getattr(sticker, "emoji", None) or "💎"}
+            for sticker in sticker_set.stickers if getattr(sticker, "custom_emoji_id", None)
+        ]
+        if pack_items:
+            db.set_setting("premium_emoji_pack", json.dumps(pack_items, ensure_ascii=False))
+            logging.info("Loaded OutlineEmoji pack: %s custom emoji IDs", len(pack_items))
+        else:
+            logging.warning("OutlineEmoji returned no custom emoji IDs")
+    except Exception:
+        logging.exception("Could not load OutlineEmoji pack at startup")
     logging.info("Assets directory: %s | found: %s", ASSETS_DIR, sorted(p.name for p in ASSETS_DIR.glob("*") if p.is_file()))
     runner = await start_health_server()
     try:
