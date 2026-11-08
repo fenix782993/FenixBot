@@ -506,7 +506,9 @@ async def wallet_payment_details(req):
     user_id=uid(req)
     if not db.user(user_id):
         return response("Сначала зарегистрируй игровой аккаунт в боте.",403)
-    details=(db.setting("manual_payment_details", os.getenv("MANUAL_PAYMENT_DETAILS", "")) or "").strip()
+    details=(db.setting("manual_payment_details", "") or "").strip()
+    if not details or "УКАЖИТЕ" in details.upper():
+        details=os.getenv("MANUAL_PAYMENT_DETAILS", "").strip()
     if not details or "УКАЖИТЕ" in details.upper():
         return response("Владелец ещё не настроил реквизиты ручного пополнения.",503)
     return response({"payment_details":details,"minimum_rub":100,"rate":fnz_rate() or 2})
@@ -525,7 +527,9 @@ async def wallet_donate(req):
     if method != "manual":return response("Доступно только ручное пополнение.",400)
     proof=str(data.get("proof","")).strip()[:500]
     if method=="manual" and len(proof)<3:return response("Укажи комментарий к переводу или последние 4 цифры операции.",400)
-    manual_details=(db.setting("manual_payment_details", os.getenv("MANUAL_PAYMENT_DETAILS", "")) or "").strip()
+    manual_details=(db.setting("manual_payment_details", "") or "").strip()
+    if not manual_details or "УКАЖИТЕ" in manual_details.upper():
+        manual_details=os.getenv("MANUAL_PAYMENT_DETAILS", "").strip()
     if not manual_details or "УКАЖИТЕ" in manual_details.upper():
         return response("Владелец ещё не настроил реквизиты ручного пополнения. Попробуй позже.",503)
     did=shop.new_donation(db,user_id,rub,nmz,method,proof)
