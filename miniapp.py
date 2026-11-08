@@ -477,25 +477,10 @@ async def wallet_donate(req):
 
 
 async def public_manual_donation(req):
-    data=await payload(req)
-    try:
-        user_id=int(data.get("uid",0)); rub=int(data.get("rub",0))
-    except Exception:
-        return response("Проверь Telegram ID и сумму.",400)
-    proof=str(data.get("proof","")).strip()[:500]
-    if rub<100 or rub>100000:return response("Минимальное пополнение — 100 ₽, максимум — 100 000 ₽.",400)
-    if len(proof)<3:return response("Добавь комментарий или последние 4 цифры перевода.",400)
-    user=db.user(user_id)
-    if not user:return response("Сначала зарегистрируйся в боте FENIX ONLINE командой /start.",404)
-    nmz=rub*2
-    did=shop.new_donation(db,user_id,rub,nmz,"manual",proof)
-    note=(f"💳 Заявка на ручное пополнение #{did}\nИгрок: {user.get('nick','—')}\nTelegram ID: {user_id}\nСумма: {rub} ₽\nНачисление после одобрения: {nmz} NMZ\nПодтверждение: {proof}\n\nОдобряй только после личной проверки перевода.")
-    for aid in db.admin_ids():
-        try: await tg.send_message(aid,note)
-        except Exception: log.exception("Manual donation admin notification failed")
-    try: await tg.send_message(user_id,f"Заявка на пополнение #{did} создана и отправлена владельцу. {nmz} NMZ будут зачислены только после его личного одобрения.")
-    except Exception: log.exception("Manual donation user notification failed")
-    return response({"id":did,"status":"pending","nmz":nmz})
+    # Public site must never accept a user-supplied Telegram ID as proof of identity.
+    # Redirect the player to the authenticated bot flow instead.
+    return response({"message":"Для безопасного оформления заявки открой бота FENIX ONLINE и создай заявку там.",
+                     "bot_url":"https://t.me/FenixMediarobot?start=donate"},401)
 
 async def admin_store(req):
     if not admin(req):return response("Недостаточно прав.",403)
