@@ -424,11 +424,30 @@ async def shop_buy(req):
     if not isinstance(details,dict):return response("Неверные параметры товара.",400)
     nick=(db.user(user_id) or {}).get("nick") or ""
     if not nick:return response("Сначала привяжи игровой ник.",400)
+    price=int(item["price"]);product_name=item["name"]
     if code=="vehicle_plate":
-        return response("Конструктор номеров оформляется отдельной заявкой.",409)
-    order_id=shop.create_order(db,user_id,nick,code,item["name"],int(item["price"]),json.dumps(details,ensure_ascii=False)[:1500])
+        country=str(details.get("country","Россия"))
+        first=str(details.get("first","")).upper()
+        digits=str(details.get("digits",""))
+        last=str(details.get("last","")).upper()
+        region=str(details.get("region",""))
+        if country not in {"Россия","Казахстан","Беларусь","Украина","Грузия"}:
+            return response("Выбери страну из списка.",400)
+        if len(first)!=1 or first not in shop.PLATE_LETTERS or len(last)!=2 or any(x not in shop.PLATE_LETTERS for x in last):
+            return response("Недопустимые буквы номера.",400)
+        if len(digits)!=3 or not digits.isdigit() or region not in shop.REGIONS:
+            return response("Проверь цифры и регион.",400)
+        multiplier=1.0
+        if len(set(digits))==1:multiplier+=1.0
+        if len(set(first+last))==1:multiplier+=1.5
+        if len(set(region))==1:multiplier+=0.2
+        price=int(round(700*multiplier))
+        plate=f"{first}{digits}{last} {region}"
+        product_name=f"Автомобильный номер {plate} · {country}"
+        details={"country":country,"plate":plate,"first":first,"digits":digits,"last":last,"region":region,"price_formula":"700 FNZ + бонусы за повторения"}
+    order_id=shop.create_order(db,user_id,nick,code,product_name,price,json.dumps(details,ensure_ascii=False)[:1500])
     if not order_id:return response("Недостаточно FNZ. Сначала пополни кошелёк.",409)
-    msg=f"🛒 Заказ #{order_id} принят. Товар: {item['name']} · {item['price']} FNZ. Ник: {nick}. Ожидает выдачи администрацией."
+    msg=f"🛒 Заказ #{order_id} принят. Товар: {product_name} · {price} FNZ. Ник: {nick}. Ожидает выдачи администрацией."
     db.add_notification(user_id,"Покупка оформлена",msg)
     for aid in db.admin_ids():
         try:await tg.send_message(aid,f"🛒 <b>НОВЫЙ ЗАКАЗ #{order_id}</b>\nИгрок: <code>{nick}</code>\nТовар: {item['name']}\nЦена: {item['price']} FNZ",parse_mode="HTML")
