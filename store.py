@@ -3,7 +3,7 @@ import json
 import os
 
 PRODUCTS = [
- {"code":"bmw_m3","name":"BMW M3","description":"Спортивный BMW для городских поездок и тюнинга.","rarity":"Эпический","price":None,"image":"/assets/bmw-m3.png"},
+ {"code":"bmw_m3","name":"BMW M3","description":"Спортивный BMW для городских поездок и тюнинга.","rarity":"Эпический","price":230,"image":"/assets/bmw-m3.png"},
  {"code":"cybertruck","name":"Cybertruck","description":"Необычный премиальный автомобиль из каталога FENIX ONLINE.","rarity":"Легендарный","price":690,"image":"/assets/cybertruck.png"},
  {"code":"audi_tt","name":"Audi TT","description":"Компактное спортивное купе для города и тюнинга.","rarity":"Эпический","price":490,"image":"/assets/audi-tt.png"},
  {"code":"lancer_evo","name":"Mitsubishi Lancer Evolution","description":"Спортивный седан для динамичной езды и доработок.","rarity":"Эпический","price":290,"image":"/assets/lancer-evolution.png"},
@@ -15,7 +15,7 @@ PRODUCTS = [
  {"code":"military_id","name":"Военный билет","description":"Покупается один раз и навсегда закрепляется за аккаунтом.","rarity":"Особый","price":450,"image":"/assets/military-id.png"},
  {"code":"vehicle_plate","name":"Конструктор автомобильного номера","description":"Собери собственную комбинацию. Цена зависит от повторяющихся символов.","rarity":"Особый","price":700,"image":"/assets/vehicle-number.png"},
 ]
-PLATE_LETTERS = "АВЕКМНОРСТУХ"
+PLATE_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 REGIONS = ["01","02","03","04","05","06","07","08","09","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30","31","32","33","34","35","36","37","38","39","40","41","42","43","44","45","46","47","48","49","50","51","52","53","54","55","56","57","58","59","60","61","62","63","64","65","66","67","68","69","70","71","72","73","74","75","76","77","78","79","80","81","82","83","84","85","86","87","88","89","90","91","92","93","94","95","96","97","98","99"]
 
 def init(db):
