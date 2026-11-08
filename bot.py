@@ -38,8 +38,28 @@ def _json_setting(key, default):
         return default
 
 def premium_button_icons():
+    # IDs from the user's OutlineEmoji pack. These are actual custom emoji IDs,
+    # not Unicode substitutes. Telegram clients that support button emoji icons render them.
+    defaults = {
+        "🛍 Донат и товары":"5280818098960611598",
+        "👤 Личный кабинет":"5382224089295365367",
+        "🔗 Моя реферальная ссылка":"5458394638505223612",
+        "📊 Статистика":"5449875850046481967",
+        "🏆 Рейтинг":"5395597754166682968",
+        "🤝 Стать медиапартнёром":"5210905596273905344",
+        "🎬 Кабинет медиапартнёра":"5210905596273905344",
+        "⚙️ Панель владельца":"5382224089295365367",
+        "💳 Пополнить баланс":"5280818098960611598",
+        "🚘 Магазин":"5458696196749008675",
+        "🎫 Мои заявки":"5456149049214249060",
+        "🔔 Уведомления":"5458421812763307254",
+        "💬 Поддержка":"5456304325166900944",
+        "⬅️ Главное меню":"5456174445355875099",
+        "✅ Подтвердить":"5382224089295365367",
+        "❌ Отклонить":"5447621198374511640",
+    }
     value = _json_setting("button_custom_emoji_map", {})
-    return value if isinstance(value, dict) else {}
+    return {**defaults, **(value if isinstance(value, dict) else {})}
 
 def premium_button_styles():
     value = _json_setting("button_style_map", {})
