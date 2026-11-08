@@ -563,7 +563,7 @@ async def admin_store(req):
     return response({"saved":True,"fnz_per_rub":rate,"prices":clean})
 
 async def admin_donation_decision(req):
-    if not admin(req):return response("Недостаточно прав.",403)
+    if uid(req) not in core.OWNER_IDS:return response("Подтверждать и отклонять пополнения может только владелец проекта.",403)
     did=int(req.match_info["donation_id"]);data=await payload(req)
     decision=str(data.get("decision",""));note=str(data.get("note","")).strip()[:500]
     item=db._one(f"SELECT * FROM donations WHERE id={db._ph()}",(did,))
