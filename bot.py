@@ -603,9 +603,35 @@ async def donate_stars_menu(c):
         return await c.answer("Сначала зарегистрируйся через /start.", show_alert=True)
     rows=[[InlineKeyboardButton(text=f"{rub} ₽ · {int(rub*1.05)} ⭐", callback_data=f"stars_rub:{rub}")]
           for rub in STARS_RUB_PRESETS]
+    rows.append([InlineKeyboardButton(text="✏️ Ввести свою сумму", callback_data="stars_custom")])
     rows.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data="back_home")])
     await c.message.answer("⭐ <b>Пополнение Telegram Stars</b>\nМинимум 100 ₽. Курс начисления: 1 ₽ = 2 NMZ.\nОплата проходит через Telegram.",parse_mode="HTML",reply_markup=markup(rows))
     await c.answer()
+
+@dp.callback_query(F.data=="stars_custom")
+async def stars_custom_start(c,state:FSMContext):
+    if not db.user(c.from_user.id):
+        return await c.answer("Сначала зарегистрируйся через /start.",show_alert=True)
+    await state.set_state(S.stars_custom)
+    await c.message.answer("Введи сумму пополнения в рублях (от 100 до 100 000). Я выставлю счёт Telegram Stars.")
+    await c.answer()
+
+@dp.message(S.stars_custom)
+async def stars_custom_amount(m,state:FSMContext):
+    raw=(m.text or "").strip().replace(" ","").replace(",",".")
+    try: rub=float(raw)
+    except Exception: return await m.answer("Введи сумму числом, минимум 100 ₽.")
+    if rub<100 or rub>100000 or round(rub,2)!=rub:
+        return await m.answer("Допустимая сумма: от 100 до 100 000 ₽, можно с копейками.")
+    rub_int=int(round(rub))
+    if abs(rub-rub_int)>0.001:
+        return await m.answer("Для оплаты Stars введи целое число рублей.")
+    stars=int(rub_int*1.05); nmz=rub_int*2
+    await bot.send_invoice(chat_id=m.from_user.id,title=f"FENIX ONLINE — {nmz} NMZ",
+        description=f"Пополнение игрового баланса на {nmz} NMZ. Оплата {rub_int} RUB в Telegram Stars.",
+        payload=f"fenix_nmz:{m.from_user.id}:{rub_int}:{stars}",provider_token="",currency="XTR",
+        prices=[LabeledPrice(label=f"{nmz} NMZ",amount=stars)])
+    await state.clear()
 
 @dp.callback_query(F.data.startswith("stars_rub:"))
 async def stars_invoice(c):
