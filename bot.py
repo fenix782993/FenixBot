@@ -262,7 +262,7 @@ async def stats(c):
     try:
         registered=db.ref_count(c.from_user.id)
         joined=db.channel_count(c.from_user.id)
-        await answer_visual(c.message, "rewards",
+        await edit_panel(c.message,
             f"📊 ТВОЯ СТАТИСТИКА\n\nРегистрации по реферальной ссылке: {registered}\nВступления в канал по персональной ссылке: {joined}")
         await c.answer()
     except Exception:
@@ -274,7 +274,7 @@ async def top(c):
     try:
         rows=db.top()
         txt="🏆 ТОП РЕФЕРАЛОВ\n\n"+("\n".join(f"{i}. {x['nick']} — {x['n']}" for i,x in enumerate(rows,1)) if rows else "Пока пусто.")
-        await answer_visual(c.message, "rating", txt)
+        await edit_panel(c.message, txt)
         await c.answer()
     except Exception:
         logging.exception("Ошибка рейтинга")
@@ -286,9 +286,9 @@ async def media(c,state:FSMContext):
     if current and current.get("status")=="pending":
         return await c.answer("Твоя заявка уже находится на рассмотрении.",show_alert=True)
     if current and current.get("status")=="approved":
-        return await c.message.answer("🎉 Ты уже медиапартнёр. Открой свой кабинет.",reply_markup=markup([[InlineKeyboardButton(text="🎬 Кабинет медиапартнёра",callback_data="media_cabinet")]]))
+        return await edit_panel(c.message,"🎉 Ты уже медиапартнёр. Открой свой кабинет.",reply_markup=markup([[InlineKeyboardButton(text="🎬 Кабинет медиапартнёра",callback_data="media_cabinet")]]))
     await state.set_state(S.media_channel)
-    await answer_visual(c.message, "media", "🤝 ЗАЯВКА В МЕДИАПАРТНЁРЫ\nПришли ссылку на свой канал или площадку.")
+    await edit_panel(c.message, "🤝 ЗАЯВКА В МЕДИАПАРТНЁРЫ\nПришли ссылку на свой канал или площадку.")
     await c.answer()
 
 @dp.callback_query(F.data=="media_cabinet")
@@ -321,7 +321,7 @@ async def media_cabinet(c):
 @dp.callback_query(F.data=="back_home")
 async def back_home(c):
     await c.answer()
-    await edit_panel(c.message,"🔥 <b>FENIX ONLINE</b>\\n<i>Твой проект. Твои возможности.</i>\\n\\nВыбери нужный раздел:",reply_markup=menu(c.from_user.id))
+    await edit_panel(c.message,"🔥 <b>FENIX ONLINE</b>\n<i>Твой проект. Твои возможности.</i>\n\nВыбери нужный раздел:",reply_markup=menu(c.from_user.id))
 
 @dp.callback_query(F.data=="notifications")
 async def user_notifications(c):
@@ -597,10 +597,10 @@ async def media_video_cmd(m,state:FSMContext):
 async def payout_queue(c):
     if not is_admin(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
     rows=db.media_pending_payouts()
-    if not rows: await c.message.answer('📋 Заявок на выплату пока нет.')
+    if not rows: await edit_panel(c.message,'📋 Заявок на выплату пока нет.',reply_markup=markup([[InlineKeyboardButton(text='⬅️ В панель владельца',callback_data='owner')]]))
     else:
         kb=[[InlineKeyboardButton(text=f'#{r["id"]} · ID {r["uid"]}',callback_data=f'payout_view:{r["id"]}')] for r in rows[:30]]
-        await c.message.answer(f'💸 <b>ЗАЯВКИ НА ВЫПЛАТУ</b>\nВ очереди: {len(rows)}\nВыбирай заявку для проверки по одной.',reply_markup=markup(kb),parse_mode='HTML')
+        await edit_panel(c.message,f'💸 <b>ЗАЯВКИ НА ВЫПЛАТУ</b>\nВ очереди: {len(rows)}\nВыбирай заявку для проверки по одной.',reply_markup=markup(kb),parse_mode='HTML')
     await c.answer()
 
 @dp.callback_query(F.data.startswith('payout_view:'))
@@ -619,7 +619,7 @@ async def payout_view(c):
     kb=[[InlineKeyboardButton(text='✅ Одобрить / рассчитать',callback_data=f'payout_approve:{pid}')],
         [InlineKeyboardButton(text='❌ Отклонить',callback_data=f'payout_reject:{pid}')],
         [InlineKeyboardButton(text='📋 К списку',callback_data='payout_queue')]] if r['status']=='pending' else [[InlineKeyboardButton(text='📋 К списку',callback_data='payout_queue')]]
-    await c.message.answer(txt,parse_mode='HTML',reply_markup=markup(kb))
+    await edit_panel(c.message,txt,parse_mode='HTML',reply_markup=markup(kb))
     await c.answer()
 
 @dp.callback_query(F.data.startswith('payout_approve:'))
@@ -730,7 +730,7 @@ async def mno(c):
 @dp.callback_query(F.data=="owner")
 async def owner(c):
     if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
-    await answer_visual(c.message, "news", "⚙️ ПАНЕЛЬ ВЛАДЕЛЬЦА", reply_markup=markup([
+    await edit_panel(c.message, "⚙️ ПАНЕЛЬ ВЛАДЕЛЬЦА", reply_markup=markup([
         [InlineKeyboardButton(text="📣 Опубликовать пост",callback_data="post")],
         [InlineKeyboardButton(text="📨 Рассылка",callback_data="broadcast")],
         [InlineKeyboardButton(text="💸 Заявки на выплаты",callback_data="payout_queue")],
@@ -748,32 +748,38 @@ async def ticket_queue(c):
     await c.answer()
     rows=db.open_tickets(30)
     if not rows:
-        return await c.message.answer("🎫 Открытых обращений нет.")
+        return await edit_panel(c.message,"🎫 Открытых обращений нет.",reply_markup=markup([[InlineKeyboardButton(text="⬅️ В панель владельца",callback_data="owner")]]))
     kb=[[InlineKeyboardButton(text=f"#{r['id']} · ID {r['uid']} · {str(r['subject'])[:28]}",callback_data=f"ticket_view:{r['id']}")] for r in rows]
-    await c.message.answer("🎫 <b>ОБРАЩЕНИЯ ИГРОКОВ</b>\nВыбери обращение:",parse_mode="HTML",reply_markup=markup(kb))
+    await edit_panel(c.message,"🎫 <b>ОБРАЩЕНИЯ ИГРОКОВ</b>\nВыбери обращение:",parse_mode="HTML",reply_markup=markup(kb))
 
 @dp.callback_query(F.data=="admins_manage")
 async def admins_manage(c):
-    if not is_owner(c.from_user.id):
-        return await c.answer("Управлять администраторами может только владелец.",show_alert=True)
-    ids=db.admin_ids()
-    text="👮 УПРАВЛЕНИЕ АДМИНИСТРАТОРАМИ\n\n"
-    text += "\n".join(
-        f"• {db.staff_display(uid)}\n  Должность: {db.staff_role(uid, 'admin') or 'Администратор'}"
-        for uid in ids
-    ) if ids else "Администраторов пока нет."
-    await c.message.answer(text,reply_markup=markup([
-        [InlineKeyboardButton(text="➕ Добавить администратора",callback_data="admin_add")],
-        [InlineKeyboardButton(text="➖ Снять администратора",callback_data="admin_remove")]
-    ]))
-    await c.answer()
+    # Панель владельца доступна is_admin(), поэтому раздел использует ту же проверку.
+    if not is_admin(c.from_user.id):
+        return await c.answer("Нет доступа к управлению администраторами.",show_alert=True)
+    try:
+        ids=db.admin_ids()
+        text="👮 УПРАВЛЕНИЕ АДМИНИСТРАТОРАМИ\\n\\n"
+        text += "\\n".join(
+            f"• {db.staff_display(uid)}\\n  Должность: {db.staff_role(uid, 'admin') or 'Администратор'}"
+            for uid in ids
+        ) if ids else "Администраторов пока нет."
+        await edit_panel(c.message,text,reply_markup=markup([
+            [InlineKeyboardButton(text="➕ Добавить администратора",callback_data="admin_add")],
+            [InlineKeyboardButton(text="➖ Снять администратора",callback_data="admin_remove")],
+            [InlineKeyboardButton(text="⬅️ В панель владельца",callback_data="owner")]
+        ]))
+        await c.answer()
+    except Exception:
+        logging.exception("Ошибка открытия управления администраторами")
+        await c.answer("Не удалось открыть раздел. Подробности записаны в лог Render.",show_alert=True)
 
 @dp.callback_query(F.data=="admin_add")
 async def admin_add_start(c,state:FSMContext):
-    if not is_owner(c.from_user.id):
-        return await c.answer("Только владелец может добавлять администраторов.",show_alert=True)
+    if not is_admin(c.from_user.id):
+        return await c.answer("Нет доступа.",show_alert=True)
     await state.set_state(S.admin_add)
-    await c.message.answer("Отправь Telegram ID нового администратора. Узнать ID можно командой /id.")
+    await edit_panel(c.message,"Отправь Telegram ID нового администратора. Узнать ID можно командой /id.")
     await c.answer()
 
 @dp.message(S.admin_add)
@@ -796,10 +802,10 @@ async def admin_add_finish(m,state:FSMContext):
 
 @dp.callback_query(F.data=="admin_remove")
 async def admin_remove_start(c,state:FSMContext):
-    if not is_owner(c.from_user.id):
-        return await c.answer("Только владелец может снимать администраторов.",show_alert=True)
+    if not is_admin(c.from_user.id):
+        return await c.answer("Нет доступа.",show_alert=True)
     await state.set_state(S.admin_remove)
-    await c.message.answer("Отправь Telegram ID администратора, которого нужно снять.")
+    await edit_panel(c.message,"Отправь Telegram ID администратора, которого нужно снять.")
     await c.answer()
 
 @dp.message(S.admin_remove)
@@ -896,7 +902,7 @@ async def staff_setup(c):
         "━━━━━━━━━━━━━━━━━━\n⌨️ <b>КОМАНДЫ СОСТАВА</b>\n"
         "/nnick ИгровойНик Должность — назначить\n/stafflist — список состава\n/staffremove ИгровойНик — снять должность"
     )
-    await c.message.answer(text,parse_mode="HTML",reply_markup=markup([
+    await edit_panel(c.message,text,parse_mode="HTML",reply_markup=markup([
         [InlineKeyboardButton(text="🔄 Обновить статус чатов",callback_data="staff_setup")],
         [InlineKeyboardButton(text="↩️ В панель владельца",callback_data="owner")]
     ]))
@@ -907,7 +913,7 @@ CUSTOM_LABELS={"cab":("cab_label","👤 Личный кабинет"),"ref":("re
 async def customize(c):
     if not is_owner(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
     rows=[[InlineKeyboardButton(text=label,callback_data=f'custom_pick:{key}')] for key,(_,label) in CUSTOM_LABELS.items()]
-    await c.message.answer('🎨 <b>КАСТОМИЗАЦИЯ КНОПОК</b>\n\nВыбери кнопку, название которой хочешь изменить:',parse_mode='HTML',reply_markup=markup(rows))
+    await edit_panel(c.message,'🎨 <b>КАСТОМИЗАЦИЯ КНОПОК</b>\n\nВыбери кнопку, название которой хочешь изменить:',parse_mode='HTML',reply_markup=markup(rows))
     await c.answer()
 
 @dp.callback_query(F.data.startswith('custom_pick:'))
@@ -918,7 +924,7 @@ async def custom_pick(c,state:FSMContext):
     setting,default=CUSTOM_LABELS[key]
     await state.update_data(custom_key=key)
     await state.set_state(S.customize_label)
-    await c.message.answer(f'✏️ Текущее название: {db.setting(setting,default)}\n\nОтправь новое название (до 64 символов, можно с эмодзи).')
+    await edit_panel(c.message,f'✏️ Текущее название: {db.setting(setting,default)}\n\nОтправь новое название (до 64 символов, можно с эмодзи).')
     await c.answer()
 
 @dp.message(S.customize_label)
@@ -945,7 +951,7 @@ async def setlabel(m):
 @dp.callback_query(F.data=="ostats")
 async def ostats(c):
     if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
-    await c.message.answer(f"Пользователей: {db.users_total()}\nРеферальных регистраций: {db.refs_total()}\nЗаявок медиа: {db.media_total()}"); await c.answer()
+    await edit_panel(c.message,f"Пользователей: {db.users_total()}\nРеферальных регистраций: {db.refs_total()}\nЗаявок медиа: {db.media_total()}",reply_markup=markup([[InlineKeyboardButton(text="⬅️ В панель владельца",callback_data="owner")]])); await c.answer()
 @dp.callback_query(F.data=="post")
 async def post(c,state:FSMContext):
     if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
