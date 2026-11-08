@@ -141,7 +141,7 @@ def robokassa_url(db, donation_id, base_url):
     amount=f"{float(d['rub_amount']):.2f}"
     raw=f"{login}:{amount}:{d['invoice_id']}:{password}:Shp_uid={d['uid']}"
     algo=os.getenv("ROBOKASSA_HASH_ALGORITHM","md5").lower()
-    signature=hashlib.new(algo,raw.encode()).hexdigest()
+    signature=hashlib.new(algo,raw.encode()).hexdigest().upper()
     params={"MerchantLogin":login,"OutSum":amount,"InvId":str(d["invoice_id"]),"Description":f"FENIX ONLINE · пополнение #{donation_id}","SignatureValue":signature,"Culture":"ru","Encoding":"utf-8","Shp_uid":str(d["uid"])}
     if os.getenv("ROBOKASSA_TEST_MODE","0").lower() in {"1","true","yes"}:params["IsTest"]="1"
     return "https://auth.robokassa.ru/Merchant/Index.aspx?"+urlencode(params)
