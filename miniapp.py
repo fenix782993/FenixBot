@@ -450,7 +450,7 @@ async def shop_buy(req):
     msg=f"🛒 Заказ #{order_id} принят. Товар: {product_name} · {price} FNZ. Ник: {nick}. Ожидает выдачи администрацией."
     db.add_notification(user_id,"Покупка оформлена",msg)
     for aid in db.admin_ids():
-        try:await tg.send_message(aid,f"🛒 <b>НОВЫЙ ЗАКАЗ #{order_id}</b>\nИгрок: <code>{nick}</code>\nТовар: {item['name']}\nЦена: {item['price']} FNZ",parse_mode="HTML")
+        try:await tg.send_message(aid,f"🛒 <b>НОВЫЙ ЗАКАЗ #{order_id}</b>\nИгрок: <code>{nick}</code>\nТовар: {product_name}\nЦена: {price} FNZ\nДетали: {json.dumps(details,ensure_ascii=False)}",parse_mode="HTML")
         except Exception:log.exception("Shop order admin notification failed")
     return response({"id":order_id,"balance":shop.balance(db,user_id)})
 
