@@ -531,11 +531,8 @@ async def buy_confirm(c):
     if shop.balance(db,c.from_user.id)<price: return await c.answer('Недостаточно NMZ. Пополни баланс.',show_alert=True)
     oid=shop.create_order(db,c.from_user.id,user['nick'],code,item['name'],price,'')
     if not oid: return await c.answer('Не удалось оформить заказ.',show_alert=True)
-    msg='Заказ #'+str(oid)+' принят: '+item['name']+' · '+str(price)+' NMZ. Ожидает выдачи.'
-    db.add_notification(c.from_user.id,'Покупка оформлена',msg)
-    for aid in OWNER_IDS:
-        try: await bot.send_message(aid, "🛒 НОВЫЙ ЗАКАЗ #" + str(oid) + " | Игрок: " + user["nick"] + " | Товар: " + item["name"] + " | Цена: " + str(price) + " NMZ")
-        except Exception: logging.exception('Shop order notification failed')
+    msg='Покупка #'+str(oid)+' завершена: '+item['name']+' · '+str(price)+' NMZ. Товар добавлен в инвентарь. Запроси выдачу в игре.'
+    db.add_notification(c.from_user.id,'Покупка завершена',msg)
     await c.message.edit_text('✅ '+msg,reply_markup=markup([[InlineKeyboardButton(text='📦 Мои заказы',callback_data='shop_orders')]]))
     await c.answer('Заказ оформлен')
 
@@ -551,7 +548,7 @@ async def buy_cancel(c):
 @dp.callback_query(F.data=='shop_orders')
 async def shop_orders(c):
     rows=shop.list_orders(db,uid=c.from_user.id,limit=20)
-    labels={'pending_delivery':'Ожидает выдачи','processing':'В обработке','delivered':'Выдан'}
+    labels={'purchased':'В инвентаре · запроси выдачу в игре','pending_delivery':'Ожидает выдачи','processing':'В обработке','delivered':'Выдан'}
     body='📦 МОИ ЗАКАЗЫ\n\n' if rows else 'У тебя пока нет заказов.'
     body += '\n'.join('#'+str(x['id'])+' · '+x['product_name']+' · '+str(x['price_fnz'])+' NMZ · '+labels.get(x['status'],x['status']) for x in rows)
     await c.message.answer(body,reply_markup=markup([[InlineKeyboardButton(text='⬅️ Главное меню',callback_data='back_home')]]))
