@@ -60,8 +60,10 @@ def donation_by_invoice(db, inv):
 
 def donations(db, status="pending", limit=100):
     if status=="all":
-        return db._all(f"SELECT d.*,u.nick FROM donations d LEFT JOIN users u ON u.uid=d.uid ORDER BY d.id DESC LIMIT {int(limit)}")
-    return db._all(f"SELECT d.*,u.nick FROM donations d LEFT JOIN users u ON u.uid=d.uid WHERE d.status={db._ph()} ORDER BY d.id DESC LIMIT {int(limit)}",(status,))
+        rows=db._all(f"SELECT d.*,u.nick FROM donations d LEFT JOIN users u ON u.uid=d.uid ORDER BY d.id DESC LIMIT {int(limit)}")
+        return [dict(x, rub_amount=float(x["rub_amount"])) for x in rows]
+    rows=db._all(f"SELECT d.*,u.nick FROM donations d LEFT JOIN users u ON u.uid=d.uid WHERE d.status={db._ph()} ORDER BY d.id DESC LIMIT {int(limit)}",(status,))
+    return [dict(x, rub_amount=float(x["rub_amount"])) for x in rows]
 
 def credit(db, uid, amount, reason, ref, actor=None):
     amount=int(amount)
