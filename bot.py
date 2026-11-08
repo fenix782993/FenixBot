@@ -38,9 +38,33 @@ def _json_setting(key, default):
     except Exception:
         return default
 
+def _emoji_for_button_label(label, pack_ids=None):
+    """Choose a stable custom emoji for any button label."""
+    text = str(label or "").lower()
+    groups = [
+        (("покуп", "магаз", "донат", "товар", "оплат", "баланс", "stars", "пополн"), "5280818098960611598"),
+        (("профил", "кабинет", "аккаунт", "игрок", "войти"), "5382224089295365367"),
+        (("реферал", "ссыл", "приглас"), "5458394638505223612"),
+        (("статист", "выруч", "финанс", "продаж", "сумм"), "5449875850046481967"),
+        (("рейтинг", "топ", "достижен"), "5395597754166682968"),
+        (("медиа", "видео", "публикац", "канал"), "5210905596273905344"),
+        (("владел", "админ", "настрой", "управлен", "состав"), "5382224089295365367"),
+        (("заяв", "обращен", "тикет", "поддерж"), "5456149049214249060"),
+        (("уведом", "сообщ", "ответ"), "5458421812763307254"),
+        (("отклон", "удал", "закры", "отмена", "снять"), "5447621198374511640"),
+        (("назад", "главн", "вернут", "спис"), "5456174445355875099"),
+        (("подпис", "провер", "подтверд", "одобр", "принят", "готов"), "5382224089295365367"),
+    ]
+    for words, emoji_id in groups:
+        if any(word in text for word in words):
+            return str(emoji_id)
+    if pack_ids:
+        return str(pack_ids[0])
+    return "5280818098960611598"
+
+
 def premium_button_icons():
-    # IDs from the user's OutlineEmoji pack. These are actual custom emoji IDs,
-    # not Unicode substitutes. Telegram clients that support button emoji icons render them.
+    """Return a complete icon map for every known and dynamically named button."""
     defaults = {
         "🛍 Донат и товары":"5280818098960611598",
         "👤 Личный кабинет":"5382224089295365367",
@@ -59,8 +83,14 @@ def premium_button_icons():
         "✅ Подтвердить":"5382224089295365367",
         "❌ Отклонить":"5447621198374511640",
     }
-    value = _json_setting("button_custom_emoji_map", {})
-    return {**defaults, **(value if isinstance(value, dict) else {})}
+    saved = _json_setting("button_custom_emoji_map", {})
+    saved = saved if isinstance(saved, dict) else {}
+    pack = _load_emoji_pack()
+    pack_ids = [str(item.get("id")) for item in pack if isinstance(item, dict) and str(item.get("id", "")).isdigit()]
+    result = {**defaults, **saved}
+    for label in PREMIUM_BUTTON_CATALOG:
+        result.setdefault(label, _emoji_for_button_label(label, pack_ids))
+    return result
 
 def premium_button_styles():
     value = _json_setting("button_style_map", {})
@@ -221,8 +251,8 @@ def menu(uid):
     url=db.setting("home_url",CHANNEL_URL)
     store_url=os.getenv("WEBAPP_URL","https://fenixbot-vyqo.onrender.com").rstrip("/")+"/store"
     rows=[[InlineKeyboardButton(text="🛍 Донат и товары",url=store_url)],
-          [InlineKeyboardButton(text="⭐ Пополнить Stars",callback_data="donate_stars")],
-          [InlineKeyboardButton(text="💳 Ручное пополнение",callback_data="manual_donation")],
+          [InlineKeyboardButton(text="⭐ Пополнить Stars",callback_data="donate_stars"),
+           InlineKeyboardButton(text="💳 Ручное пополнение",callback_data="manual_donation")],
           [InlineKeyboardButton(text=db.setting("cab_label","👤 Личный кабинет"),callback_data="cab"),
            InlineKeyboardButton(text=db.setting("ref_label","🔗 Моя реферальная ссылка"),callback_data="ref")],
           [InlineKeyboardButton(text=db.setting("stats_label","📊 Статистика"),callback_data="stats"),
