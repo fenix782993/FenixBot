@@ -474,6 +474,7 @@ async def start(m:Message,state:FSMContext):
         if u and payload in ("stars", "donate_stars"):
             rows=[[InlineKeyboardButton(text=f"{rub} ₽ · {int(rub*1.05)} ⭐",callback_data=f"stars_rub:{rub}")]
                   for rub in STARS_RUB_PRESETS]
+            rows.append([InlineKeyboardButton(text="✏️ Ввести свою сумму",callback_data="stars_custom")])
             rows.append([InlineKeyboardButton(text="⬅️ Главное меню",callback_data="back_home")])
             return await m.answer("⭐ <b>Пополнение Telegram Stars</b>\\nМинимум 100 ₽ · 1 ₽ = 2 NMZ.\\nВыбери сумму — Telegram откроет защищённый счёт на оплату.",parse_mode="HTML",reply_markup=markup(rows))
         if u and payload.startswith('buy_'):
