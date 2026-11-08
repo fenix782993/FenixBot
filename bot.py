@@ -55,8 +55,9 @@ def markup(rows):
             try:
                 if isinstance(button, InlineKeyboardButton):
                     updates = {}
-                    custom_id = icons.get(button.text or "")
-                    style = styles.get(button.text or "")
+                    keys = [button.text or "", getattr(button, "callback_data", None) or ""]
+                    custom_id = next((icons.get(key) for key in keys if icons.get(key)), None)
+                    style = next((styles.get(key) for key in keys if styles.get(key)), None)
                     if custom_id and str(custom_id).isdigit():
                         updates["icon_custom_emoji_id"] = str(custom_id)
                     if style in {"primary", "success", "danger"}:
