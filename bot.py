@@ -1,8 +1,9 @@
 import asyncio, logging, os, re, secrets, hashlib
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, ChatPermissions
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -70,7 +71,10 @@ def menu(uid):
            InlineKeyboardButton(text="🏆 Рейтинг",callback_data="top")],
           [InlineKeyboardButton(text="🤝 Стать медиапартнёром",callback_data="media")]]
     if url: rows.append([InlineKeyboardButton(text=label,url=url)])
-    if is_admin(uid): rows.append([InlineKeyboardButton(text="⚙️ Панель владельца",callback_data="owner")])
+    if is_admin(uid):
+        rows.append([InlineKeyboardButton(text="⚙️ Панель администратора",callback_data="owner")])
+        admin_chat_url=db.setting("admin_chat_url")
+        if admin_chat_url: rows.append([InlineKeyboardButton(text="💬 Админ-чат",url=admin_chat_url)])
     return markup(rows)
 class S(StatesGroup):
     nick=State(); password=State(); media_channel=State(); media_stats=State(); media_contact=State()
@@ -88,7 +92,7 @@ async def start(m:Message,state:FSMContext):
         u=db.user(m.from_user.id)
         if u:
             return await answer_visual(
-                m, "welcome", "🔥 FENIX ONLINE\\nТвой личный кабинет.",
+                m, "welcome", "🔥 FENIX ONLINE\nТвой личный кабинет.",
                 reply_markup=menu(m.from_user.id)
             )
         p=(m.text or "").split(maxsplit=1); ref=None
@@ -100,7 +104,7 @@ async def start(m:Message,state:FSMContext):
         await state.set_state(S.nick)
         await answer_visual(
             m, "welcome",
-            "🔥 FENIX ONLINE — регистрация\\n\\nВведи игровой никнейм (3–24 символа, латиница, цифры и _)."
+            "🔥 FENIX ONLINE — регистрация\n\nВведи игровой никнейм (3–24 символа, латиница, цифры и _)."
         )
     except Exception:
         logging.exception("Ошибка /start")
@@ -320,7 +324,7 @@ async def post(c,state:FSMContext):
 
 @dp.message(S.post_text)
 async def posttext(m,state:FSMContext):
-    if not is_admin(m.from_user.id): return
+    if not is_admin(m.from_user.id): return await m.answer("Нет доступа к публикациям и рассылке.")
     if not (m.text or "").strip():
         return await m.answer("Пришли текстовое сообщение.")
     await state.update_data(text=m.text)
@@ -348,7 +352,7 @@ async def compose_photo_choice(c,state:FSMContext):
 
 @dp.message(S.post_photo)
 async def postphoto(m,state:FSMContext):
-    if not is_admin(m.from_user.id): return
+    if not is_admin(m.from_user.id): return await m.answer("Нет доступа к публикациям и рассылке.")
     if not m.photo:
         return await m.answer("Пожалуйста, отправь именно фотографию.")
     await state.update_data(photo=m.photo[-1].file_id)
@@ -372,7 +376,7 @@ async def compose_button_choice(c,state:FSMContext):
 
 @dp.message(S.post_button)
 async def postbutton(m,state:FSMContext):
-    if not is_admin(m.from_user.id): return
+    if not is_admin(m.from_user.id): return await m.answer("Нет доступа к публикациям и рассылке.")
     label=(m.text or "").strip()
     if not label: return await m.answer("Напиши текст кнопки.")
     if len(label)>64: return await m.answer("Текст кнопки должен быть не длиннее 64 символов.")
@@ -382,7 +386,7 @@ async def postbutton(m,state:FSMContext):
 
 @dp.message(S.post_url)
 async def posturl(m,state:FSMContext):
-    if not is_admin(m.from_user.id): return
+    if not is_admin(m.from_user.id): return await m.answer("Нет доступа к публикациям и рассылке.")
     url=(m.text or "").strip()
     if not re.match(r"^https?://\S+$",url):
         return await m.answer("Неверная ссылка. Отправь полный URL, начиная с https://")
@@ -463,6 +467,218 @@ async def buttonurl(m,state:FSMContext):
 @dp.message(Command("cancel"))
 async def cancel(m,state:FSMContext):
     await state.clear(); await m.answer("Отменено.",reply_markup=menu(m.from_user.id))
+
+# -------------------- STAFF / GROUP MODERATION --------------------
+def _staff_allowed(uid):
+    return is_admin(uid)
+
+def _admin_chat_id():
+    value = db.setting("admin_chat_id")
+    try: return int(value) if value else None
+    except (TypeError, ValueError): return None
+
+async def _group_reply(message, text, **kwargs):
+    await message.reply(text, **kwargs)
+
+@dp.message(Command("setadminchat"))
+async def set_admin_chat(message: Message):
+    if not is_owner(message.from_user.id):
+        return await message.reply("Эту настройку может выполнить только владелец проекта.")
+    if message.chat.type not in ("group", "supergroup"):
+        return await message.reply("Команду нужно выполнить внутри будущего админ-чата.")
+    db.set_setting("admin_chat_id", str(message.chat.id))
+    try:
+        invite = await bot.create_chat_invite_link(message.chat.id, name="FENIX admin chat")
+        db.set_setting("admin_chat_url", invite.invite_link)
+    except Exception:
+        logging.exception("Не удалось создать ссылку админ-чата")
+    await message.reply("✅ Этот чат назначен админ-чатом FENIX ONLINE.")
+
+@dp.message(Command("setmodchat"))
+async def set_mod_chat(message: Message):
+    if not is_owner(message.from_user.id):
+        return await message.reply("Эту настройку может выполнить только владелец проекта.")
+    if message.chat.type not in ("group", "supergroup"):
+        return await message.reply("Команду нужно выполнить в группе, где бот будет модерировать участников.")
+    db.set_setting("mod_chat_id", str(message.chat.id))
+    await message.reply("✅ Эта группа назначена чатом модерации. Убедись, что бот — администратор с правами блокировки участников.")
+
+@dp.message(Command("staff"))
+async def staff_request(message: Message):
+    if message.chat.type not in ("group", "supergroup"):
+        return await message.reply("Команда доступна в назначенном админ-чате.")
+    if message.chat.id != _admin_chat_id():
+        return await message.reply("Этот чат не назначен админ-чатом FENIX ONLINE.")
+    if not is_owner(message.from_user.id):
+        return await message.reply("Назначать сотрудников может только владелец.")
+    parts=(message.text or "").split(maxsplit=2)
+    if len(parts)<3:
+        return await message.reply("Формат: /staff игровой_ник должность\nПример: /staff Fenix_Rudcov Старший администратор")
+    nick, role=parts[1].strip(), parts[2].strip()
+    target=db.user_by_nick(nick)
+    if not target:
+        return await message.reply("Игрок с таким ником не найден в базе бота. Он должен хотя бы один раз запустить /start.")
+    uid=int(target["uid"])
+    if is_admin(uid):
+        return await message.reply("У этого пользователя уже есть доступ администратора.")
+    db.create_staff_request(uid, nick, role, message.from_user.id)
+    kb=markup([[InlineKeyboardButton(text="✅ Дать доступ к боту", callback_data=f"staff:grant:{uid}"),
+                InlineKeyboardButton(text="❌ Отказать", callback_data=f"staff:deny:{uid}")]])
+    await message.reply(f"🛡 Заявка на назначение\nИгровой ник: {nick}\nДолжность: {role}\nTelegram ID: {uid}\n\nВыдать доступ к административной панели?", reply_markup=kb)
+
+@dp.callback_query(F.data.startswith("staff:"))
+async def staff_decision(call: CallbackQuery):
+    if not is_owner(call.from_user.id):
+        return await call.answer("Решение доступно только владельцу.", show_alert=True)
+    _, action, raw_uid=call.data.split(":",2)
+    uid=int(raw_uid)
+    req=db.staff_request(uid)
+    if not req or req["status"] != "pending":
+        return await call.answer("Заявка уже обработана или не найдена.", show_alert=True)
+    if action=="grant":
+        db.add_admin(uid, call.from_user.id)
+        db.set_staff_role(uid, req["nick"], req["role"])
+        db.update_staff_request(uid,"approved")
+        try: await bot.send_message(uid, f"✅ Тебе выдан доступ к панели FENIX ONLINE.\nДолжность: {req['role']}\nОткрой /start.")
+        except Exception: logging.exception("Не удалось уведомить нового сотрудника %s", uid)
+        result="✅ Доступ выдан. Сотрудник добавлен в администраторы."
+    elif action=="deny":
+        db.update_staff_request(uid,"denied")
+        try: await bot.send_message(uid,"❌ Тебе отказано в доступе к административной панели FENIX ONLINE.")
+        except Exception: pass
+        result="❌ В доступе отказано. Права не выданы."
+    else:
+        return await call.answer("Неизвестное действие.", show_alert=True)
+    await call.message.edit_reply_markup(reply_markup=None)
+    await call.message.reply(result)
+    await call.answer("Готово")
+
+@dp.message(Command("stafflist"))
+async def staff_list(message: Message):
+    if not is_admin(message.from_user.id): return await message.reply("Нет доступа.")
+    rows=db.staff_list()
+    body="\n".join(f"• {x['nick']} — {x['role']} (ID {x['uid']})" for x in rows) or "Список пока пуст."
+    await message.reply("🛡 СОСТАВ FENIX ONLINE\n"+body)
+
+def _parse_duration(raw):
+    m=re.fullmatch(r"(\d+)([mhd])", raw.lower())
+    if not m: return None
+    n=int(m.group(1)); unit=m.group(2)
+    seconds=n*{"m":60,"h":3600,"d":86400}[unit]
+    return seconds if 1 <= seconds <= 366*86400 else None
+
+async def _resolve_target(message, token=None):
+    if message.reply_to_message and message.reply_to_message.from_user:
+        u=message.reply_to_message.from_user
+        return u.id, ("@"+u.username if u.username else str(u.id))
+    if not token: return None, None
+    token=token.strip()
+    if token.startswith("@"):
+        row=db.user_by_username(token[1:])
+        if row: return int(row["uid"]), token
+        return None, token
+    if token.isdigit(): return int(token), token
+    row=db.user_by_nick(token)
+    if row: return int(row["uid"]), token
+    return None, token
+
+async def _moderation_guard(message):
+    if message.chat.type not in ("group","supergroup"):
+        await message.reply("Команда работает только в группе."); return False
+    try: mod_chat_id=int(db.setting("mod_chat_id") or "0")
+    except (TypeError, ValueError): mod_chat_id=0
+    if message.chat.id != mod_chat_id:
+        await message.reply("Команды модерации доступны только в назначенной группе модерации."); return False
+    if not is_admin(message.from_user.id):
+        await message.reply("Нет доступа к модерации."); return False
+    return True
+
+@dp.message(Command("mute"))
+async def cmd_mute(message: Message):
+    if not await _moderation_guard(message): return
+    args=(message.text or "").split()
+    token=args[1] if len(args)>1 and not message.reply_to_message else None
+    duration_arg=args[2] if token and len(args)>2 else (args[1] if len(args)>1 and message.reply_to_message else "1h")
+    seconds=_parse_duration(duration_arg) if duration_arg else 3600
+    if seconds is None: return await message.reply("Формат срока: 10m, 2h или 1d. Максимум 366d.")
+    uid,label=await _resolve_target(message,token)
+    if not uid: return await message.reply("Не нашёл участника. Ответь на его сообщение или укажи Telegram ID / @username зарегистрированного игрока.")
+    if uid==message.from_user.id or uid in OWNER_IDS: return await message.reply("Нельзя применить мут к себе или владельцу.")
+    try:
+        await bot.restrict_chat_member(message.chat.id, uid, permissions=ChatPermissions(can_send_messages=False), until_date=datetime.now(timezone.utc)+timedelta(seconds=seconds))
+        await message.reply(f"🔇 Участник {label} получил мут на {duration_arg}.")
+    except Exception as e:
+        logging.exception("mute failed")
+        await message.reply("Не удалось выдать мут. Проверь, что бот администратор с правом блокировки участников.\n"+str(e)[:400])
+
+@dp.message(Command("unmute"))
+async def cmd_unmute(message: Message):
+    if not await _moderation_guard(message): return
+    args=(message.text or "").split(); token=args[1] if len(args)>1 and not message.reply_to_message else None
+    uid,label=await _resolve_target(message,token)
+    if not uid: return await message.reply("Ответь на сообщение участника или укажи его Telegram ID / @username.")
+    try:
+        await bot.restrict_chat_member(message.chat.id,uid,permissions=ChatPermissions(can_send_messages=True,can_send_audios=True,can_send_documents=True,can_send_photos=True,can_send_videos=True,can_send_video_notes=True,can_send_voice_notes=True,can_send_polls=True,can_send_other_messages=True,can_add_web_page_previews=True))
+        await message.reply(f"🔊 Ограничения сняты с {label}.")
+    except Exception as e:
+        logging.exception("unmute failed"); await message.reply("Не удалось снять мут: "+str(e)[:400])
+
+@dp.message(Command("ban"))
+async def cmd_ban(message: Message):
+    if not await _moderation_guard(message): return
+    args=(message.text or "").split(); token=args[1] if len(args)>1 and not message.reply_to_message else None
+    uid,label=await _resolve_target(message,token)
+    if not uid: return await message.reply("Ответь на сообщение участника или укажи его Telegram ID / @username.")
+    if uid==message.from_user.id or uid in OWNER_IDS: return await message.reply("Нельзя заблокировать себя или владельца.")
+    try: await bot.ban_chat_member(message.chat.id,uid); await message.reply(f"⛔ {label} заблокирован в группе.")
+    except Exception as e:
+        logging.exception("ban failed"); await message.reply("Не удалось заблокировать участника: "+str(e)[:400])
+
+@dp.message(Command("unban"))
+async def cmd_unban(message: Message):
+    if not await _moderation_guard(message): return
+    args=(message.text or "").split(); token=args[1] if len(args)>1 and not message.reply_to_message else None
+    uid,label=await _resolve_target(message,token)
+    if not uid: return await message.reply("Укажи Telegram ID участника.")
+    try: await bot.unban_chat_member(message.chat.id,uid,only_if_banned=True); await message.reply(f"✅ Блокировка {label} снята.")
+    except Exception as e:
+        logging.exception("unban failed"); await message.reply("Не удалось снять блокировку: "+str(e)[:400])
+
+@dp.message(Command("kick"))
+async def cmd_kick(message: Message):
+    if not await _moderation_guard(message): return
+    args=(message.text or "").split(); token=args[1] if len(args)>1 and not message.reply_to_message else None
+    uid,label=await _resolve_target(message,token)
+    if not uid: return await message.reply("Ответь на сообщение участника или укажи его Telegram ID / @username.")
+    if uid==message.from_user.id or uid in OWNER_IDS: return await message.reply("Нельзя исключить себя или владельца.")
+    try:
+        await bot.ban_chat_member(message.chat.id,uid)
+        await bot.unban_chat_member(message.chat.id,uid,only_if_banned=True)
+        await message.reply(f"👢 {label} исключён из группы. Он сможет вступить снова по ссылке.")
+    except Exception as e:
+        logging.exception("kick failed"); await message.reply("Не удалось исключить участника: "+str(e)[:400])
+
+@dp.message(Command("warn"))
+async def cmd_warn(message: Message):
+    if not await _moderation_guard(message): return
+    args=(message.text or "").split(maxsplit=2); token=args[1] if len(args)>1 and not message.reply_to_message else None
+    uid,label=await _resolve_target(message,token)
+    if not uid: return await message.reply("Ответь на сообщение участника или укажи Telegram ID / @username.")
+    reason=(args[2] if token and len(args)>2 else (args[1] if len(args)>1 and message.reply_to_message else "Без указания причины"))
+    count=db.add_warning(message.chat.id,uid,message.from_user.id,reason)
+    try: await bot.send_message(uid,f"⚠️ Предупреждение в чате FENIX ONLINE. Причина: {reason}. Всего предупреждений: {count}")
+    except Exception: pass
+    await message.reply(f"⚠️ Предупреждение выдано {label}. Всего: {count}.")
+
+@dp.message(Command("warns"))
+async def cmd_warns(message: Message):
+    if not await _moderation_guard(message): return
+    args=(message.text or "").split(); token=args[1] if len(args)>1 and not message.reply_to_message else None
+    uid,label=await _resolve_target(message,token)
+    if not uid: return await message.reply("Ответь на сообщение участника или укажи Telegram ID / @username.")
+    await message.reply(f"⚠️ У {label} предупреждений: {db.warning_count(message.chat.id,uid)}")
+
+
 async def health(request):
     return web.json_response({"status": "ok", "service": "fenix-online-bot"})
 

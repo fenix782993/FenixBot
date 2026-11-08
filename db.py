@@ -60,6 +60,9 @@ class DB:
                 c.execute("CREATE TABLE IF NOT EXISTS joins (owner BIGINT, uid BIGINT UNIQUE, created TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS admins (uid BIGINT PRIMARY KEY, added_by BIGINT, created TEXT)")
+                c.execute("CREATE TABLE IF NOT EXISTS staff_requests (uid BIGINT PRIMARY KEY, nick TEXT, role TEXT, requested_by BIGINT, status TEXT, created TEXT)")
+                c.execute("CREATE TABLE IF NOT EXISTS staff_roles (uid BIGINT PRIMARY KEY, nick TEXT, role TEXT, created TEXT)")
+                c.execute("CREATE TABLE IF NOT EXISTS warnings (id BIGSERIAL PRIMARY KEY, chat_id BIGINT, uid BIGINT, by_uid BIGINT, reason TEXT, created TEXT)")
             else:
                 c.executescript("""
                     CREATE TABLE IF NOT EXISTS users(uid INTEGER PRIMARY KEY, username TEXT, nick TEXT UNIQUE, pwhash TEXT, ref INTEGER, created TEXT);
@@ -69,6 +72,9 @@ class DB:
                     CREATE TABLE IF NOT EXISTS joins(owner INTEGER, uid INTEGER UNIQUE, created TEXT);
                     CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT);
                     CREATE TABLE IF NOT EXISTS admins(uid INTEGER PRIMARY KEY, added_by INTEGER, created TEXT);
+                    CREATE TABLE IF NOT EXISTS staff_requests(uid INTEGER PRIMARY KEY, nick TEXT, role TEXT, requested_by INTEGER, status TEXT, created TEXT);
+                    CREATE TABLE IF NOT EXISTS staff_roles(uid INTEGER PRIMARY KEY, nick TEXT, role TEXT, created TEXT);
+                    CREATE TABLE IF NOT EXISTS warnings(id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER, uid INTEGER, by_uid INTEGER, reason TEXT, created TEXT);
                 """)
             owners = [int(x) for x in os.getenv("ADMIN_IDS", "").replace(" ", "").split(",") if x]
             for uid in owners:
@@ -224,3 +230,42 @@ class DB:
         with self.con() as c:
             cur = c.execute(f"DELETE FROM admins WHERE uid={self._ph()}", (uid,))
             return cur.rowcount > 0
+
+    def user_by_nick(self, nick):
+        return self._one(f"SELECT * FROM users WHERE lower(nick)=lower({self._ph()})", (nick,))
+
+    def user_by_username(self, username):
+        return self._one(f"SELECT * FROM users WHERE lower(username)=lower({self._ph()})", (username.lstrip("@"),))
+
+    def create_staff_request(self, uid, nick, role, requested_by):
+        with self.con() as c:
+            if self.use_postgres:
+                c.execute("INSERT INTO staff_requests(uid,nick,role,requested_by,status,created) VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(uid) DO UPDATE SET nick=EXCLUDED.nick, role=EXCLUDED.role, requested_by=EXCLUDED.requested_by, status='pending', created=EXCLUDED.created", (uid,nick,role,requested_by,"pending",self._now()))
+            else:
+                c.execute("INSERT OR REPLACE INTO staff_requests(uid,nick,role,requested_by,status,created) VALUES(?,?,?,?,?,?)", (uid,nick,role,requested_by,"pending",self._now()))
+
+    def staff_request(self, uid):
+        return self._one(f"SELECT * FROM staff_requests WHERE uid={self._ph()}", (uid,))
+
+    def update_staff_request(self, uid, status):
+        with self.con() as c: c.execute(f"UPDATE staff_requests SET status={self._ph()} WHERE uid={self._ph()}", (status,uid))
+
+    def set_staff_role(self, uid, nick, role):
+        with self.con() as c:
+            if self.use_postgres:
+                c.execute("INSERT INTO staff_roles(uid,nick,role,created) VALUES(%s,%s,%s,%s) ON CONFLICT(uid) DO UPDATE SET nick=EXCLUDED.nick, role=EXCLUDED.role", (uid,nick,role,self._now()))
+            else:
+                c.execute("INSERT OR REPLACE INTO staff_roles(uid,nick,role,created) VALUES(?,?,?,?)", (uid,nick,role,self._now()))
+
+    def staff_list(self):
+        return self._all("SELECT uid,nick,role FROM staff_roles ORDER BY nick")
+
+    def add_warning(self, chat_id, uid, by_uid, reason):
+        with self.con() as c:
+            c.execute(f"INSERT INTO warnings(chat_id,uid,by_uid,reason,created) VALUES({','.join([self._ph()]*5)})", (chat_id,uid,by_uid,reason,self._now()))
+            row=c.execute(f"SELECT count(*) AS n FROM warnings WHERE chat_id={self._ph()} AND uid={self._ph()}", (chat_id,uid)).fetchone()
+            return row["n"] if isinstance(row,dict) else row[0]
+
+    def warning_count(self, chat_id, uid):
+        return self._scalar(f"SELECT count(*) FROM warnings WHERE chat_id={self._ph()} AND uid={self._ph()}", (chat_id,uid))
+
