@@ -500,9 +500,6 @@ async def shop_buy(req):
     if not order_id:return response("Недостаточно NMZ. Сначала пополни кошелёк.",409)
     msg=f"Покупка #{order_id} завершена. {product_name} добавлен в инвентарь. Стоимость: {price} NMZ. Запроси выдачу предмета в игре."
     db.add_notification(user_id,"Покупка оформлена",msg)
-    for aid in db.admin_ids():
-        try:await tg.send_message(aid,f"🛒 <b>НОВЫЙ ЗАКАЗ #{order_id}</b>\nИгрок: <code>{nick}</code>\nТовар: {product_name}\nЦена: {price} NMZ\nДетали: {json.dumps(details,ensure_ascii=False)}",parse_mode="HTML")
-        except Exception:log.exception("Shop order admin notification failed")
     return response({"id":order_id,"balance":shop.balance(db,user_id)})
 
 async def wallet_donate(req):
