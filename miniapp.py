@@ -736,6 +736,7 @@ async def main():
     app.router.add_get("/app", home)
     app.router.add_get("/store", lambda _: web.FileResponse(WEB_DIR / "store.html"))
     app.router.add_get("/health", lambda _: web.json_response({"status": "ok", "service": "fenix-miniapp"}))
+    app.router.add_static("/assets/", ROOT / "assets", show_index=False)
     app.router.add_post("/api/auth/telegram", login_telegram)
     app.router.add_post("/api/auth/logout", logout)
     app.router.add_get("/api/bootstrap", bootstrap)
