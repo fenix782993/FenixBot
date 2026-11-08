@@ -30,26 +30,41 @@ def neat_value(value, fallback="Не указано"):
     value=str(value or "").strip()
     return value if value else fallback
 def is_owner(uid): return uid in OWNER_IDS
-def premium_button_icons():
+def _json_setting(key, default):
     try:
-        return json.loads(db.setting("button_custom_emoji_map", "{}") or "{}")
+        value = json.loads(db.setting(key, json.dumps(default, ensure_ascii=False)) or "{}")
+        return value if isinstance(value, type(default)) else default
     except Exception:
-        return {}
+        return default
+
+def premium_button_icons():
+    value = _json_setting("button_custom_emoji_map", {})
+    return value if isinstance(value, dict) else {}
+
+def premium_button_styles():
+    value = _json_setting("button_style_map", {})
+    return value if isinstance(value, dict) else {}
 
 def markup(rows):
-    """Apply a distinct Premium Custom Emoji to buttons by their exact label."""
-    icons = premium_button_icons()
+    """Apply Telegram Bot API 9.4 button colors and Premium Emoji icons."""
+    icons, styles = premium_button_icons(), premium_button_styles()
     styled_rows = []
     for row in rows:
         styled_row = []
         for button in row:
             try:
                 if isinstance(button, InlineKeyboardButton):
+                    updates = {}
                     custom_id = icons.get(button.text or "")
-                    if custom_id:
-                        button = button.model_copy(update={"icon_custom_emoji_id": str(custom_id)})
+                    style = styles.get(button.text or "")
+                    if custom_id and str(custom_id).isdigit():
+                        updates["icon_custom_emoji_id"] = str(custom_id)
+                    if style in {"primary", "success", "danger"}:
+                        updates["style"] = style
+                    if updates:
+                        button = button.model_copy(update=updates)
             except Exception:
-                logging.exception("Не удалось применить Premium Emoji к кнопке")
+                logging.exception("Не удалось применить оформление кнопки")
             styled_row.append(button)
         styled_rows.append(styled_row)
     return InlineKeyboardMarkup(inline_keyboard=styled_rows)
@@ -357,6 +372,26 @@ async def clear_button_emoji(m: Message):
     db.set_setting("button_custom_emoji_map", "{}")
     db.set_setting("button_custom_emoji_id", "")
     await m.answer("✅ Все Premium Emoji для кнопок удалены.")
+
+@dp.message(Command("setbtnstyle"))
+async def set_button_style(m: Message):
+    if not is_owner(m.from_user.id):
+        return await m.answer("⛔ Нет доступа.")
+    parts = (m.text or "").split()
+    if len(parts) != 3 or not parts[1].isdigit() or parts[2].lower() not in {"primary", "success", "danger", "default"}:
+        return await m.answer("Формат: <code>/setbtnstyle НОМЕР primary|success|danger|default</code>", parse_mode="HTML")
+    index = int(parts[1])
+    if not 1 <= index <= len(PREMIUM_BUTTON_CATALOG):
+        return await m.answer(f"Номер кнопки должен быть от 1 до {len(PREMIUM_BUTTON_CATALOG)}.")
+    label = PREMIUM_BUTTON_CATALOG[index - 1]
+    styles = premium_button_styles()
+    if parts[2].lower() == "default":
+        styles.pop(label, None)
+    else:
+        styles[label] = parts[2].lower()
+    db.set_setting("button_style_map", json.dumps(styles, ensure_ascii=False))
+    await m.answer(f"✅ Стиль кнопки <b>{html.escape(label)}</b> обновлён: <code>{parts[2].lower()}</code>", parse_mode="HTML")
+
 @dp.message(CommandStart())
 async def start(m:Message,state:FSMContext):
     try:
@@ -371,7 +406,7 @@ async def start(m:Message,state:FSMContext):
         u=db.user(m.from_user.id)
         if u:
             return await answer_visual(
-                m, "welcome", "🔥 FENIX ONLINE\nТвой личный кабинет.",
+                m, "welcome", db.setting("welcome_text", "🔥 FENIX ONLINE\\nТвой личный кабинет."),
                 reply_markup=menu(m.from_user.id)
             )
         p=(m.text or "").split(maxsplit=1); ref=None
@@ -383,7 +418,7 @@ async def start(m:Message,state:FSMContext):
         await state.set_state(S.nick)
         await answer_visual(
             m, "welcome",
-            "🔥 FENIX ONLINE — регистрация\n\nВведи игровой никнейм (3–24 символа, латиница, цифры и _)."
+            db.setting("registration_text", "🔥 FENIX ONLINE — регистрация\\n\\nВведи игровой никнейм (3–24 символа, латиница, цифры и _).")
         )
     except Exception:
         logging.exception("Ошибка /start")
