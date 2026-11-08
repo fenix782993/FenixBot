@@ -54,8 +54,6 @@ def verify_init_data(raw):
 
 @web.middleware
 async def auth(request, handler):
-    if request.path == "/api/payments/robokassa/result":
-        return await handler(request)
     if request.path.startswith("/api/"):
         user = verify_init_data(request.headers.get("X-Telegram-Init-Data", ""))
         if not user:
@@ -382,7 +380,7 @@ def store_prices():
 
 def fnz_rate():
     try:
-        value=float(db.setting("fnz_per_rub","0") or 0)
+        value=float(db.setting("fnz_per_rub","2") or 2)
         return value if 0 < value <= 100000 else 0
     except Exception:
         return 0
@@ -409,7 +407,7 @@ async def shop_home(req):
         "fnz_per_rub":fnz_rate(),
         "manual_phone":"+79067853860",
         "manual_banks":["Сбербанк","Т-Банк"],
-        "robokassa_enabled":bool(os.getenv("ROBOKASSA_MERCHANT_LOGIN") and os.getenv("ROBOKASSA_PASSWORD1") and os.getenv("ROBOKASSA_PASSWORD2")),
+        "robokassa_enabled":False,
         "server":{"name":"BLACK","address":"185.207.214.14","port":4357}
     })
 
@@ -465,16 +463,10 @@ async def wallet_donate(req):
     fnz=int(round(rub*rate))
     if fnz<1:return response("Сумма слишком мала для начисления FNZ.",400)
     method=str(data.get("method","manual"))
-    if method not in {"manual","robokassa"}:return response("Неизвестный способ оплаты.",400)
+    if method != "manual":return response("Доступно только ручное пополнение.",400)
     proof=str(data.get("proof","")).strip()[:500]
     if method=="manual" and len(proof)<3:return response("Укажи комментарий к переводу или последние 4 цифры операции.",400)
-    if method=="robokassa" and not (os.getenv("ROBOKASSA_MERCHANT_LOGIN") and os.getenv("ROBOKASSA_PASSWORD1") and os.getenv("ROBOKASSA_PASSWORD2")):
-        return response("Robokassa пока не подключена: отсутствуют данные магазина.",503)
     did=shop.new_donation(db,user_id,rub,fnz,method,proof)
-    if method=="robokassa":
-        url=shop.robokassa_url(db,did,req.scheme+"://"+req.host)
-        if not url:return response("Не удалось сформировать платёжную ссылку.",503)
-        return response({"id":did,"payment_url":url,"fnz":fnz,"rub":rub})
     text=f"💳 Новое ручное пополнение #{did}\nИгрок: {user_id}\nСумма: {rub:.2f} ₽\nНачисление после проверки: {fnz} FNZ\nПодтверждение: {proof}"
     for aid in db.admin_ids():
         try:await tg.send_message(aid,text)
@@ -674,10 +666,10 @@ async def admin_design(req):
 
 
 async def main():
-    shop.init(db)
     if not TOKEN:
         raise RuntimeError("BOT_TOKEN не задан")
     db.init()
+    shop.init(db)
     if WEBAPP_URL.startswith("https://"):
         try:
             await tg.set_chat_menu_button(menu_button=MenuButtonWebApp(text="FENIX ONLINE", web_app=WebAppInfo(url=WEBAPP_URL.rstrip("/") + "/app")))
@@ -720,7 +712,6 @@ async def main():
     app.router.add_post("/api/admin/store", admin_store)
     app.router.add_post("/api/admin/donations/{donation_id}", admin_donation_decision)
     app.router.add_post("/api/admin/orders/{order_id}", admin_order_decision)
-    app.router.add_route("*", "/api/payments/robokassa/result", robokassa_result)
     app.router.add_get("/api/admin/design", admin_design)
     app.router.add_post("/api/admin/design", admin_design)
     runner = web.AppRunner(app)
