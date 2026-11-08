@@ -1,4 +1,6 @@
 import os
+import time
+import logging
 from datetime import datetime, timezone
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -25,7 +27,17 @@ class DB:
     def con(self):
         if self.use_postgres:
             psycopg, dict_row = self._psycopg
-            return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+            # Neon requires TLS. Keep each operation on a fresh connection and
+            # use conservative TCP keepalives to detect broken network paths.
+            return psycopg.connect(
+                DATABASE_URL,
+                row_factory=dict_row,
+                connect_timeout=30,
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=3,
+            )
         import sqlite3
         folder = os.path.dirname(os.path.abspath(self.path))
         os.makedirs(folder, exist_ok=True)
@@ -37,6 +49,35 @@ class DB:
         return datetime.now(timezone.utc).isoformat()
 
     def init(self):
+        """Initialize schema; retry transient Neon/network disconnects safely."""
+        if not self.use_postgres:
+            return self._init_once()
+
+        psycopg, _ = self._psycopg
+        retry_errors = (psycopg.OperationalError, psycopg.InterfaceError)
+        last_error = None
+
+        for attempt in range(1, 9):
+            try:
+                self._init_once()
+                logging.info("PostgreSQL schema initialized successfully.")
+                return
+            except retry_errors as exc:
+                last_error = exc
+                logging.warning(
+                    "Neon PostgreSQL connection failed during DB initialization "
+                    "(attempt %s/8): %s",
+                    attempt, exc
+                )
+                if attempt < 8:
+                    time.sleep(min(2 ** (attempt - 1), 20))
+
+        raise RuntimeError(
+            "Не удалось подключиться к Neon PostgreSQL после 8 попыток. "
+            "Проверь DATABASE_URL, SSL и состояние Neon."
+        ) from last_error
+
+    def _init_once(self):
         with self.con() as c:
             if self.use_postgres:
                 c.execute("""
