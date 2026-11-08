@@ -235,8 +235,31 @@ async def answer_visual(message, asset_key, caption, reply_markup=None):
 
 
 
+def branded_panel(text):
+    """Give every interactive bot screen one consistent FENIX header."""
+    value = str(text or "")
+    if not value.startswith("🔥 FENIX ONLINE"):
+        value = "🔥 FENIX ONLINE  •  BLACK\n━━━━━━━━━━━━━━━━━━\n" + value
+    return value
+
+
+def welcome_caption():
+    custom = str(db.setting("welcome_text", "") or "").strip()
+    if not custom or custom == "🔥 FENIX ONLINE\nТвой личный кабинет.":
+        custom = "Твой игровой кабинет, покупки и статистика — в одном месте."
+    return (
+        "🔥 FENIX ONLINE\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "⚫ BLACK  •  SA:MP\n"
+        "🌐 185.207.214.14:4357\n\n"
+        + custom
+        + "\n\nВыбери нужный раздел в меню ниже."
+    )
+
+
 async def edit_panel(message, text, reply_markup=None, parse_mode="HTML"):
-    """Prefer editing the existing Telegram message to keep navigation compact."""
+    """Prefer editing the existing message and keep every screen consistently branded."""
+    text = branded_panel(text)
     try:
         return await message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
     except Exception:
@@ -539,7 +562,7 @@ async def start(m:Message,state:FSMContext):
             return await m.answer('🛒 Подтверждение покупки\n\nТовар: '+item['name']+'\nЦена: '+str(item['price'])+' NMZ\nИгровой ник: '+u['nick']+'\n\nПодтверди списание с баланса.',reply_markup=kb)
         if u:
             return await answer_visual(
-                m, "welcome", db.setting("welcome_text", "🔥 FENIX ONLINE\nТвой личный кабинет."),
+                m, "welcome", welcome_caption(),
                 reply_markup=menu(m.from_user.id)
             )
         p=(m.text or "").split(maxsplit=1); ref=None
@@ -585,7 +608,7 @@ async def buy_confirm(c):
 
 @dp.callback_query(F.data=='back_home')
 async def back_home(c):
-    await c.message.answer('🔥 FENIX ONLINE — главное меню',reply_markup=menu(c.from_user.id))
+    await answer_visual(c.message, "welcome", welcome_caption(), reply_markup=menu(c.from_user.id))
     await c.answer()
 @dp.callback_query(F.data=='buy_cancel')
 async def buy_cancel(c):
