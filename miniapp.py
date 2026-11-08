@@ -483,28 +483,22 @@ async def shop_buy(req):
     price=int(item["price"]);product_name=item["name"]
     if code=="vehicle_plate":
         country=str(details.get("country","Россия"))
-        first=str(details.get("first","")).upper()
+        letters=str(details.get("letters","")).upper()
         digits=str(details.get("digits",""))
-        last=str(details.get("last","")).upper()
         region=str(details.get("region",""))
         if country not in {"Россия","Казахстан","Беларусь","Украина","Грузия"}:
             return response("Выбери страну из списка.",400)
-        letters=str(details.get("letters", first+last)).upper()
         if len(letters)!=3 or any(x not in shop.PLATE_LETTERS for x in letters):
             return response("Укажи ровно 3 латинские буквы A–Z.",400)
         if len(digits)!=3 or not digits.isdigit() or region not in shop.REGIONS:
             return response("Укажи 3 цифры и выбери регион.",400)
-        multiplier=1.0
-        if len(set(digits))==1:multiplier+=1.0
-        if len(set(letters))==1:multiplier+=1.5
-        if len(set(region))==1:multiplier+=0.2
-        price=int(round(700*multiplier))
+        price=700
         plate=f"{letters} {digits} {region}"
         product_name=f"Автомобильный номер {plate} · {country}"
-        details={"country":country,"plate":plate,"letters":letters,"digits":digits,"region":region,"price_formula":"700 NMZ + бонусы за повторения"}
+        details={"country":country,"plate":plate,"letters":letters,"digits":digits,"region":region}
     order_id=shop.create_order(db,user_id,nick,code,product_name,price,json.dumps(details,ensure_ascii=False)[:1500])
     if not order_id:return response("Недостаточно NMZ. Сначала пополни кошелёк.",409)
-    msg=f"🛒 Заказ #{order_id} принят. Товар: {product_name} · {price} NMZ. Ник: {nick}. Ожидает выдачи администрацией."
+    msg=f"Покупка #{order_id} завершена. {product_name} добавлен в инвентарь. Стоимость: {price} NMZ. Запроси выдачу предмета в игре."
     db.add_notification(user_id,"Покупка оформлена",msg)
     for aid in db.admin_ids():
         try:await tg.send_message(aid,f"🛒 <b>НОВЫЙ ЗАКАЗ #{order_id}</b>\nИгрок: <code>{nick}</code>\nТовар: {product_name}\nЦена: {price} NMZ\nДетали: {json.dumps(details,ensure_ascii=False)}",parse_mode="HTML")
