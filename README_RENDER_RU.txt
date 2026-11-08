@@ -1,29 +1,26 @@
-FENIX ONLINE BOT — исправление для Render Web Service
+FENIX ONLINE — ОБНОВЛЁННЫЙ TELEGRAM-БОТ
 
-Файлы:
-- bot.py — Telegram long polling + HTTP health server (/health)
-- db.py — SQLite, автоматическое создание каталога и файла
-- requirements.txt — зависимости
-- .env.example — пример переменных окружения
+В составе: bot.py, db.py, requirements.txt, assets/.
 
-Render:
-1. Runtime / Python: 3.12.11 (если настройка доступна).
-2. Build Command: pip install -r requirements.txt
-3. Start Command: python bot.py
-4. Environment:
-   BOT_TOKEN = действующий токен из @BotFather (без кавычек)
-   ADMIN_IDS = числовой Telegram ID владельца
-   CHANNEL_ID = числовой ID канала вида -100...
-   CHANNEL_URL = ссылка приглашения/публичная ссылка канала
-   DATABASE_PATH = fenix.sqlite3
+ВАЖНО ПРО БАЗУ ДАННЫХ:
+SQLite-файл должен находиться на постоянном хранилище. На Render Free файловая система эфемерная: база теряется при перезапуске, spin-down или deploy. Переменная DATABASE_PATH сама по себе НЕ создаёт постоянное хранилище.
 
-Проверка HTTP:
-Открой адрес Render-сервиса + /health. Должен вернуться JSON:
-{"status":"ok","service":"fenix-online-bot"}
+Если у сервиса Render платный тариф с Persistent Disk:
+1. В Render открой свой Web Service -> Disks -> Add Disk.
+2. Mount Path: /var/data.
+3. Сохрани диск и дождись Deploy.
+4. В Environment установи DATABASE_PATH=/var/data/fenix.sqlite3.
+5. Проверь, что в логах указан именно /var/data/fenix.sqlite3.
 
-ВАЖНО:
-- HTTP endpoint нужен Render Web Service; он не исправляет неверный BOT_TOKEN.
-- При TelegramUnauthorizedError проверь/перевыпусти токен в @BotFather и обнови BOT_TOKEN в Render.
-- SQLite создаётся автоматически в файловой системе сервиса. На бесплатном Render локальные данные
-  не гарантированно сохраняются между перезапусками/деплоями. Для постоянного хранения нужен
-  внешний PostgreSQL или постоянный диск.
+Если сервис на Render Free: Persistent Disk недоступен. Бесплатный Render Postgres ограничен 30 днями, после чего база истекает. Для постоянного хранения нужна внешняя PostgreSQL с поддержкой в коде либо платный persistent disk. Не переключай DATABASE_PATH на PostgreSQL URL: текущий db.py работает с SQLite.
+
+ФОТО:
+Папка assets должна лежать рядом с bot.py, не внутри другой вложенной папки. При запуске бот пишет в логах список найденных файлов. Если папки нет в GitHub, фото не отправятся.
+
+Render Web Service:
+Build: pip install -r requirements.txt
+Start: python bot.py
+Environment: BOT_TOKEN, ADMIN_IDS, CHANNEL_ID, CHANNEL_URL, DATABASE_PATH
+Python: 3.12.11
+
+Публикация и рассылка: бот спрашивает Да/Нет для фото и URL-кнопки. Длинный текст с фото отправляется отдельными сообщениями, чтобы не превышать лимит подписи Telegram.
