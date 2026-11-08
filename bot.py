@@ -204,7 +204,8 @@ def menu(uid):
     url=db.setting("home_url",CHANNEL_URL)
     store_url=os.getenv("WEBAPP_URL","https://fenixbot-vyqo.onrender.com").rstrip("/")+"/store"
     rows=[[InlineKeyboardButton(text="🛍 Донат и товары",url=store_url)],
-          [InlineKeyboardButton(text="⭐ Пополнить Stars",callback_data="donate_stars")],\n          [InlineKeyboardButton(text="💳 Ручное пополнение",callback_data="manual_donation")],
+          [InlineKeyboardButton(text="⭐ Пополнить Stars",callback_data="donate_stars")],
+          [InlineKeyboardButton(text="💳 Ручное пополнение",callback_data="manual_donation")],
           [InlineKeyboardButton(text=db.setting("cab_label","👤 Личный кабинет"),callback_data="cab"),
            InlineKeyboardButton(text=db.setting("ref_label","🔗 Моя реферальная ссылка"),callback_data="ref")],
           [InlineKeyboardButton(text=db.setting("stats_label","📊 Статистика"),callback_data="stats"),
