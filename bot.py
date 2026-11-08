@@ -84,15 +84,27 @@ def hashpw(p):
 async def cmd_id(m): await m.answer(f"Твой Telegram ID: {m.from_user.id}")
 @dp.message(CommandStart())
 async def start(m:Message,state:FSMContext):
-    u=db.user(m.from_user.id)
-    if u: return await m.answer("🔥 FENIX ONLINE\nТвой личный кабинет.",reply_markup=menu(m.from_user.id))
-    p=(m.text or "").split(maxsplit=1); ref=None
-    if len(p)>1 and p[1].startswith("r"):
-        try: ref=int(p[1][1:])
-        except: pass
-    if ref==m.from_user.id: ref=None
-    await state.update_data(ref=ref); await state.set_state(S.nick)
-    await m.answer("🔥 FENIX ONLINE — регистрация\n\nВведи игровой никнейм (3–24 символа, латиница, цифры и _).")
+    try:
+        u=db.user(m.from_user.id)
+        if u:
+            return await answer_visual(
+                m, "welcome", "🔥 FENIX ONLINE\\nТвой личный кабинет.",
+                reply_markup=menu(m.from_user.id)
+            )
+        p=(m.text or "").split(maxsplit=1); ref=None
+        if len(p)>1 and p[1].startswith("r"):
+            try: ref=int(p[1][1:])
+            except: pass
+        if ref==m.from_user.id: ref=None
+        await state.update_data(ref=ref)
+        await state.set_state(S.nick)
+        await answer_visual(
+            m, "welcome",
+            "🔥 FENIX ONLINE — регистрация\\n\\nВведи игровой никнейм (3–24 символа, латиница, цифры и _)."
+        )
+    except Exception:
+        logging.exception("Ошибка /start")
+        await m.answer("Не удалось открыть бота. Попробуй ещё раз позже.")
 @dp.message(S.nick)
 async def nick(m:Message,state:FSMContext):
     n=(m.text or "").strip()
@@ -107,7 +119,7 @@ async def password(m:Message,state:FSMContext):
     d=await state.get_data(); db.add_user(m.from_user.id,m.from_user.username or "",d["nick"],hashpw(p),d.get("ref"))
     if d.get("ref") and db.user(d["ref"]): db.add_ref(d["ref"],m.from_user.id)
     await state.clear()
-    await m.answer("✅ Регистрация завершена!",reply_markup=menu(m.from_user.id))
+    await answer_visual(m, "welcome", "✅ Регистрация завершена!", reply_markup=menu(m.from_user.id))
     if d.get("ref"):
         try: await bot.send_message(d["ref"],f"🎉 По твоей ссылке зарегистрировался игрок {d['nick']}.")
         except: pass
