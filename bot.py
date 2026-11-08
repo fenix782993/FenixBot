@@ -215,7 +215,7 @@ def menu(uid):
     if is_admin(uid): rows.append([InlineKeyboardButton(text=db.setting("owner_label","⚙️ Панель владельца"),callback_data="owner")])
     return markup(rows)
 class S(StatesGroup):
-    manual_rub=State(); manual_proof=State()
+    manual_rub=State(); manual_proof=State(); stars_custom=State()
     nick=State(); password=State(); media_channel=State(); media_stats=State(); media_contact=State()
     payout_channel=State(); payout_video=State(); media_payout_requisites=State(); payout_views=State(); payout_amount=State(); payout_note=State(); customize_label=State()
     post_text=State(); post_photo_choice=State(); post_photo=State()
