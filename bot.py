@@ -87,6 +87,23 @@ def markup(rows):
                     }
                     keys = [button.text or "", callback, aliases.get(callback, "")]
                     custom_id = next((icons.get(key) for key in keys if icons.get(key)), None)
+                    if not custom_id:
+                        label=(button.text or "").lower()
+                        # Every inline action gets a real custom emoji ID from the configured Outline pack.
+                        icon_fallbacks = [
+                            (("покуп","магаз","донат","товар","оплат","баланс","stars","пополн"), "5280818098960611598"),
+                            (("профил","кабинет","аккаунт","игрок","войти"), "5382224089295365367"),
+                            (("реферал","ссылка","приглас"), "5458394638505223612"),
+                            (("статист","выруч","финанс","продаж","сумм"), "5449875850046481967"),
+                            (("рейтинг","топ","достижен"), "5395597754166682968"),
+                            (("медиа","видео","публикац","канал"), "5210905596273905344"),
+                            (("владел","админ","настрой","управлен"), "5382224089295365367"),
+                            (("заяв","обращен","тикет","поддерж"), "5456149049214249060"),
+                            (("уведом","сообщ","ответ"), "5458421812763307254"),
+                            (("отклон","удал","закры","отмена"), "5447621198374511640"),
+                            (("назад","главн","вернут"), "5456174445355875099"),
+                        ]
+                        custom_id=next((emoji_id for words,emoji_id in icon_fallbacks if any(word in label for word in words)), "5280818098960611598")
                     style = next((styles.get(key) for key in keys if styles.get(key)), None)
                     # Default palette mirrors the color-coded Telegram reference.
                     default_styles = {
