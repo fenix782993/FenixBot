@@ -429,6 +429,8 @@ async def admin_design(req):
         })
     data = await payload(req)
     theme = data.get("theme") or {}
+    if not isinstance(theme, dict):
+        return response("Неверный формат цветовой темы.", 400)
     clean_theme = {}
     for key, fallback in DEFAULT_THEME.items():
         value = str(theme.get(key, fallback)).strip()
@@ -452,6 +454,8 @@ async def admin_design(req):
         if label in allowed and custom_id and custom_id in pack_ids:
             icons[label] = custom_id
     labels = data.get("labels") or {}
+    if not isinstance(labels, dict):
+        return response("Неверный формат названий кнопок.", 400)
     label_defaults = {
         "cab_label": "👤 Личный кабинет",
         "ref_label": "🔗 Моя реферальная ссылка",
