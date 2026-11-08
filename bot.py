@@ -81,6 +81,14 @@ def markup(rows):
                     }
                     if not style:
                         style = default_styles.get(callback) or default_styles.get(callback.split(":", 1)[0])
+                    if not style:
+                        key_text = (callback + " " + (button.text or "")).lower()
+                        if any(word in key_text for word in ("reject","remove","delete","close","cancel","отклон","удал","закры")):
+                            style = "danger"
+                        elif any(word in key_text for word in ("approve","paid","check","confirm","yes","accept","одобр","подтверд","провер")):
+                            style = "success"
+                        else:
+                            style = "primary"
                     if custom_id and str(custom_id).isdigit():
                         updates["icon_custom_emoji_id"] = str(custom_id)
                     if style in {"primary", "success", "danger"}:
