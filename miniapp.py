@@ -381,6 +381,7 @@ def store_prices():
 def fnz_rate():
     try:
         value=float(db.setting("fnz_per_rub","2") or 2)
+        if value <= 0: value = 2
         return value if 0 < value <= 100000 else 0
     except Exception:
         return 0
