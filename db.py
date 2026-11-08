@@ -171,23 +171,43 @@ class DB:
                         (uid, uid, self._now())
                     )
 
+    def _run_read(self, sql, params, mode):
+        # Neon can close an idle pooled SSL connection between requests.
+        # Retry a read once on a fresh pool connection instead of failing the
+        # Telegram update and making a valid player look logged out.
+        attempts = 2 if self.use_postgres else 1
+        last_error = None
+        for attempt in range(attempts):
+            try:
+                with self.con() as c:
+                    cur = c.execute(sql, params)
+                    if mode == "one":
+                        row = cur.fetchone()
+                        return dict(row) if row is not None else None
+                    if mode == "scalar":
+                        row = cur.fetchone()
+                        if row is None:
+                            return None
+                        return next(iter(row.values())) if isinstance(row, dict) else row[0]
+                    return [dict(x) for x in cur.fetchall()]
+            except Exception as exc:
+                last_error = exc
+                if not self.use_postgres or attempt + 1 >= attempts:
+                    raise
+                psycopg, _ = self._psycopg
+                if not isinstance(exc, (psycopg.OperationalError, psycopg.InterfaceError)):
+                    raise
+                logging.warning("Retrying read after stale PostgreSQL connection: %s", exc)
+        raise last_error
+
     def _one(self, sql, params=()):
-        with self.con() as c:
-            cur = c.execute(sql, params)
-            row = cur.fetchone()
-            return dict(row) if row is not None else None
+        return self._run_read(sql, params, "one")
 
     def _scalar(self, sql, params=()):
-        with self.con() as c:
-            row = c.execute(sql, params).fetchone()
-            if row is None:
-                return None
-            # psycopg uses dict_row; SQLite returns sqlite3.Row.
-            return next(iter(row.values())) if isinstance(row, dict) else row[0]
+        return self._run_read(sql, params, "scalar")
 
     def _all(self, sql, params=()):
-        with self.con() as c:
-            return [dict(x) for x in c.execute(sql, params).fetchall()]
+        return self._run_read(sql, params, "all")
 
     def _execute(self, sql, params=()):
         with self.con() as c:
