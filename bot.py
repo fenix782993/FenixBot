@@ -1,12 +1,11 @@
 import asyncio, logging, os, re, secrets, hashlib
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
-from pathlib import Path
 from aiohttp import web
 from db import DB
 
@@ -19,38 +18,6 @@ if not TOKEN: raise RuntimeError("BOT_TOKEN не задан")
 logging.basicConfig(level=logging.INFO)
 bot=Bot(TOKEN); dp=Dispatcher(storage=MemoryStorage()); db=DB(os.getenv("DATABASE_PATH","fenix.sqlite3"))
 OWNER_IDS=ADMINS.copy()
-BASE_DIR = Path(__file__).resolve().parent
-ASSETS_DIR = BASE_DIR / "assets"
-ASSET_FILES = {
-    "welcome": "welcome.jpg",
-    "profile": "profile.jpg",
-    "referral": "referral.jpg",
-    "rating": "rating.jpg",
-    "media": "media_partners.jpg",
-    "news": "news.jpg",
-    "rewards": "rewards.jpg",
-    "black": "black_server.jpg",
-    "admin_recruitment": "admin_recruitment.jpg",
-    "leader_recruitment": "leader_recruitment.jpg",
-    "helper_recruitment": "helper_recruitment.jpg",
-    "footer": "footer.png",
-    "logo": "logo.png",
-}
-
-async def answer_visual(message, asset_key, caption, reply_markup=None, parse_mode="HTML"):
-    """Send the matching local banner; fall back to text if the file is missing."""
-    filename = ASSET_FILES.get(asset_key)
-    image_path = ASSETS_DIR / filename if filename else None
-    if image_path and image_path.is_file():
-        try:
-            return await message.answer_photo(
-                FSInputFile(str(image_path)), caption=caption,
-                parse_mode=parse_mode, reply_markup=reply_markup
-            )
-        except Exception:
-            logging.exception("Не удалось отправить asset %s", image_path)
-    return await message.answer(caption, parse_mode=parse_mode, reply_markup=reply_markup)
-
 def is_admin(uid): return db.is_admin(uid)
 def is_owner(uid): return uid in OWNER_IDS
 def markup(rows): return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -67,7 +34,8 @@ def menu(uid):
     return markup(rows)
 class S(StatesGroup):
     nick=State(); password=State(); media_channel=State(); media_stats=State(); media_contact=State()
-    post_text=State(); post_photo=State(); post_button=State(); post_url=State()
+    post_text=State(); post_photo_choice=State(); post_photo=State()
+    post_button_choice=State(); post_button=State(); post_url=State()
     button_label=State(); button_url=State(); broadcast=State(); admin_add=State(); admin_remove=State()
 def hashpw(p):
     salt=secrets.token_hex(16)
@@ -77,14 +45,14 @@ async def cmd_id(m): await m.answer(f"Твой Telegram ID: {m.from_user.id}")
 @dp.message(CommandStart())
 async def start(m:Message,state:FSMContext):
     u=db.user(m.from_user.id)
-    if u: return await answer_visual(m, "welcome", "🔥 <b>FENIX ONLINE</b>\nТвой личный кабинет.", reply_markup=menu(m.from_user.id))
+    if u: return await m.answer("🔥 <b>FENIX ONLINE</b>\nТвой личный кабинет.",parse_mode="HTML",reply_markup=menu(m.from_user.id))
     p=(m.text or "").split(maxsplit=1); ref=None
     if len(p)>1 and p[1].startswith("r"):
         try: ref=int(p[1][1:])
         except: pass
     if ref==m.from_user.id: ref=None
     await state.update_data(ref=ref); await state.set_state(S.nick)
-    await answer_visual(m, "welcome", "🔥 <b>FENIX ONLINE — регистрация</b>\n\nВведи игровой никнейм (3–24 символа, латиница, цифры и _).")
+    await m.answer("🔥 <b>FENIX ONLINE — регистрация</b>\n\nВведи игровой никнейм (3–24 символа, латиница, цифры и _).",parse_mode="HTML")
 @dp.message(S.nick)
 async def nick(m:Message,state:FSMContext):
     n=(m.text or "").strip()
@@ -99,7 +67,7 @@ async def password(m:Message,state:FSMContext):
     d=await state.get_data(); db.add_user(m.from_user.id,m.from_user.username or "",d["nick"],hashpw(p),d.get("ref"))
     if d.get("ref") and db.user(d["ref"]): db.add_ref(d["ref"],m.from_user.id)
     await state.clear()
-    await answer_visual(m, "welcome", "✅ <b>Регистрация завершена!</b>", reply_markup=menu(m.from_user.id))
+    await m.answer("✅ <b>Регистрация завершена!</b>",parse_mode="HTML",reply_markup=menu(m.from_user.id))
     if d.get("ref"):
         try: await bot.send_message(d["ref"],f"🎉 По твоей ссылке зарегистрировался игрок <b>{d['nick']}</b>.",parse_mode="HTML")
         except: pass
@@ -107,12 +75,12 @@ async def password(m:Message,state:FSMContext):
 async def cab(c):
     u=db.user(c.from_user.id)
     if not u: return await c.answer("Сначала /start",show_alert=True)
-    await answer_visual(c.message, "profile", f"👤 <b>ЛИЧНЫЙ КАБИНЕТ</b>\nНик: <b>{u['nick']}</b>\nПриглашено: <b>{db.ref_count(c.from_user.id)}</b>"); await c.answer()
+    await c.message.answer(f"👤 <b>ЛИЧНЫЙ КАБИНЕТ</b>\nНик: <b>{u['nick']}</b>\nПриглашено: <b>{db.ref_count(c.from_user.id)}</b>",parse_mode="HTML"); await c.answer()
 @dp.callback_query(F.data=="ref")
 async def ref(c):
     if not db.user(c.from_user.id): return await c.answer("Сначала /start",show_alert=True)
     me=await bot.get_me(); link=f"https://t.me/{me.username}?start=r{c.from_user.id}"
-    await answer_visual(c.message, "referral", f"🔗 <b>ТВОЯ РЕФЕРАЛЬНАЯ ССЫЛКА</b>\n<code>{link}</code>\nЗарегистрировано по ссылке: <b>{db.ref_count(c.from_user.id)}</b>\n\nДля приглашений именно в канал используй /invite."); await c.answer()
+    await c.message.answer(f"🔗 <b>ТВОЯ РЕФЕРАЛЬНАЯ ССЫЛКА</b>\n<code>{link}</code>\nЗарегистрировано по ссылке: <b>{db.ref_count(c.from_user.id)}</b>\n\nДля приглашений именно в канал используй /invite.",parse_mode="HTML"); await c.answer()
 @dp.message(Command("invite"))
 async def invite(m):
     if not CHANNEL: return await m.answer("Канал не настроен.")
@@ -133,14 +101,14 @@ async def member(ev:ChatMemberUpdated):
             except: pass
 @dp.callback_query(F.data=="stats")
 async def stats(c):
-    await answer_visual(c.message, "referral", f"📊 Твои регистрации по реферальной ссылке: <b>{db.ref_count(c.from_user.id)}</b>\nВступления в канал по персональной ссылке: <b>{db.channel_count(c.from_user.id)}</b>"); await c.answer()
+    await c.message.answer(f"📊 Твои регистрации по реферальной ссылке: <b>{db.ref_count(c.from_user.id)}</b>\nВступления в канал по персональной ссылке: <b>{db.channel_count(c.from_user.id)}</b>",parse_mode="HTML"); await c.answer()
 @dp.callback_query(F.data=="top")
 async def top(c):
     rows=db.top(); txt="🏆 <b>ТОП РЕФЕРАЛОВ</b>\n\n"+("\n".join(f"{i}. {x['nick']} — {x['n']}" for i,x in enumerate(rows,1)) if rows else "Пока пусто.")
-    await answer_visual(c.message, "rating", txt); await c.answer()
+    await c.message.answer(txt,parse_mode="HTML"); await c.answer()
 @dp.callback_query(F.data=="media")
 async def media(c,state:FSMContext):
-    await state.set_state(S.media_channel); await answer_visual(c.message, "media", "🤝 <b>Заявка в медиапартнёры</b>\nПришли ссылку на свой канал/площадку."); await c.answer()
+    await state.set_state(S.media_channel); await c.message.answer("🤝 <b>Заявка в медиапартнёры</b>\nПришли ссылку на свой канал/площадку.",parse_mode="HTML"); await c.answer()
 @dp.message(S.media_channel)
 async def media1(m,state:FSMContext):
     await state.update_data(ch=m.text or ""); await state.set_state(S.media_stats); await m.answer("Укажи количество подписчиков и средние просмотры.")
@@ -173,7 +141,7 @@ async def mno(c):
 @dp.callback_query(F.data=="owner")
 async def owner(c):
     if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
-    await answer_visual(c.message, "news", "⚙️ <b>ПАНЕЛЬ ВЛАДЕЛЬЦА</b>", reply_markup=markup([
+    await c.message.answer("⚙️ <b>ПАНЕЛЬ ВЛАДЕЛЬЦА</b>",parse_mode="HTML",reply_markup=markup([
     [InlineKeyboardButton(text="📣 Опубликовать пост",callback_data="post")],
     [InlineKeyboardButton(text="📨 Рассылка",callback_data="broadcast")],
     [InlineKeyboardButton(text="🎨 Настроить кнопку меню",callback_data="editbutton")],
@@ -251,49 +219,141 @@ async def ostats(c):
 @dp.callback_query(F.data=="post")
 async def post(c,state:FSMContext):
     if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
-    await state.set_state(S.post_text); await c.message.answer("Пришли текст поста (HTML-разметка: <b>, <i>, <u>)."); await c.answer()
+    await state.clear()
+    await state.update_data(compose_mode="post")
+    await state.set_state(S.post_text)
+    await c.message.answer("📣 Пришли текст публикации. Можно использовать HTML: <b>жирный</b>, <i>курсив</i>, <u>подчёркнутый</u>.")
+    await c.answer()
+
 @dp.message(S.post_text)
 async def posttext(m,state:FSMContext):
     if not is_admin(m.from_user.id): return
-    await state.update_data(text=m.text or ""); await state.set_state(S.post_photo); await m.answer("Пришли фото или отправь - без фото.")
+    if not (m.text or "").strip():
+        return await m.answer("Пришли текстовое сообщение.")
+    await state.update_data(text=m.text)
+    await state.set_state(S.post_photo_choice)
+    await m.answer("🖼 Добавить фотографию?", reply_markup=markup([
+        [InlineKeyboardButton(text="✅ Да", callback_data="compose:photo:yes"),
+         InlineKeyboardButton(text="❌ Нет", callback_data="compose:photo:no")]
+    ]))
+
+@dp.callback_query(F.data.startswith("compose:photo:"))
+async def compose_photo_choice(c,state:FSMContext):
+    if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
+    choice=c.data.rsplit(":",1)[1]
+    if choice=="yes":
+        await state.set_state(S.post_photo)
+        await c.message.answer("Отправь фотографию одним сообщением.")
+    else:
+        await state.update_data(photo=None)
+        await state.set_state(S.post_button_choice)
+        await c.message.answer("🔘 Добавить URL-кнопку под публикацией?", reply_markup=markup([
+            [InlineKeyboardButton(text="✅ Да", callback_data="compose:button:yes"),
+             InlineKeyboardButton(text="❌ Нет", callback_data="compose:button:no")]
+        ]))
+    await c.answer()
+
 @dp.message(S.post_photo)
 async def postphoto(m,state:FSMContext):
     if not is_admin(m.from_user.id): return
-    ph=m.photo[-1].file_id if m.photo else None
-    if not ph and (m.text or "").strip()!="-": return await m.answer("Нужна фотография или символ -.")
-    await state.update_data(photo=ph); await state.set_state(S.post_button); await m.answer("Текст кнопки или - без кнопки.")
+    if not m.photo:
+        return await m.answer("Пожалуйста, отправь именно фотографию.")
+    await state.update_data(photo=m.photo[-1].file_id)
+    await state.set_state(S.post_button_choice)
+    await m.answer("🔘 Добавить URL-кнопку под публикацией?", reply_markup=markup([
+        [InlineKeyboardButton(text="✅ Да", callback_data="compose:button:yes"),
+         InlineKeyboardButton(text="❌ Нет", callback_data="compose:button:no")]
+    ]))
+
+@dp.callback_query(F.data.startswith("compose:button:"))
+async def compose_button_choice(c,state:FSMContext):
+    if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
+    choice=c.data.rsplit(":",1)[1]
+    if choice=="yes":
+        await state.set_state(S.post_button)
+        await c.message.answer("Напиши текст кнопки. Например: 🎮 Перейти в игру")
+    else:
+        await state.update_data(bt=None,bu=None)
+        await finish_composition(c.message,state,c.from_user.id)
+    await c.answer()
+
 @dp.message(S.post_button)
 async def postbutton(m,state:FSMContext):
     if not is_admin(m.from_user.id): return
-    t=(m.text or "").strip(); await state.update_data(bt=None if t=="-" else t)
-    if t=="-": return await publish(m,state)
-    await state.set_state(S.post_url); await m.answer("Пришли URL кнопки, начиная с https://")
+    label=(m.text or "").strip()
+    if not label: return await m.answer("Напиши текст кнопки.")
+    if len(label)>64: return await m.answer("Текст кнопки должен быть не длиннее 64 символов.")
+    await state.update_data(bt=label)
+    await state.set_state(S.post_url)
+    await m.answer("Теперь отправь URL кнопки, начиная с https://")
+
 @dp.message(S.post_url)
 async def posturl(m,state:FSMContext):
     if not is_admin(m.from_user.id): return
-    u=(m.text or "").strip()
-    if not u.startswith(("https://","http://")): return await m.answer("Неверная ссылка.")
-    await state.update_data(bu=u); await publish(m,state)
-async def publish(m,state):
-    d=await state.get_data(); rows=[[InlineKeyboardButton(text=d["bt"],url=d["bu"])]] if d.get("bt") else None
+    url=(m.text or "").strip()
+    if not re.match(r"^https?://\S+$",url):
+        return await m.answer("Неверная ссылка. Отправь полный URL, начиная с https://")
+    await state.update_data(bu=url)
+    await finish_composition(m,state,m.from_user.id)
+
+def split_message(text,limit=4000):
+    text=text or " "
+    chunks=[]
+    while len(text)>limit:
+        cut=text.rfind("\n",0,limit)
+        if cut<limit//2: cut=limit
+        chunks.append(text[:cut])
+        text=text[cut:].lstrip("\n")
+    if text: chunks.append(text)
+    return chunks
+
+async def send_composed(chat_id,data):
+    """Отправляет фото и текст отдельно, если подпись превышает лимит Telegram."""
+    keyboard=None
+    if data.get("bt") and data.get("bu"):
+        keyboard=markup([[InlineKeyboardButton(text=data["bt"],url=data["bu"]) ]])
+    text=data.get("text") or " "
+    photo=data.get("photo")
+    if photo and len(text)<=1024:
+        await bot.send_photo(chat_id,photo,caption=text,parse_mode="HTML",reply_markup=keyboard)
+        return
+    if photo:
+        await bot.send_photo(chat_id,photo)
+    chunks=split_message(text)
+    for i,chunk in enumerate(chunks):
+        await bot.send_message(chat_id,chunk,parse_mode="HTML",
+                               reply_markup=keyboard if i==len(chunks)-1 else None)
+
+async def finish_composition(message,state,uid):
+    data=await state.get_data()
+    mode=data.get("compose_mode","post")
     try:
-        if d.get("photo"): await bot.send_photo(CHANNEL,d["photo"],caption=d["text"],parse_mode="HTML",reply_markup=markup(rows) if rows else None)
-        else: await bot.send_message(CHANNEL,d["text"],parse_mode="HTML",reply_markup=markup(rows) if rows else None)
-        await m.answer("✅ Пост опубликован в канале.")
-    except Exception as e: await m.answer("Ошибка публикации: "+str(e))
+        if mode=="post":
+            await send_composed(CHANNEL,data)
+            await message.answer("✅ Публикация отправлена в канал.")
+        else:
+            sent=0
+            for target_id in db.user_ids():
+                try:
+                    await send_composed(target_id,data)
+                    sent+=1
+                except Exception:
+                    logging.exception("Не удалось отправить рассылку пользователю %s",target_id)
+            await message.answer(f"✅ Рассылка завершена. Доставлено: {sent}")
+    except Exception as e:
+        logging.exception("Ошибка отправки публикации/рассылки")
+        await message.answer("❌ Ошибка отправки: "+str(e)[:800])
     await state.clear()
+
 @dp.callback_query(F.data=="broadcast")
 async def broadcast(c,state:FSMContext):
     if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
-    await state.set_state(S.broadcast); await c.message.answer("Пришли текст рассылки пользователям бота."); await c.answer()
-@dp.message(S.broadcast)
-async def broadcast_send(m,state:FSMContext):
-    if not is_admin(m.from_user.id): return
-    sent=0
-    for uid in db.user_ids():
-        try: await bot.send_message(uid,m.text or "",parse_mode="HTML"); sent+=1
-        except: pass
-    await state.clear(); await m.answer(f"Рассылка завершена. Доставлено: {sent}")
+    await state.clear()
+    await state.update_data(compose_mode="broadcast")
+    await state.set_state(S.post_text)
+    await c.message.answer("📨 Пришли текст рассылки. Можно добавить фото и URL-кнопку — бот предложит выбор Да/Нет.")
+    await c.answer()
+
 @dp.callback_query(F.data=="editbutton")
 async def editbutton(c,state:FSMContext):
     if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
@@ -328,8 +388,6 @@ async def start_health_server():
 
 async def main():
     db.init()
-    logging.info("SQLite database path: %s", os.path.abspath(db.path))
-    logging.info("Assets directory: %s | found: %s", ASSETS_DIR, sorted(p.name for p in ASSETS_DIR.glob('*') if p.is_file()))
     runner = await start_health_server()
     try:
         # Long polling Telegram запускается параллельно с HTTP health endpoint.
