@@ -473,9 +473,8 @@ async def admin_design(req):
             if not value or len(value) > 64:
                 return response(f"Проверь название кнопки {key}: от 1 до 64 символов.", 400)
             old_label = db.setting(key, label_defaults[key])
-            if old_label != value:
-                label_remap[old_label] = value
-                label_remap[label_defaults[key]] = value
+            label_remap[old_label] = value
+            label_remap[label_defaults[key]] = value
             db.set_setting(key, value)
     for key, limit in (("welcome_text", 900), ("registration_text", 900)):
         if key in data:
