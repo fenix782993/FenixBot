@@ -117,10 +117,20 @@ class DB:
                 c.execute("CREATE TABLE IF NOT EXISTS admins (uid BIGINT PRIMARY KEY, added_by BIGINT, created TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS staff_roles (uid BIGINT, kind TEXT, title TEXT, assigned_by BIGINT, updated TEXT, PRIMARY KEY(uid,kind))")
                 # Upgrade legacy Neon installations without dropping existing staff data.
-                # Older versions may have created staff_roles without title/metadata columns.
+                # Older schemas may contain only uid, or lack some of the newer fields.
+                c.execute("ALTER TABLE staff_roles ADD COLUMN IF NOT EXISTS kind TEXT")
                 c.execute("ALTER TABLE staff_roles ADD COLUMN IF NOT EXISTS title TEXT")
                 c.execute("ALTER TABLE staff_roles ADD COLUMN IF NOT EXISTS assigned_by BIGINT")
                 c.execute("ALTER TABLE staff_roles ADD COLUMN IF NOT EXISTS updated TEXT")
+                c.execute("UPDATE staff_roles SET kind='admin' WHERE kind IS NULL OR kind=''")
+                c.execute("UPDATE staff_roles SET title='Администратор' WHERE title IS NULL OR title=''")
+                c.execute("UPDATE staff_roles SET updated=%s WHERE updated IS NULL OR updated=''", (self._now(),))
+                # Ensure ON CONFLICT(uid,kind) works even when the legacy primary key differs.
+                c.execute("""
+                    DELETE FROM staff_roles a USING staff_roles b
+                    WHERE a.ctid < b.ctid AND a.uid=b.uid AND a.kind=b.kind
+                """)
+                c.execute("CREATE UNIQUE INDEX IF NOT EXISTS staff_roles_uid_kind_uq ON staff_roles(uid,kind)")
                 c.execute("CREATE TABLE IF NOT EXISTS media_payouts (id BIGSERIAL PRIMARY KEY, uid BIGINT, amount TEXT, requisites TEXT, status TEXT, created TEXT, reviewed_by BIGINT, review_note TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS media_activity (uid BIGINT, day TEXT, video_url TEXT, PRIMARY KEY(uid,day))")
                 c.execute("CREATE TABLE IF NOT EXISTS media_payout_evidence (payout_id BIGINT PRIMARY KEY, channel_url TEXT, video_url TEXT)")

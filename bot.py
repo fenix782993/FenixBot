@@ -50,9 +50,10 @@ def staff_chat_kind(chat_id):
     return None
 
 def can_manage_chat(message, kind):
-    if is_owner(message.from_user.id): return True
-    if kind == "admin": return is_admin(message.from_user.id)
-    return bool(db.staff_role(message.from_user.id, "leader"))
+    # Bot administrators can manage both linked staff chats.
+    if is_admin(message.from_user.id): return True
+    # A leader may manage the leader roster only if explicitly granted that role.
+    return kind == "leader" and bool(db.staff_role(message.from_user.id, "leader"))
 
 BASE_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = BASE_DIR / "assets"
@@ -879,12 +880,40 @@ async def set_staff_title(m):
 @dp.message(Command("stafflist"))
 async def staff_list(m):
     kind = staff_chat_kind(m.chat.id)
-    if kind is None: return await m.answer("Команда доступна только в привязанных чатах персонала.")
-    if not can_manage_chat(m, kind): return await m.answer("⛔ Нет доступа.")
+    if kind is None:
+        return await m.answer("Команда доступна только в привязанных административном или лидерском чатах.")
     rows = db.staff_list(kind)
     heading = "👮 СОСТАВ АДМИНИСТРАЦИИ" if kind == "admin" else "👑 СОСТАВ ЛИДЕРОВ"
-    body = "\n\n".join(f"{i}. {db.staff_display(x['uid'])}\nДолжность: {x['title']}\nTelegram ID: {x['uid']}" for i,x in enumerate(rows,1))
-    await m.answer(heading + "\n\n" + (body or "Состав пока пуст."))
+    if not rows:
+        return await m.answer(heading + "\\n\\nСостав пока пуст.\\nДобавить: /nnick ИгровойНик Должность")
+    lines = []
+    for i, row in enumerate(rows, 1):
+        user = db.user(row["uid"]) or {}
+        nick = user.get("nick") or "Игровой ник не указан"
+        username = ("@" + user["username"]) if user.get("username") else "username не указан"
+        title = row.get("title") or ("Администратор" if kind == "admin" else "Лидер")
+        lines.append(
+            f"{i}. 🎮 {nick}\\n"
+            f"   Telegram: {username}\\n"
+            f"   Должность: {title}\\n"
+            f"   ID: <code>{row['uid']}</code>"
+        )
+    await m.answer(heading + "\\n\\n" + "\\n\\n".join(lines), parse_mode="HTML")
+
+@dp.message(Command("staffhelp"))
+async def staff_help(m):
+    kind = staff_chat_kind(m.chat.id)
+    if kind is None:
+        return await m.answer("Сначала привяжите этот чат: /bind_admin_chat или /bind_leader_chat.")
+    await m.answer(
+        "📋 <b>КОМАНДЫ СОСТАВА</b>\\n\\n"
+        "/nnick ИгровойНик Должность — добавить игрока в состав или изменить должность\\n"
+        "/stafflist — показать игровой ник, Telegram username, должность и ID\\n"
+        "/staffremove ИгровойНик — удалить игрока из состава\\n"
+        "/chatid — показать ID этого чата\\n\\n"
+        "Пример: <code>/nnick Fenix_Rudcov Главный администратор</code>",
+        parse_mode="HTML"
+    )
 
 @dp.message(Command("staffremove"))
 async def staff_remove(m):
