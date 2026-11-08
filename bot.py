@@ -6,6 +6,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
+from aiohttp import web
 from db import DB
 
 load_dotenv()
@@ -15,7 +16,7 @@ CHANNEL_URL=os.getenv("CHANNEL_URL","")
 ADMINS={int(x) for x in os.getenv("ADMIN_IDS","").replace(" ","").split(",") if x}
 if not TOKEN: raise RuntimeError("BOT_TOKEN не задан")
 logging.basicConfig(level=logging.INFO)
-bot=Bot(TOKEN); dp=Dispatcher(storage=MemoryStorage()); db=DB(os.getenv("DATABASE_PATH","data.sqlite3"))
+bot=Bot(TOKEN); dp=Dispatcher(storage=MemoryStorage()); db=DB(os.getenv("DATABASE_PATH","fenix.sqlite3"))
 OWNER_IDS=ADMINS.copy()
 def is_admin(uid): return db.is_admin(uid)
 def is_owner(uid): return uid in OWNER_IDS
@@ -276,6 +277,34 @@ async def buttonurl(m,state:FSMContext):
 @dp.message(Command("cancel"))
 async def cancel(m,state:FSMContext):
     await state.clear(); await m.answer("Отменено.",reply_markup=menu(m.from_user.id))
+async def health(request):
+    return web.json_response({"status": "ok", "service": "fenix-online-bot"})
+
+async def start_health_server():
+    # Render Web Service требует слушающий HTTP-порт.
+    port = int(os.getenv("PORT", "10000"))
+    app = web.Application()
+    app.router.add_get("/", health)
+    app.router.add_get("/health", health)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host="0.0.0.0", port=port)
+    await site.start()
+    logging.info("HTTP health server listening on 0.0.0.0:%s", port)
+    return runner
+
 async def main():
-    db.init(); await dp.start_polling(bot,allowed_updates=dp.resolve_used_update_types())
-if __name__=="__main__": asyncio.run(main())
+    db.init()
+    runner = await start_health_server()
+    try:
+        # Long polling Telegram запускается параллельно с HTTP health endpoint.
+        await dp.start_polling(
+            bot,
+            allowed_updates=dp.resolve_used_update_types()
+        )
+    finally:
+        await runner.cleanup()
+        await bot.session.close()
+
+if __name__ == "__main__":
+    asyncio.run(main())
