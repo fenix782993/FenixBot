@@ -515,7 +515,7 @@ async def wallet_donate(req):
     data=await payload(req)
     try:rub=round(float(str(data.get("rub","")).replace(",",".")),2)
     except Exception:return response("Укажи сумму в рублях.",400)
-    if rub<10 or rub>100000:return response("Сумма должна быть от 10 до 100 000 ₽.",400)
+    if rub<100 or rub>100000:return response("Сумма должна быть от 100 до 100 000 ₽.",400)
     rate=fnz_rate()
     if not rate:return response("Курс NMZ не настроен. Используется базовый курс 1 ₽ = 2 NMZ.",503)
     nmz=int(round(rub*rate))
