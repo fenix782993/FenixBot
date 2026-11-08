@@ -730,7 +730,7 @@ async def main():
     except Exception:
         log.exception("Could not remove Mini App menu button")
     app = web.Application(middlewares=[auth], client_max_size=1024 * 1024)
-    app.router.add_get("/", lambda _: web.FileResponse(WEB_DIR / "store.html"))
+    app.router.add_get("/", lambda _: web.FileResponse(WEB_DIR / "index.html"))
     app.router.add_get("/account", lambda _: web.FileResponse(WEB_DIR / "account.html"))
     app.router.add_get("/inventory", lambda _: web.FileResponse(WEB_DIR / "account.html"))
     app.router.add_get("/orders", lambda _: web.FileResponse(WEB_DIR / "account.html"))
