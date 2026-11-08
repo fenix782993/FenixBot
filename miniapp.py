@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+import secrets
 from pathlib import Path
 from urllib.parse import parse_qsl
 
@@ -52,16 +53,72 @@ def verify_init_data(raw):
         return None
 
 
+def verify_login_widget(data):
+    try:
+        received=str(data.get("hash",""))
+        if not received:return None
+        pairs={str(k):str(v) for k,v in data.items() if k!="hash"}
+        check="\n".join(f"{k}={v}" for k,v in sorted(pairs.items()))
+        secret=hashlib.sha256(TOKEN.encode()).digest()
+        actual=hmac.new(secret,check.encode(),hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(actual,received):return None
+        auth_date=int(pairs.get("auth_date","0"))
+        if auth_date<=0 or time.time()-auth_date>86400 or auth_date>time.time()+60:return None
+        user_id=int(pairs.get("id","0"))
+        return {"id":user_id,"username":pairs.get("username"),"first_name":pairs.get("first_name"),"last_name":pairs.get("last_name"),"photo_url":pairs.get("photo_url")}
+    except Exception:
+        return None
+
+
+def make_session(uid_value):
+    expires=int(time.time())+60*60*24*30
+    body=f"{int(uid_value)}.{expires}"
+    secret=hashlib.sha256(TOKEN.encode()).digest()
+    sig=hmac.new(secret,body.encode(),hashlib.sha256).hexdigest()
+    return f"{body}.{sig}"
+
+
+def read_session(value):
+    try:
+        uid_value,expires,sig=value.split(".",2)
+        body=f"{uid_value}.{expires}"
+        secret=hashlib.sha256(TOKEN.encode()).digest()
+        expected=hmac.new(secret,body.encode(),hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected,sig) or int(expires)<time.time():return None
+        return int(uid_value)
+    except Exception:
+        return None
+
+
 @web.middleware
 async def auth(request, handler):
-    if request.path.startswith("/api/"):
-        user = verify_init_data(request.headers.get("X-Telegram-Init-Data", ""))
+    if request.path.startswith("/api/") and request.path!="/api/auth/telegram":
+        user=verify_init_data(request.headers.get("X-Telegram-Init-Data",""))
         if not user:
-            return response("Telegram-сессия не подтверждена. Перезапусти Mini App из Telegram.", 401)
-        request["tg_user"] = user
+            session_uid=read_session(request.cookies.get("fenix_session",""))
+            if session_uid:user={"id":session_uid}
+        if not user:
+            return response("Требуется вход через Telegram.",401)
+        request["tg_user"]=user
         if not db.user(int(user["id"])):
-            return response("Сначала запусти бота командой /start и заверши регистрацию.", 403)
+            return response("Сначала запусти бота командой /start и заверши регистрацию.",403)
     return await handler(request)
+
+
+async def login_telegram(req):
+    data=await payload(req)
+    user=verify_login_widget(data)
+    if not user:return response("Telegram не подтвердил вход. Проверь домен бота и попробуй ещё раз.",401)
+    if not db.user(int(user["id"])):return response("Сначала зарегистрируйся в боте FENIX ONLINE через /start.",403)
+    res=response({"profile":user})
+    res.set_cookie("fenix_session",make_session(user["id"]),httponly=True,secure=True,samesite="Lax",max_age=60*60*24*30,path="/")
+    return res
+
+
+async def logout(req):
+    res=response({"logged_out":True})
+    res.del_cookie("fenix_session",path="/")
+    return res
 
 
 def uid(req):
@@ -670,9 +727,14 @@ async def main():
         log.exception("Could not remove Mini App menu button")
     app = web.Application(middlewares=[auth], client_max_size=1024 * 1024)
     app.router.add_get("/", lambda _: web.FileResponse(WEB_DIR / "store.html"))
+    app.router.add_get("/account", lambda _: web.FileResponse(WEB_DIR / "account.html"))
+    app.router.add_get("/inventory", lambda _: web.FileResponse(WEB_DIR / "account.html"))
+    app.router.add_get("/orders", lambda _: web.FileResponse(WEB_DIR / "account.html"))
     app.router.add_get("/app", home)
     app.router.add_get("/store", lambda _: web.FileResponse(WEB_DIR / "store.html"))
     app.router.add_get("/health", lambda _: web.json_response({"status": "ok", "service": "fenix-miniapp"}))
+    app.router.add_post("/api/auth/telegram", login_telegram)
+    app.router.add_post("/api/auth/logout", logout)
     app.router.add_get("/api/bootstrap", bootstrap)
     app.router.add_get("/api/stats", stats)
     app.router.add_get("/api/top", top)
