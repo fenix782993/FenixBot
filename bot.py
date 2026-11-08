@@ -528,7 +528,7 @@ async def buy_confirm(c):
     msg='Заказ #'+str(oid)+' принят: '+item['name']+' · '+str(price)+' NMZ. Ожидает выдачи.'
     db.add_notification(c.from_user.id,'Покупка оформлена',msg)
     for aid in OWNER_IDS:
-        try: await bot.send_message(aid,'🛒 НОВЫЙ ЗАКАЗ #'+str(oid)+'\nИгрок: '+user['nick']+'\nТовар: '+item['name']+'\nЦена: '+str(price)+' NMZ)
+        try: await bot.send_message(aid,'🛒 НОВЫЙ ЗАКАЗ #'+str(oid)+' | Игрок: '+user['nick']+' | Товар: '+item['name']+' | Цена: '+str(price)+' NMZ)
         except Exception: logging.exception('Shop order notification failed')
     await c.message.edit_text('✅ '+msg,reply_markup=markup([[InlineKeyboardButton(text='📦 Мои заказы',callback_data='shop_orders')]]))
     await c.answer('Заказ оформлен')
