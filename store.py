@@ -1,4 +1,4 @@
-"""FENIX ONLINE wallet, donations, Robokassa and FNZ shop."""
+"""FENIX ONLINE wallet, manual donations and NMZ shop."""
 import hashlib
 import hmac
 import json
@@ -15,7 +15,7 @@ PRODUCTS = [
  {"code":"audio_system","name":"Аудиосистема","description":"Автомобильная аудиосистема с функциями проекта.","rarity":"Легендарный","price":890,"image":"https://nemazing.com/assets/img/store-v108/audio-system.png"},
  {"code":"nitro","name":"Нитро","description":"Комплект системы закиси азота.","rarity":"Редкий","price":390,"image":"https://nemazing.com/assets/img/store-v108/nitro.png"},
  {"code":"neon","name":"Неоновая подсветка","description":"Подсветка днища с настройкой внутри игры.","rarity":"Редкий","price":490,"image":"https://nemazing.com/assets/img/store-v108/neon.png"},
- {"code":"military_id","name":"Военный билет","description":"Покупается один раз и навсегда закрепляется за аккаунтом.","rarity":"Особый","price":None,"image":""},
+ {"code":"military_id","name":"Военный билет","description":"Покупается один раз и навсегда закрепляется за аккаунтом.","rarity":"Особый","price":450,"image":"https://nemazing.com/assets/img/store-v108/military-id.png"},
  {"code":"vehicle_plate","name":"Конструктор автомобильного номера","description":"Собери собственную комбинацию. Цена зависит от повторяющихся символов.","rarity":"Особый","price":700,"image":""},
 ]
 PLATE_LETTERS = "АВЕКМНОРСТУХ"
