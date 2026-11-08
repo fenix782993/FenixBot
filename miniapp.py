@@ -524,13 +524,16 @@ async def wallet_donate(req):
     if method != "manual":return response("Доступно только ручное пополнение.",400)
     proof=str(data.get("proof","")).strip()[:500]
     if method=="manual" and len(proof)<3:return response("Укажи комментарий к переводу или последние 4 цифры операции.",400)
+    manual_details=(db.setting("manual_payment_details", os.getenv("MANUAL_PAYMENT_DETAILS", "")) or "").strip()
+    if not manual_details or "УКАЖИТЕ" in manual_details.upper():
+        return response("Владелец ещё не настроил реквизиты ручного пополнения. Попробуй позже.",503)
     did=shop.new_donation(db,user_id,rub,nmz,method,proof)
     text=f"💳 Новое ручное пополнение #{did}\nИгрок: {user_id}\nСумма: {rub:.2f} ₽\nНачисление после проверки: {nmz} NMZ\nПодтверждение: {proof}"
     keyboard=core.markup([[InlineKeyboardButton(text="Одобрить",callback_data=f"donation_paid:{did}"),InlineKeyboardButton(text="Отклонить",callback_data=f"donation_rejected:{did}")]])
-    for aid in db.admin_ids():
+    for aid in core.OWNER_IDS:
         try:await tg.send_message(aid,text,reply_markup=keyboard)
-        except Exception:log.exception("Manual donation notification failed")
-    return response({"id":did,"fnz":nmz,"rub":rub,"phone":"+79067853860","banks":["Сбербанк","Т-Банк"]})
+        except Exception:log.exception("Manual donation owner notification failed")
+    return response({"id":did,"fnz":nmz,"rub":rub,"payment_details":manual_details})
 
 
 async def public_manual_donation(req):
