@@ -250,8 +250,6 @@ def welcome_caption():
     return (
         "🔥 FENIX ONLINE\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "⚫ BLACK  •  SA:MP\n"
-        "🌐 185.207.214.14:4357\n\n"
         + custom
         + "\n\nВыбери нужный раздел в меню ниже."
     )
