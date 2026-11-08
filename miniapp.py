@@ -95,7 +95,8 @@ async def bootstrap(req):
         "stats": {"referrals": db.ref_count(user_id), "channel_joins": db.channel_count(user_id), "tickets": len(tickets), "open_tickets": sum(1 for t in tickets if t.get("status") in ("open", "answered")), "notifications": db.unread_notifications(user_id), "achievements": len(awards)},
         "media_status": media.get("status", "none"),
         "referral_link": f"https://t.me/{bot_info.username}?start=r{user_id}",
-        "channel_url": core.CHANNEL_URL or core.REQUIRED_CHANNEL_URL
+        "channel_url": core.CHANNEL_URL or core.REQUIRED_CHANNEL_URL,
+        "theme": read_json_setting("ui_theme", DEFAULT_THEME)
     })
 
 
@@ -370,6 +371,88 @@ async def admin_publish(req):
     return response({"published": True})
 
 
+DEFAULT_THEME = {
+    "accent": "#f06a3d",
+    "background": "#08090c",
+    "panel": "#17191f",
+    "text": "#f5f3ef",
+    "muted": "#92949d",
+}
+
+def read_json_setting(key, default):
+    try:
+        value = json.loads(db.setting(key, json.dumps(default, ensure_ascii=False)) or "{}")
+        return value if isinstance(value, type(default)) else default
+    except Exception:
+        return default
+
+async def admin_design(req):
+    if not admin(req):
+        return response("Недостаточно прав.", 403)
+    if req.method == "GET":
+        pack = read_json_setting("premium_emoji_pack", [])
+        return response({
+            "theme": read_json_setting("ui_theme", DEFAULT_THEME),
+            "button_styles": read_json_setting("button_style_map", {}),
+            "button_icons": read_json_setting("button_custom_emoji_map", {}),
+            "emoji_pack": pack,
+            "buttons": core.PREMIUM_BUTTON_CATALOG,
+            "welcome_text": db.setting("welcome_text", "🔥 FENIX ONLINE\\nТвой личный кабинет."),
+            "registration_text": db.setting("registration_text", "🔥 FENIX ONLINE — регистрация\\n\\nВведи игровой никнейм (3–24 символа, латиница, цифры и _)."),
+            "labels": {key: db.setting(key, default) for key, default in {
+                "cab_label": "👤 Личный кабинет",
+                "ref_label": "🔗 Моя реферальная ссылка",
+                "stats_label": "📊 Статистика",
+                "top_label": "🏆 Рейтинг",
+                "media_label": "🤝 Стать медиапартнёром",
+                "owner_label": "⚙️ Панель владельца",
+                "home_label": "📢 Новости FENIX ONLINE",
+            }.items()}
+        })
+    data = await payload(req)
+    theme = data.get("theme") or {}
+    clean_theme = {}
+    for key, fallback in DEFAULT_THEME.items():
+        value = str(theme.get(key, fallback)).strip()
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+            return response(f"Некорректный цвет: {key}. Используй HEX вида #F06A3D.", 400)
+        clean_theme[key] = value.lower()
+    allowed = set(core.PREMIUM_BUTTON_CATALOG)
+    styles_in = data.get("button_styles") or {}
+    icons_in = data.get("button_icons") or {}
+    if not isinstance(styles_in, dict) or not isinstance(icons_in, dict):
+        return response("Неверный формат настроек кнопок.", 400)
+    styles = {}
+    for label, style in styles_in.items():
+        if label in allowed and style in ("primary", "success", "danger"):
+            styles[label] = style
+    pack = read_json_setting("premium_emoji_pack", [])
+    pack_ids = {str(item.get("id")) for item in pack if isinstance(item, dict) and item.get("id")}
+    icons = {}
+    for label, custom_id in icons_in.items():
+        custom_id = str(custom_id or "")
+        if label in allowed and custom_id and custom_id in pack_ids:
+            icons[label] = custom_id
+    labels = data.get("labels") or {}
+    label_keys = {"cab_label", "ref_label", "stats_label", "top_label", "media_label", "owner_label", "home_label"}
+    for key, value in labels.items():
+        if key in label_keys:
+            value = str(value).strip()
+            if not value or len(value) > 64:
+                return response(f"Проверь название кнопки {key}: от 1 до 64 символов.", 400)
+            db.set_setting(key, value)
+    for key, limit in (("welcome_text", 900), ("registration_text", 900)):
+        if key in data:
+            value = str(data[key]).strip()
+            if len(value) < 2 or len(value) > limit:
+                return response(f"Поле {key} должно содержать от 2 до {limit} символов.", 400)
+            db.set_setting(key, value)
+    db.set_setting("ui_theme", json.dumps(clean_theme, ensure_ascii=False))
+    db.set_setting("button_style_map", json.dumps(styles, ensure_ascii=False))
+    db.set_setting("button_custom_emoji_map", json.dumps(icons, ensure_ascii=False))
+    return response({"saved": True, "theme": clean_theme, "styles": len(styles), "icons": len(icons)})
+
+
 async def main():
     if not TOKEN:
         raise RuntimeError("BOT_TOKEN не задан")
@@ -409,6 +492,8 @@ async def main():
     app.router.add_post("/api/admin/payouts/{payout_id}", admin_payout_decision)
     app.router.add_post("/api/admin/broadcast", admin_broadcast)
     app.router.add_post("/api/admin/publish", admin_publish)
+    app.router.add_get("/api/admin/design", admin_design)
+    app.router.add_post("/api/admin/design", admin_design)
     runner = web.AppRunner(app)
     await runner.setup()
     port = int(os.getenv("PORT", "10000"))
