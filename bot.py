@@ -1,7 +1,8 @@
 import asyncio, logging, os, re, secrets, hashlib
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from pathlib import Path
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -21,6 +22,45 @@ OWNER_IDS=ADMINS.copy()
 def is_admin(uid): return db.is_admin(uid)
 def is_owner(uid): return uid in OWNER_IDS
 def markup(rows): return InlineKeyboardMarkup(inline_keyboard=rows)
+
+BASE_DIR = Path(__file__).resolve().parent
+ASSETS_DIR = BASE_DIR / "assets"
+ASSET_FILES = {
+    "welcome": "welcome.jpg",
+    "profile": "profile.jpg",
+    "referral": "referral.jpg",
+    "rating": "rating.jpg",
+    "media": "media_partners.jpg",
+    "news": "news.jpg",
+    "rewards": "rewards.jpg",
+    "black": "black_server.jpg",
+    "admin_recruitment": "admin_recruitment.jpg",
+    "leader_recruitment": "leader_recruitment.jpg",
+    "helper_recruitment": "helper_recruitment.jpg",
+    "footer": "footer.png",
+    "logo": "logo.png",
+}
+
+async def answer_visual(message, asset_key, caption, reply_markup=None):
+    """Отправляет локальный баннер из assets; если файла нет — пишет текст."""
+    filename = ASSET_FILES.get(asset_key)
+    image_path = ASSETS_DIR / filename if filename else None
+    if image_path and image_path.is_file():
+        try:
+            if len(caption or "") <= 1024:
+                return await message.answer_photo(
+                    FSInputFile(str(image_path)),
+                    caption=caption or None,
+                    reply_markup=reply_markup
+                )
+            await message.answer_photo(FSInputFile(str(image_path)))
+            return await message.answer(caption, reply_markup=reply_markup)
+        except Exception:
+            logging.exception("Не удалось отправить баннер %s", image_path)
+    else:
+        logging.warning("Баннер не найден: %s", image_path)
+    return await message.answer(caption, reply_markup=reply_markup)
+
 def menu(uid):
     label=db.setting("home_label","📢 Новости FENIX ONLINE")
     url=db.setting("home_url",CHANNEL_URL)
@@ -74,13 +114,12 @@ async def password(m:Message,state:FSMContext):
 @dp.callback_query(F.data=="cab")
 async def cab(c):
     try:
-        u = db.user(c.from_user.id)
+        u=db.user(c.from_user.id)
         if not u:
             return await c.answer("Сначала зарегистрируйся через /start", show_alert=True)
-        invited = db.ref_count(c.from_user.id)
-        await c.message.answer(
-            f"👤 ЛИЧНЫЙ КАБИНЕТ\nНик: {u['nick']}\nПриглашено: {invited}"
-        )
+        invited=db.ref_count(c.from_user.id)
+        await answer_visual(c.message, "profile",
+            f"👤 ЛИЧНЫЙ КАБИНЕТ\nНик: {u['nick']}\nПриглашено: {invited}")
         await c.answer()
     except Exception:
         logging.exception("Ошибка открытия личного кабинета")
@@ -91,14 +130,11 @@ async def ref(c):
     try:
         if not db.user(c.from_user.id):
             return await c.answer("Сначала зарегистрируйся через /start", show_alert=True)
-        me = await bot.get_me()
-        link = f"https://t.me/{me.username}?start=r{c.from_user.id}"
-        count = db.ref_count(c.from_user.id)
-        await c.message.answer(
-            f"🔗 ТВОЯ РЕФЕРАЛЬНАЯ ССЫЛКА\n{link}\n"
-            f"Зарегистрировано по ссылке: {count}\n\n"
-            "Для приглашений именно в канал используй /invite."
-        )
+        me=await bot.get_me()
+        link=f"https://t.me/{me.username}?start=r{c.from_user.id}"
+        count=db.ref_count(c.from_user.id)
+        await answer_visual(c.message, "referral",
+            f"🔗 ТВОЯ РЕФЕРАЛЬНАЯ ССЫЛКА\n{link}\nЗарегистрировано по ссылке: {count}\n\nДля приглашений именно в канал используй /invite.")
         await c.answer()
     except Exception:
         logging.exception("Ошибка открытия реферальной ссылки")
@@ -125,12 +161,10 @@ async def member(ev:ChatMemberUpdated):
 @dp.callback_query(F.data=="stats")
 async def stats(c):
     try:
-        registered = db.ref_count(c.from_user.id)
-        joined = db.channel_count(c.from_user.id)
-        await c.message.answer(
-            f"📊 ТВОЯ СТАТИСТИКА\n\nРегистрации по реферальной ссылке: {registered}\n"
-            f"Вступления в канал по персональной ссылке: {joined}"
-        )
+        registered=db.ref_count(c.from_user.id)
+        joined=db.channel_count(c.from_user.id)
+        await answer_visual(c.message, "rewards",
+            f"📊 ТВОЯ СТАТИСТИКА\n\nРегистрации по реферальной ссылке: {registered}\nВступления в канал по персональной ссылке: {joined}")
         await c.answer()
     except Exception:
         logging.exception("Ошибка загрузки статистики")
@@ -138,11 +172,21 @@ async def stats(c):
 
 @dp.callback_query(F.data=="top")
 async def top(c):
-    rows=db.top(); txt="🏆 ТОП РЕФЕРАЛОВ\n\n"+("\n".join(f"{i}. {x['nick']} — {x['n']}" for i,x in enumerate(rows,1)) if rows else "Пока пусто.")
-    await c.message.answer(txt); await c.answer()
+    try:
+        rows=db.top()
+        txt="🏆 ТОП РЕФЕРАЛОВ\n\n"+("\n".join(f"{i}. {x['nick']} — {x['n']}" for i,x in enumerate(rows,1)) if rows else "Пока пусто.")
+        await answer_visual(c.message, "rating", txt)
+        await c.answer()
+    except Exception:
+        logging.exception("Ошибка рейтинга")
+        await c.answer("Не удалось загрузить рейтинг.", show_alert=True)
+
 @dp.callback_query(F.data=="media")
 async def media(c,state:FSMContext):
-    await state.set_state(S.media_channel); await c.message.answer("🤝 Заявка в медиапартнёры\nПришли ссылку на свой канал/площадку."); await c.answer()
+    await state.set_state(S.media_channel)
+    await answer_visual(c.message, "media", "🤝 ЗАЯВКА В МЕДИАПАРТНЁРЫ\nПришли ссылку на свой канал или площадку.")
+    await c.answer()
+
 @dp.message(S.media_channel)
 async def media1(m,state:FSMContext):
     await state.update_data(ch=m.text or ""); await state.set_state(S.media_stats); await m.answer("Укажи количество подписчиков и средние просмотры.")
@@ -175,12 +219,15 @@ async def mno(c):
 @dp.callback_query(F.data=="owner")
 async def owner(c):
     if not is_admin(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
-    await c.message.answer("⚙️ ПАНЕЛЬ ВЛАДЕЛЬЦА",reply_markup=markup([
-    [InlineKeyboardButton(text="📣 Опубликовать пост",callback_data="post")],
-    [InlineKeyboardButton(text="📨 Рассылка",callback_data="broadcast")],
-    [InlineKeyboardButton(text="🎨 Настроить кнопку меню",callback_data="editbutton")],
-    [InlineKeyboardButton(text="📈 Общая статистика",callback_data="ostats")],
-    [InlineKeyboardButton(text="👮 Управление администраторами",callback_data="admins_manage")]])); await c.answer()
+    await answer_visual(c.message, "news", "⚙️ ПАНЕЛЬ ВЛАДЕЛЬЦА", reply_markup=markup([
+        [InlineKeyboardButton(text="📣 Опубликовать пост",callback_data="post")],
+        [InlineKeyboardButton(text="📨 Рассылка",callback_data="broadcast")],
+        [InlineKeyboardButton(text="🎨 Настроить кнопку меню",callback_data="editbutton")],
+        [InlineKeyboardButton(text="📈 Общая статистика",callback_data="ostats")],
+        [InlineKeyboardButton(text="👮 Управление администраторами",callback_data="admins_manage")]
+    ]))
+    await c.answer()
+
 @dp.callback_query(F.data=="admins_manage")
 async def admins_manage(c):
     if not is_owner(c.from_user.id):
@@ -422,6 +469,7 @@ async def start_health_server():
 
 async def main():
     db.init()
+    logging.info("Assets directory: %s | found: %s", ASSETS_DIR, sorted(p.name for p in ASSETS_DIR.glob("*") if p.is_file()))
     runner = await start_health_server()
     try:
         # Long polling Telegram запускается параллельно с HTTP health endpoint.
