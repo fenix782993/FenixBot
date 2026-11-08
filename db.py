@@ -60,9 +60,6 @@ class DB:
                 c.execute("CREATE TABLE IF NOT EXISTS joins (owner BIGINT, uid BIGINT UNIQUE, created TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS admins (uid BIGINT PRIMARY KEY, added_by BIGINT, created TEXT)")
-                c.execute("CREATE TABLE IF NOT EXISTS staff_requests (uid BIGINT PRIMARY KEY, nick TEXT, role TEXT, requested_by BIGINT, status TEXT, created TEXT)")
-                c.execute("CREATE TABLE IF NOT EXISTS staff_roles (uid BIGINT PRIMARY KEY, nick TEXT, role TEXT, created TEXT)")
-                c.execute("CREATE TABLE IF NOT EXISTS warnings (id BIGSERIAL PRIMARY KEY, chat_id BIGINT, uid BIGINT, by_uid BIGINT, reason TEXT, created TEXT)")
             else:
                 c.executescript("""
                     CREATE TABLE IF NOT EXISTS users(uid INTEGER PRIMARY KEY, username TEXT, nick TEXT UNIQUE, pwhash TEXT, ref INTEGER, created TEXT);
@@ -72,9 +69,6 @@ class DB:
                     CREATE TABLE IF NOT EXISTS joins(owner INTEGER, uid INTEGER UNIQUE, created TEXT);
                     CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT);
                     CREATE TABLE IF NOT EXISTS admins(uid INTEGER PRIMARY KEY, added_by INTEGER, created TEXT);
-                    CREATE TABLE IF NOT EXISTS staff_requests(uid INTEGER PRIMARY KEY, nick TEXT, role TEXT, requested_by INTEGER, status TEXT, created TEXT);
-                    CREATE TABLE IF NOT EXISTS staff_roles(uid INTEGER PRIMARY KEY, nick TEXT, role TEXT, created TEXT);
-                    CREATE TABLE IF NOT EXISTS warnings(id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER, uid INTEGER, by_uid INTEGER, reason TEXT, created TEXT);
                 """)
             owners = [int(x) for x in os.getenv("ADMIN_IDS", "").replace(" ", "").split(",") if x]
             for uid in owners:
@@ -231,53 +225,58 @@ class DB:
             cur = c.execute(f"DELETE FROM admins WHERE uid={self._ph()}", (uid,))
             return cur.rowcount > 0
 
-    def user_by_nick(self, nick):
-        return self._one(f"SELECT * FROM users WHERE lower(nick)=lower({self._ph()})", (nick,))
-
-    def user_by_username(self, username):
-        return self._one(f"SELECT * FROM users WHERE lower(username)=lower({self._ph()})", (username.lstrip("@"),))
-
-    def create_staff_request(self, uid, nick, role, requested_by):
+    # FENIX staff-management extension (safe additive migrations).
+    def ensure_management(self):
         with self.con() as c:
             if self.use_postgres:
-                c.execute("INSERT INTO staff_requests(uid,nick,role,requested_by,status,created) VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(uid) DO UPDATE SET nick=EXCLUDED.nick, role=EXCLUDED.role, requested_by=EXCLUDED.requested_by, status='pending', created=EXCLUDED.created", (uid,nick,role,requested_by,"pending",self._now()))
+                c.execute("CREATE TABLE IF NOT EXISTS staff(uid BIGINT PRIMARY KEY, nick TEXT, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, appointed_by BIGINT, appointed TEXT)")
+                c.execute("CREATE TABLE IF NOT EXISTS staff_actions(id BIGSERIAL PRIMARY KEY, uid BIGINT NOT NULL, actor BIGINT NOT NULL, action TEXT NOT NULL, reason TEXT, created TEXT NOT NULL)")
+                c.execute("CREATE TABLE IF NOT EXISTS shifts(id BIGSERIAL PRIMARY KEY, uid BIGINT NOT NULL, started TEXT NOT NULL, ended TEXT)")
+                c.execute("CREATE TABLE IF NOT EXISTS staff_reports(id BIGSERIAL PRIMARY KEY, uid BIGINT NOT NULL, period TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', reviewer BIGINT, review_note TEXT, created TEXT NOT NULL)")
+                c.execute("CREATE TABLE IF NOT EXISTS interviews(id BIGSERIAL PRIMARY KEY, candidate BIGINT NOT NULL, interviewer BIGINT NOT NULL, result TEXT NOT NULL, note TEXT, created TEXT NOT NULL)")
             else:
-                c.execute("INSERT OR REPLACE INTO staff_requests(uid,nick,role,requested_by,status,created) VALUES(?,?,?,?,?,?)", (uid,nick,role,requested_by,"pending",self._now()))
+                c.executescript("""
+                CREATE TABLE IF NOT EXISTS staff(uid INTEGER PRIMARY KEY, nick TEXT, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, appointed_by INTEGER, appointed TEXT);
+                CREATE TABLE IF NOT EXISTS staff_actions(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER NOT NULL, actor INTEGER NOT NULL, action TEXT NOT NULL, reason TEXT, created TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS shifts(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER NOT NULL, started TEXT NOT NULL, ended TEXT);
+                CREATE TABLE IF NOT EXISTS staff_reports(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER NOT NULL, period TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', reviewer INTEGER, review_note TEXT, created TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS interviews(id INTEGER PRIMARY KEY AUTOINCREMENT, candidate INTEGER NOT NULL, interviewer INTEGER NOT NULL, result TEXT NOT NULL, note TEXT, created TEXT NOT NULL);
+                """)
 
-    def staff_request(self, uid):
-        return self._one(f"SELECT * FROM staff_requests WHERE uid={self._ph()}", (uid,))
-
-    def update_staff_request(self, uid, status):
-        with self.con() as c: c.execute(f"UPDATE staff_requests SET status={self._ph()} WHERE uid={self._ph()}", (status,uid))
-
-    def set_staff_role(self, uid, nick, role):
+    def staff_list(self): return self._all("SELECT * FROM staff WHERE active=1 ORDER BY role,nick")
+    def staff_get(self, uid): return self._one(f"SELECT * FROM staff WHERE uid={self._ph()}", (uid,))
+    def staff_set(self, uid, nick, role, actor):
+        with self.con() as c:
+            ph=self._ph()
+            if self.use_postgres:
+                c.execute("INSERT INTO staff(uid,nick,role,active,appointed_by,appointed) VALUES(%s,%s,%s,1,%s,%s) ON CONFLICT(uid) DO UPDATE SET nick=EXCLUDED.nick,role=EXCLUDED.role,active=1,appointed_by=EXCLUDED.appointed_by,appointed=EXCLUDED.appointed",(uid,nick,role,actor,self._now()))
+            else:
+                c.execute("INSERT INTO staff(uid,nick,role,active,appointed_by,appointed) VALUES(?,?,?,1,?,?) ON CONFLICT(uid) DO UPDATE SET nick=excluded.nick,role=excluded.role,active=1,appointed_by=excluded.appointed_by,appointed=excluded.appointed",(uid,nick,role,actor,self._now()))
+        self.staff_action(uid,actor,"назначение/изменение должности",role)
+    def staff_action(self, uid, actor, action, reason=None):
+        with self.con() as c: c.execute(f"INSERT INTO staff_actions(uid,actor,action,reason,created) VALUES({','.join([self._ph()]*5)})",(uid,actor,action,reason,self._now()))
+    def staff_remove(self, uid, actor, reason=None):
+        with self.con() as c: c.execute(f"UPDATE staff SET active=0 WHERE uid={self._ph()}",(uid,))
+        self.staff_action(uid,actor,"снятие с должности",reason)
+    def staff_history(self, uid): return self._all(f"SELECT * FROM staff_actions WHERE uid={self._ph()} ORDER BY id DESC LIMIT 30",(uid,))
+    def shift_open(self, uid):
+        if self._one(f"SELECT id FROM shifts WHERE uid={self._ph()} AND ended IS NULL",(uid,)): return False
+        with self.con() as c: c.execute(f"INSERT INTO shifts(uid,started) VALUES({self._ph()},{self._ph()})",(uid,self._now()))
+        return True
+    def shift_close(self, uid):
+        row=self._one(f"SELECT id FROM shifts WHERE uid={self._ph()} AND ended IS NULL ORDER BY id DESC LIMIT 1",(uid,))
+        if not row: return False
+        with self.con() as c: c.execute(f"UPDATE shifts SET ended={self._ph()} WHERE id={self._ph()}",(self._now(),row['id']))
+        return True
+    def shift_active(self): return self._all("SELECT s.uid,COALESCE(st.nick,CAST(s.uid AS TEXT)) AS nick,st.role,s.started FROM shifts s LEFT JOIN staff st ON st.uid=s.uid WHERE s.ended IS NULL ORDER BY s.started")
+    def report_add(self, uid, period, body):
         with self.con() as c:
             if self.use_postgres:
-                c.execute("INSERT INTO staff_roles(uid,nick,role,created) VALUES(%s,%s,%s,%s) ON CONFLICT(uid) DO UPDATE SET nick=EXCLUDED.nick, role=EXCLUDED.role", (uid,nick,role,self._now()))
-            else:
-                c.execute("INSERT OR REPLACE INTO staff_roles(uid,nick,role,created) VALUES(?,?,?,?)", (uid,nick,role,self._now()))
-
-    def staff_list(self):
-        return self._all("SELECT uid,nick,role FROM staff_roles ORDER BY nick")
-
-    def add_warning(self, chat_id, uid, by_uid, reason):
-        with self.con() as c:
-            c.execute(f"INSERT INTO warnings(chat_id,uid,by_uid,reason,created) VALUES({','.join([self._ph()]*5)})", (chat_id,uid,by_uid,reason,self._now()))
-            row=c.execute(f"SELECT count(*) AS n FROM warnings WHERE chat_id={self._ph()} AND uid={self._ph()}", (chat_id,uid)).fetchone()
-            return row["n"] if isinstance(row,dict) else row[0]
-
-    def warning_count(self, chat_id, uid):
-        return self._scalar(f"SELECT count(*) FROM warnings WHERE chat_id={self._ph()} AND uid={self._ph()}", (chat_id,uid))
-    def users_search(self, term=""):
-        term = (term or "").strip()
-        if term:
-            pattern = f"%{term.lower()}%"
-            return self._all(
-                f"SELECT uid, username, nick, created FROM users WHERE lower(nick) LIKE {self._ph()} OR lower(username) LIKE {self._ph()} ORDER BY lower(nick) LIMIT 500",
-                (pattern, pattern),
-            )
-        return self._all("SELECT uid, username, nick, created FROM users ORDER BY lower(nick) LIMIT 5000")
-
-    def staff_role(self, uid):
-        return self._one(f"SELECT uid,nick,role,created FROM staff_roles WHERE uid={self._ph()}", (uid,))
-
+                return c.execute("INSERT INTO staff_reports(uid,period,body,created) VALUES(%s,%s,%s,%s) RETURNING id",(uid,period,body,self._now())).fetchone()['id']
+            return c.execute("INSERT INTO staff_reports(uid,period,body,created) VALUES(?,?,?,?)",(uid,period,body,self._now())).lastrowid
+    def reports_pending(self): return self._all("SELECT * FROM staff_reports WHERE status='pending' ORDER BY id")
+    def report_review(self, rid, reviewer, status, note=''):
+        with self.con() as c: c.execute(f"UPDATE staff_reports SET status={self._ph()},reviewer={self._ph()},review_note={self._ph()} WHERE id={self._ph()}",(status,reviewer,note,rid))
+    def report_get(self, rid): return self._one(f"SELECT * FROM staff_reports WHERE id={self._ph()}",(rid,))
+    def interview_add(self, candidate, interviewer, result, note=''):
+        with self.con() as c: c.execute(f"INSERT INTO interviews(candidate,interviewer,result,note,created) VALUES({','.join([self._ph()]*5)})",(candidate,interviewer,result,note,self._now()))
