@@ -760,9 +760,9 @@ async def admins_manage(c):
         return await c.answer("Нет доступа к управлению администраторами.",show_alert=True)
     try:
         ids=db.admin_ids()
-        text="👮 УПРАВЛЕНИЕ АДМИНИСТРАТОРАМИ\\n\\n"
-        text += "\\n".join(
-            f"• {db.staff_display(uid)}\\n  Должность: {db.staff_role(uid, 'admin') or 'Администратор'}"
+        text="👮 УПРАВЛЕНИЕ АДМИНИСТРАТОРАМИ\n\n"
+        text += "\n".join(
+            f"• {db.staff_display(uid)}\n  Должность: {db.staff_role(uid, 'admin') or 'Администратор'}"
             for uid in ids
         ) if ids else "Администраторов пока нет."
         await edit_panel(c.message,text,reply_markup=markup([
@@ -832,11 +832,11 @@ async def show_chat_ids(m):
     if not is_admin(m.from_user.id):
         return await m.answer("⛔ Нет доступа.")
     await m.answer(
-        "🔎 <b>ДАННЫЕ ЧАТА</b>\\n"
-        f"Тип: <code>{html.escape(str(m.chat.type))}</code>\\n"
-        f"Chat ID: <code>{m.chat.id}</code>\\n"
-        f"Ваш Telegram ID: <code>{m.from_user.id}</code>\\n"
-        f"Админ-чат: <code>{html.escape(str(db.setting('admin_chat_id','—')))}</code>\\n"
+        "🔎 <b>ДАННЫЕ ЧАТА</b>\n"
+        f"Тип: <code>{html.escape(str(m.chat.type))}</code>\n"
+        f"Chat ID: <code>{m.chat.id}</code>\n"
+        f"Ваш Telegram ID: <code>{m.from_user.id}</code>\n"
+        f"Админ-чат: <code>{html.escape(str(db.setting('admin_chat_id','—')))}</code>\n"
         f"Лидерский чат: <code>{html.escape(str(db.setting('leader_chat_id','—')))}</code>",
         parse_mode="HTML"
     )
