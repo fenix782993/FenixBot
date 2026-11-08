@@ -13,7 +13,7 @@ PRODUCTS = [
  {"code":"nitro","name":"Нитро","description":"Комплект системы закиси азота.","rarity":"Редкий","price":390,"image":"/assets/nitro.png"},
  {"code":"neon","name":"Неоновая подсветка","description":"Подсветка днища с настройкой внутри игры.","rarity":"Редкий","price":490,"image":"/assets/neon.png"},
  {"code":"military_id","name":"Военный билет","description":"Покупается один раз и навсегда закрепляется за аккаунтом.","rarity":"Особый","price":450,"image":"/assets/military-id.png"},
- {"code":"vehicle_plate","name":"Конструктор автомобильного номера","description":"Собери собственную комбинацию. Цена зависит от повторяющихся символов.","rarity":"Особый","price":700,"image":"/assets/vehicle-number.png"},
+ {"code":"vehicle_plate","name":"Конструктор автомобильного номера","description":"Собери собственную комбинацию из трёх латинских букв, трёх цифр и региона.","rarity":"Особый","price":700,"image":"/assets/vehicle-number.png"},
 ]
 PLATE_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 REGIONS = ["01","02","03","04","05","06","07","08","09","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30","31","32","33","34","35","36","37","38","39","40","41","42","43","44","45","46","47","48","49","50","51","52","53","54","55","56","57","58","59","60","61","62","63","64","65","66","67","68","69","70","71","72","73","74","75","76","77","78","79","80","81","82","83","84","85","86","87","88","89","90","91","92","93","94","95","96","97","98","99"]
@@ -106,12 +106,12 @@ def create_order(db, uid, nick, code, name, price, details=""):
         if not row or int(row["balance"])<int(price):return None
         now=db._now()
         if db.use_postgres:
-            cur=c.execute("INSERT INTO shop_orders(uid,nick,product_code,product_name,price_fnz,status,details,created,updated) VALUES(%s,%s,%s,%s,%s,'pending_delivery',%s,%s,%s) RETURNING id",(uid,nick,code,name,price,details,now,now))
+            cur=c.execute("INSERT INTO shop_orders(uid,nick,product_code,product_name,price_fnz,status,details,created,updated) VALUES(%s,%s,%s,%s,%s,'purchased',%s,%s,%s) RETURNING id",(uid,nick,code,name,price,details,now,now))
             oid=int(cur.fetchone()["id"])
             c.execute("INSERT INTO wallet_ledger(uid,delta,reason,ref_key,created) VALUES(%s,%s,%s,%s,%s)",(uid,-int(price),f"Покупка: {name}",f"shop:{oid}",now))
             c.execute("UPDATE wallets SET balance=balance-%s WHERE uid=%s",(price,uid))
         else:
-            cur=c.execute("INSERT INTO shop_orders(uid,nick,product_code,product_name,price_fnz,status,details,created,updated) VALUES(?,?,?,?,?,'pending_delivery',?,?,?)",(uid,nick,code,name,price,details,now,now))
+            cur=c.execute("INSERT INTO shop_orders(uid,nick,product_code,product_name,price_fnz,status,details,created,updated) VALUES(?,?,?,?,?,'purchased',?,?,?)",(uid,nick,code,name,price,details,now,now))
             oid=int(cur.lastrowid)
             c.execute("INSERT INTO wallet_ledger(uid,delta,reason,ref_key,created) VALUES(?,?,?,?,?)",(uid,-int(price),f"Покупка: {name}",f"shop:{oid}",now))
             c.execute("UPDATE wallets SET balance=balance-? WHERE uid=?",(price,uid))
