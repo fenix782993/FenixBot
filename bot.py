@@ -55,7 +55,16 @@ def markup(rows):
             try:
                 if isinstance(button, InlineKeyboardButton):
                     updates = {}
-                    keys = [button.text or "", getattr(button, "callback_data", None) or ""]
+                    callback = getattr(button, "callback_data", None) or ""
+                    aliases = {
+                        "cab": "👤 Личный кабинет",
+                        "ref": "🔗 Моя реферальная ссылка",
+                        "stats": "📊 Статистика",
+                        "top": "🏆 Рейтинг",
+                        "media": "🤝 Стать медиапартнёром",
+                        "owner": "⚙️ Панель владельца",
+                    }
+                    keys = [button.text or "", callback, aliases.get(callback, "")]
                     custom_id = next((icons.get(key) for key in keys if icons.get(key)), None)
                     style = next((styles.get(key) for key in keys if styles.get(key)), None)
                     if custom_id and str(custom_id).isdigit():
