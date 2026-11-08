@@ -138,7 +138,12 @@ def markup(rows):
                             (("отклон","удал","закры","отмена"), "5447621198374511640"),
                             (("назад","главн","вернут"), "5456174445355875099"),
                         ]
-                        custom_id=next((emoji_id for words,emoji_id in icon_fallbacks if any(word in label for word in words)), "5280818098960611598")
+                        # Prefer an ID verified from the imported OutlineEmoji pack.
+                        # Legacy hard-coded IDs may belong to another pack and be rejected by Telegram.
+                        custom_id = pack_ids[0] if pack_ids else next(
+                            (emoji_id for words, emoji_id in icon_fallbacks if any(word in label for word in words)),
+                            "5280818098960611598"
+                        )
                     style = next((styles.get(key) for key in keys if styles.get(key)), None)
                     # Default palette mirrors the color-coded Telegram reference.
                     default_styles = {
