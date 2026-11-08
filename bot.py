@@ -1,4 +1,4 @@
-import asyncio, logging, os, re, secrets, hashlib
+import asyncio, logging, os, re, secrets, hashlib, html
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, ChatPermissions
@@ -555,10 +555,114 @@ async def staff_decision(call: CallbackQuery):
 
 @dp.message(Command("stafflist"))
 async def staff_list(message: Message):
-    if not is_admin(message.from_user.id): return await message.reply("Нет доступа.")
-    rows=db.staff_list()
-    body="\n".join(f"• {x['nick']} — {x['role']} (ID {x['uid']})" for x in rows) or "Список пока пуст."
-    await message.reply("🛡 СОСТАВ FENIX ONLINE\n"+body)
+    if not is_admin(message.from_user.id):
+        return await message.reply("Нет доступа.")
+    rows = db.staff_list()
+    if not rows:
+        return await message.reply("🛡 Состав FENIX ONLINE пока пуст. Добавь сотрудника командой /nnick Ник Должность.")
+    lines = ["🛡 <b>СОСТАВ FENIX ONLINE</b>", ""]
+    for i, item in enumerate(rows, 1):
+        nick_html = html.escape(str(item["nick"]))
+        role_html = html.escape(str(item["role"]))
+        uid = int(item["uid"])
+        lines.append(f"{i}. <a href=\"tg://user?id={uid}\">{nick_html}</a> — <b>{role_html}</b>")
+    await message.reply("\n".join(lines), parse_mode="HTML", disable_web_page_preview=True)
+
+@dp.message(Command("nnick"))
+async def set_staff_nick(message: Message):
+    if message.chat.type not in ("group", "supergroup") or message.chat.id != _admin_chat_id():
+        return await message.reply("Команда доступна только в назначенном админ-чате.")
+    if not is_owner(message.from_user.id):
+        return await message.reply("Менять состав и должности может только владелец проекта.")
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 3:
+        return await message.reply("Формат: /nnick Игровой_ник Должность\nПример: /nnick Fenix_Rudcov Спец. администратор")
+    nick, role = parts[1].strip(), parts[2].strip()
+    if len(role) > 80:
+        return await message.reply("Должность слишком длинная (максимум 80 символов).")
+    target = db.user_by_nick(nick)
+    if not target:
+        return await message.reply("Игрок с таким игровым ником не найден. Он должен хотя бы один раз запустить /start в боте.")
+    db.set_staff_role(int(target["uid"]), target["nick"], role)
+    profile = f"<a href=\"tg://user?id={int(target['uid'])}\">{html.escape(target['nick'])}</a>"
+    await message.reply(f"✅ {profile} добавлен в список сотрудников.\nДолжность: <b>{html.escape(role)}</b>\n\nЭто добавляет запись в список админ-чата, но само по себе не выдаёт доступ к панели бота. Для доступа используй /staff и подтверди заявку.", parse_mode="HTML", disable_web_page_preview=True)
+
+@dp.message(Command("nick"))
+async def show_staff_nick(message: Message):
+    if message.chat.type not in ("group", "supergroup") or message.chat.id != _admin_chat_id():
+        return await message.reply("Список сотрудников доступен в назначенном админ-чате.")
+    if not is_admin(message.from_user.id):
+        return await message.reply("Нет доступа к списку сотрудников.")
+    rows = db.staff_list()
+    if not rows:
+        return await message.reply("📋 Список назначенных сотрудников пока пуст.\nВладелец может добавить запись: /nnick Игровой_ник Должность")
+    lines = ["🏛 <b>АДМИНИСТРАЦИЯ FENIX ONLINE</b>", "<i>Назначенные сотрудники админ-чата</i>", ""]
+    for i, item in enumerate(rows, 1):
+        uid = int(item["uid"])
+        nick_html = html.escape(str(item["nick"]))
+        role_html = html.escape(str(item["role"]))
+        lines.append(f"<b>{i:02d}</b>  <a href=\"tg://user?id={uid}\">{nick_html}</a>\n      <i>{role_html}</i>")
+    text = "\n".join(lines)
+    # Telegram message limit; split only between staff cards.
+    chunk = ""
+    for line in lines:
+        candidate = (chunk + "\n" + line).strip()
+        if len(candidate) > 3800 and chunk:
+            await message.reply(chunk, parse_mode="HTML", disable_web_page_preview=True)
+            chunk = line
+        else:
+            chunk = candidate
+    if chunk:
+        await message.reply(chunk, parse_mode="HTML", disable_web_page_preview=True)
+
+@dp.message(Command("users"))
+async def list_registered_users(message: Message):
+    if not is_admin(message.from_user.id):
+        return await message.reply("Нет доступа.")
+    rows = db.users_search("")
+    if not rows:
+        return await message.reply("В базе пока нет зарегистрированных игроков.")
+    lines = ["👥 <b>ЗАРЕГИСТРИРОВАННЫЕ ИГРОКИ</b>", ""]
+    for row in rows[:80]:
+        uid = int(row["uid"])
+        lines.append(f"• <a href=\"tg://user?id={uid}\">{html.escape(str(row['nick']))}</a> — <code>{uid}</code>")
+    if len(rows) > 80:
+        lines.append(f"\nПоказаны первые 80 из {len(rows)}. Используй /find часть_ника для поиска.")
+    await message.reply("\n".join(lines), parse_mode="HTML", disable_web_page_preview=True)
+
+@dp.message(Command("find"))
+async def find_registered_user(message: Message):
+    if not is_admin(message.from_user.id):
+        return await message.reply("Нет доступа.")
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        return await message.reply("Формат: /find часть_ника")
+    rows = db.users_search(parts[1].strip())
+    if not rows:
+        return await message.reply("Совпадений не найдено.")
+    lines = ["🔎 <b>РЕЗУЛЬТАТЫ ПОИСКА</b>", ""]
+    for row in rows[:30]:
+        uid = int(row["uid"])
+        lines.append(f"• <a href=\"tg://user?id={uid}\">{html.escape(str(row['nick']))}</a> — <code>{uid}</code>")
+    await message.reply("\n".join(lines), parse_mode="HTML", disable_web_page_preview=True)
+
+@dp.message(Command("userinfo"))
+async def registered_user_info(message: Message):
+    if not is_admin(message.from_user.id):
+        return await message.reply("Нет доступа.")
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        return await message.reply("Формат: /userinfo Игровой_ник")
+    row = db.user_by_nick(parts[1].strip())
+    if not row:
+        return await message.reply("Игрок не найден.")
+    uid = int(row["uid"])
+    role = db.staff_role(uid)
+    role_text = html.escape(str(role["role"])) if role else "Не назначена"
+    username = ("@" + html.escape(str(row["username"])) if row.get("username") else "Не указан")
+    await message.reply(
+        f"👤 <b>ПРОФИЛЬ ИГРОКА</b>\n\nИгровой ник: <a href=\"tg://user?id={uid}\">{html.escape(str(row['nick']))}</a>\nTelegram: {username}\nID: <code>{uid}</code>\nДолжность: <b>{role_text}</b>\nДоступ к панели: {'Есть' if is_admin(uid) else 'Нет'}",
+        parse_mode="HTML", disable_web_page_preview=True)
 
 def _parse_duration(raw):
     m=re.fullmatch(r"(\d+)([mhd])", raw.lower())

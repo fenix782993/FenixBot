@@ -268,4 +268,16 @@ class DB:
 
     def warning_count(self, chat_id, uid):
         return self._scalar(f"SELECT count(*) FROM warnings WHERE chat_id={self._ph()} AND uid={self._ph()}", (chat_id,uid))
+    def users_search(self, term=""):
+        term = (term or "").strip()
+        if term:
+            pattern = f"%{term.lower()}%"
+            return self._all(
+                f"SELECT uid, username, nick, created FROM users WHERE lower(nick) LIKE {self._ph()} OR lower(username) LIKE {self._ph()} ORDER BY lower(nick) LIMIT 500",
+                (pattern, pattern),
+            )
+        return self._all("SELECT uid, username, nick, created FROM users ORDER BY lower(nick) LIMIT 5000")
+
+    def staff_role(self, uid):
+        return self._one(f"SELECT uid,nick,role,created FROM staff_roles WHERE uid={self._ph()}", (uid,))
 
