@@ -22,6 +22,13 @@ bot=Bot(TOKEN); dp=Dispatcher(storage=MemoryStorage()); db=DB(os.getenv("DATABAS
 OWNER_IDS=ADMINS.copy()
 REQUIRED_CHANNEL_URL = CHANNEL_URL or "https://t.me/+1usTps-EXmxjNWRl"
 def is_admin(uid): return db.is_admin(uid)
+
+def payout_status_label(status):
+    return {"pending":"🕒 На проверке","paid":"✅ Выплачено","rejected":"❌ Отклонено"}.get(str(status), str(status))
+
+def neat_value(value, fallback="Не указано"):
+    value=str(value or "").strip()
+    return value if value else fallback
 def is_owner(uid): return uid in OWNER_IDS
 def markup(rows): return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -114,6 +121,7 @@ async def cmd_id(m): await m.answer(f"Твой Telegram ID: {m.from_user.id}")
 @dp.message(CommandStart())
 async def start(m:Message,state:FSMContext):
     try:
+        await state.clear()  # /start always resets any unfinished wizard
         if not await subscribed(m.from_user.id):
             await m.answer(
                 "🔒 Для использования FENIX ONLINE необходимо подписаться на канал проекта.",
@@ -253,8 +261,40 @@ async def media_cabinet(c):
     if not current or current.get("status")!="approved":
         return await c.answer("Кабинет доступен только одобренным медиапартнёрам.",show_alert=True)
     payouts=db.media_payouts_for_user(c.from_user.id,5)
-    history="\n".join(f"#{x['id']} — {x['amount']} — {x['status']}" for x in payouts) or "Пока запросов выплат нет."
-    await c.message.answer("🎬 КАБИНЕТ МЕДИАПАРТНЁРА\n\n🎥 Видеоотчёт: /media_video\n📅 Выплаты после 7 активных дней, раз в 14 дней\n💰 1000 просмотров = 50 ₽\n\nСтатус: ✅ Одобрен\nКанал: "+str(current.get('ch') or '—')+"\nАудитория: "+str(current.get('stats') or '—')+"\n\n💳 ИСТОРИЯ ЗАПРОСОВ ВЫПЛАТ\n"+history,reply_markup=markup([[InlineKeyboardButton(text="💸 Запросить выплату",callback_data="media_payout")]]))
+    history="\\n".join(f"• Выплата #{x['id']} — {payout_status_label(x['status'])}" for x in payouts) or "Пока нет запросов на выплату."
+    text=(
+        "🎬 <b>КАБИНЕТ МЕДИАПАРТНЁРА</b>\\n━━━━━━━━━━━━━━━━━━\\n"
+        "🟢 <b>Статус:</b> Одобрен\\n"
+        f"🔗 <b>Канал:</b> {html.escape(neat_value(current.get('ch')))}\\n"
+        f"👥 <b>Аудитория:</b> {html.escape(neat_value(current.get('stats')))}\\n"
+        "━━━━━━━━━━━━━━━━━━\\n📌 <b>УСЛОВИЯ ВЫПЛАТ</b>\\n"
+        "🎥 7 активных дней с видеоотчётами\\n📅 Повторная заявка — не чаще 1 раза в 14 дней\\n"
+        "💰 1 000 подтверждённых просмотров = 50 ₽\\n"
+        "🧾 Итоговую сумму после проверки назначает администрация\\n"
+        "━━━━━━━━━━━━━━━━━━\\n💳 <b>ПОСЛЕДНИЕ ЗАПРОСЫ</b>\\n"
+        f"{html.escape(history)}"
+    )
+    await c.message.answer(text,parse_mode="HTML",reply_markup=markup([
+        [InlineKeyboardButton(text="🎥 Отправить видеоотчёт",callback_data="media_video_report")],
+        [InlineKeyboardButton(text="💸 Запросить выплату",callback_data="media_payout")],
+        [InlineKeyboardButton(text="↩️ В главное меню",callback_data="back_home")]
+    ]))
+    await c.answer()
+
+@dp.callback_query(F.data=="back_home")
+async def back_home(c):
+    await c.message.answer("🔥 <b>FENIX ONLINE</b>\\nГлавное меню проекта.",parse_mode="HTML",reply_markup=menu(c.from_user.id))
+    await c.answer()
+
+@dp.callback_query(F.data=="media_video_report")
+async def media_video_report_button(c,state:FSMContext):
+    current=db.media_current(c.from_user.id)
+    if not current or current.get("status")!="approved":
+        return await c.answer("Доступно только одобренным медиапартнёрам.",show_alert=True)
+    await state.clear()
+    await state.update_data(video_report=True)
+    await state.set_state(S.payout_video)
+    await c.message.answer("🎥 <b>ВИДЕООТЧЁТ</b>\\n\\nОтправь ссылку на опубликованное видео или загрузи видеофайл. Один подтверждённый отчёт в день засчитывается как активный день.",parse_mode="HTML")
     await c.answer()
 
 def payout_eligible(uid):
@@ -599,7 +639,25 @@ async def staff_remove(m):
 @dp.callback_query(F.data == "staff_setup")
 async def staff_setup(c):
     if not is_owner(c.from_user.id): return await c.answer("Нет доступа",show_alert=True)
-    await c.message.answer("👥 ПРИВЯЗКА ЧАТОВ\nДобавь бота в нужные группы и выполни в них соответствующие команды:\n/bind_admin_chat — административный чат\n/bind_leader_chat — лидерский чат\n\nВ каждом чате: /nnick ник должность, /stafflist — состав, /staffremove ник — снять должность.")
+    admin_id=db.setting("admin_chat_id","")
+    leader_id=db.setting("leader_chat_id","")
+    text=(
+        "👥 <b>УПРАВЛЕНИЕ СОСТАВАМИ И ЧАТАМИ</b>\\n━━━━━━━━━━━━━━━━━━\\n"
+        f"🛡 <b>Административный чат:</b> {'✅ Привязан' if admin_id else '⚪ Не привязан'}\\n"
+        f"<code>{html.escape(str(admin_id) if admin_id else '—')}</code>\\n\\n"
+        f"👑 <b>Лидерский чат:</b> {'✅ Привязан' if leader_id else '⚪ Не привязан'}\\n"
+        f"<code>{html.escape(str(leader_id) if leader_id else '—')}</code>\\n"
+        "━━━━━━━━━━━━━━━━━━\\n📌 <b>ПОДКЛЮЧЕНИЕ</b>\\n"
+        "1. Добавь бота в нужную группу.\\n"
+        "2. В админ-чате выполни /bind_admin_chat.\\n"
+        "3. В лидерском чате выполни /bind_leader_chat.\\n"
+        "━━━━━━━━━━━━━━━━━━\\n⌨️ <b>КОМАНДЫ СОСТАВА</b>\\n"
+        "/nnick ИгровойНик Должность — назначить\\n/stafflist — список состава\\n/staffremove ИгровойНик — снять должность"
+    )
+    await c.message.answer(text,parse_mode="HTML",reply_markup=markup([
+        [InlineKeyboardButton(text="🔄 Обновить статус чатов",callback_data="staff_setup")],
+        [InlineKeyboardButton(text="↩️ В панель владельца",callback_data="owner")]
+    ]))
     await c.answer()
 
 CUSTOM_LABELS={"cab":("cab_label","👤 Личный кабинет"),"ref":("ref_label","🔗 Реферальная ссылка"),"stats":("stats_label","📊 Статистика"),"top":("top_label","🏆 Рейтинг"),"media":("media_label","🤝 Стать медиапартнёром"),"owner":("owner_label","⚙️ Панель владельца"),"home":("home_label","📢 Новости FENIX ONLINE")}
@@ -738,26 +796,36 @@ def split_message(text,limit=4000):
     return chunks
 
 async def send_composed(chat_id,data):
-    """Отправляет фото и текст отдельно, если подпись превышает лимит Telegram."""
+    """Formats the author's text as a quoted FENIX publication."""
     keyboard=None
     if data.get("bt") and data.get("bu"):
-        keyboard=markup([[InlineKeyboardButton(text=data["bt"],url=data["bu"]) ]])
-    footer=("\n\n━━━━━━━━━━━━━━\n<b>🔥 FENIX ONLINE</b>\n"
-            "🛡 <b>VPN:</b> @fenixVPNrobot\n"
-            "⭐ <b>Stars:</b> @Fenix_stars_bot\n"
-            "💬 <b>Форум:</b> <a href=\"http://forum.wh35740.web1.maze-tech.ru/index.php\">Перейти на форум</a>")
-    text=html.escape(data.get("text") or " ")+footer
+        keyboard=markup([[InlineKeyboardButton(text=data["bt"],url=data["bu"])]])
+    raw=(data.get("text") or "").strip()
+    safe=html.escape(raw)
+    quote=f"<blockquote>{safe}</blockquote>" if safe else "<blockquote>Новости проекта FENIX ONLINE</blockquote>"
+    footer=(
+        "\n\n━━━━━━━━━━━━━━━━━━\n<b>🔥 FENIX ONLINE</b>\n"
+        "<i>Твой проект. Твои возможности.</i>\n\n"
+        "🛡 <b>VPN:</b> @fenixVPNrobot\n"
+        "⭐ <b>Stars:</b> @Fenix_stars_bot\n"
+        '💬 <b>Форум:</b> <a href="http://forum.wh35740.web1.maze-tech.ru/index.php">Открыть форум</a>'
+    )
+    text=quote+footer
     photo=data.get("photo")
     if photo and len(text)<=1024:
         await bot.send_photo(chat_id,photo,caption=text,reply_markup=keyboard,parse_mode="HTML")
         return
     if photo:
         await bot.send_photo(chat_id,photo)
-    chunks=[html.escape(chunk) for chunk in split_message(data.get("text") or " ")]
-    if len(chunks[-1])+len(footer)>4000: chunks.append(footer)
-    else: chunks[-1]+=footer
+    if len(text)<=4096:
+        await bot.send_message(chat_id,text,parse_mode="HTML",reply_markup=keyboard)
+        return
+    chunks=split_message(raw)
     for i,chunk in enumerate(chunks):
-        await bot.send_message(chat_id,chunk,parse_mode="HTML",
+        body=f"<blockquote>{html.escape(chunk)}</blockquote>"
+        if i==len(chunks)-1:
+            body+=footer
+        await bot.send_message(chat_id,body,parse_mode="HTML",
                                reply_markup=keyboard if i==len(chunks)-1 else None)
 
 async def finish_composition(message,state,uid):
@@ -805,7 +873,7 @@ async def buttonurl(m,state:FSMContext):
     d=await state.get_data(); db.set_setting("home_label",d["label"]); db.set_setting("home_url",u); await state.clear(); await m.answer("✅ Кнопка меню обновлена.")
 @dp.message(Command("cancel"))
 async def cancel(m,state:FSMContext):
-    await state.clear(); await m.answer("Отменено.",reply_markup=menu(m.from_user.id))
+    await state.clear(); await m.answer("↩️ Действие отменено. Главное меню:",reply_markup=menu(m.from_user.id))
 async def health(request):
     return web.json_response({"status": "ok", "service": "fenix-online-bot"})
 
