@@ -1498,4 +1498,9 @@ async def main():
         await bot.session.close()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Keep Render's existing "python bot.py" command and run the Mini App
+    # HTTP server together with the existing Telegram polling process.
+    import sys
+    sys.modules.setdefault("bot", sys.modules[__name__])
+    from miniapp import main as miniapp_main
+    asyncio.run(miniapp_main())
