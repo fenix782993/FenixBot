@@ -533,6 +533,10 @@ async def buy_confirm(c):
     await c.message.edit_text('✅ '+msg,reply_markup=markup([[InlineKeyboardButton(text='📦 Мои заказы',callback_data='shop_orders')]]))
     await c.answer('Заказ оформлен')
 
+@dp.callback_query(F.data=='back_home')
+async def back_home(c):
+    await c.message.answer('🔥 FENIX ONLINE — главное меню',reply_markup=menu(c.from_user.id))
+    await c.answer()
 @dp.callback_query(F.data=='buy_cancel')
 async def buy_cancel(c):
     await c.message.edit_text('Покупка отменена.')
