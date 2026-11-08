@@ -669,7 +669,7 @@ async def main():
     except Exception:
         log.exception("Could not remove Mini App menu button")
     app = web.Application(middlewares=[auth], client_max_size=1024 * 1024)
-    app.router.add_get("/", home)
+    app.router.add_get("/", lambda _: web.FileResponse(WEB_DIR / "store.html"))
     app.router.add_get("/app", home)
     app.router.add_get("/store", lambda _: web.FileResponse(WEB_DIR / "store.html"))
     app.router.add_get("/health", lambda _: web.json_response({"status": "ok", "service": "fenix-miniapp"}))
