@@ -3,17 +3,17 @@ import json
 import os
 
 PRODUCTS = [
- {"code":"bmw_m3","name":"BMW M3","description":"Спортивный BMW для городских поездок и тюнинга.","rarity":"Эпический","price":None,"image":""},
- {"code":"cybertruck","name":"Cybertruck","description":"Необычный премиальный автомобиль из каталога FENIX ONLINE.","rarity":"Легендарный","price":690,"image":""},
+ {"code":"bmw_m3","name":"BMW M3","description":"Спортивный BMW для городских поездок и тюнинга.","rarity":"Эпический","price":None,"image":"https://nemazing.com/assets/img/store-v108/bmw-m3.png"},
+ {"code":"cybertruck","name":"Cybertruck","description":"Необычный премиальный автомобиль из каталога FENIX ONLINE.","rarity":"Легендарный","price":690,"image":"https://nemazing.com/assets/img/store-v108/cybertruck.png"},
  {"code":"audi_tt","name":"Audi TT","description":"Компактное спортивное купе для города и тюнинга.","rarity":"Эпический","price":490,"image":"https://nemazing.com/assets/img/store-v108/audi-tt.png"},
  {"code":"lancer_evo","name":"Mitsubishi Lancer Evolution","description":"Спортивный седан для динамичной езды и доработок.","rarity":"Эпический","price":290,"image":"https://nemazing.com/assets/img/store-v108/lancer-evolution.png"},
- {"code":"stage3_chip","name":"Чип тюнинга III","description":"Продвинутый чип третьего уровня для тюнинга автомобиля.","rarity":"Легендарный","price":None,"image":"https://nemazing.com/assets/img/store-v108/chip-stage-3.png"},
- {"code":"drift_smoke","name":"Дрифт-дым","description":"Визуальный дымовой эффект для эффектного дрифта.","rarity":"Легендарный","price":790,"image":""},
+ {"code":"stage3_chip","name":"Чип тюнинга III","description":"Продвинутый чип третьего уровня для тюнинга автомобиля.","rarity":"Легендарный","price":590,"image":"https://nemazing.com/assets/img/store-v108/chip-stage-3.png"},
+ {"code":"drift_smoke","name":"Дрифт-дым","description":"Визуальный дымовой эффект для эффектного дрифта.","rarity":"Легендарный","price":790,"image":"https://nemazing.com/assets/img/store-v108/drift-smoke.svg"},
  {"code":"audio_system","name":"Аудиосистема","description":"Автомобильная аудиосистема с функциями проекта.","rarity":"Легендарный","price":890,"image":"https://nemazing.com/assets/img/store-v108/audio-system.png"},
  {"code":"nitro","name":"Нитро","description":"Комплект системы закиси азота.","rarity":"Редкий","price":390,"image":"https://nemazing.com/assets/img/store-v108/nitro.png"},
  {"code":"neon","name":"Неоновая подсветка","description":"Подсветка днища с настройкой внутри игры.","rarity":"Редкий","price":490,"image":"https://nemazing.com/assets/img/store-v108/neon.png"},
  {"code":"military_id","name":"Военный билет","description":"Покупается один раз и навсегда закрепляется за аккаунтом.","rarity":"Особый","price":450,"image":"https://nemazing.com/assets/img/store-v108/military-id.png"},
- {"code":"vehicle_plate","name":"Конструктор автомобильного номера","description":"Собери собственную комбинацию. Цена зависит от повторяющихся символов.","rarity":"Особый","price":700,"image":""},
+ {"code":"vehicle_plate","name":"Конструктор автомобильного номера","description":"Собери собственную комбинацию. Цена зависит от повторяющихся символов.","rarity":"Особый","price":700,"image":"https://nemazing.com/assets/img/store-v108/vehicle-number.png"},
 ]
 PLATE_LETTERS = "АВЕКМНОРСТУХ"
 REGIONS = ["01","02","03","04","05","06","07","08","09","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30","31","32","33","34","35","36","37","38","39","40","41","42","43","44","45","46","47","48","49","50","51","52","53","54","55","56","57","58","59","60","61","62","63","64","65","66","67","68","69","70","71","72","73","74","75","76","77","78","79","80","81","82","83","84","85","86","87","88","89","90","91","92","93","94","95","96","97","98","99"]
