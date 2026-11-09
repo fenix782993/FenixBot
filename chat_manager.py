@@ -400,7 +400,10 @@ def register_chat_manager(dp, bot, db, owner_ids):
         if cmd=="admins":
             rr=rows(db,f"SELECT uid,level,title FROM cm_roles WHERE chat_id={ph(db)} AND level>0 ORDER BY level DESC",(chat,))
             if not rr: return await reply(m,"Состав руководства пока не настроен. Владелец может назначить роли.")
-            return await reply(m,"<b>РУКОВОДСТВО БЕСЕДЫ</b>\n"+"\n".join(f"• {x['title']} — <code>{x['uid']}</code> · {x['level']}" for x in rr))
+            cards=[]
+            for x in rr:
+                cards.append(f"• {html.escape(str(x['title']))} — {await target_name(chat,x['uid'])} · {x['level']}")
+            return await reply(m,"<b>РУКОВОДСТВО БЕСЕДЫ</b>\\n"+"\\n".join(cards))
         if cmd=="roles":
             return await reply(m,"<b>ИЕРАРХИЯ FENIX</b>\nВладелец — 100\nГлавный администратор — 80\nАдминистратор — 60\nМодератор — 40\nПомощник — 20")
         if cmd in ("addhelper","addmoder","addadmin","setrole","removerole"):
@@ -514,7 +517,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
             warns=one(db,f"SELECT COUNT(*) AS n FROM cm_warns WHERE chat_id={ph(db)} AND uid={ph(db)} AND active=1",(chat,target))
             nick=one(db,f"SELECT nick FROM cm_nicks WHERE chat_id={ph(db)} AND uid={ph(db)}",(chat,target))
             role=get_role(db,chat,target)
-            return await reply(m,f"<b>СТАТИСТИКА УЧАСТНИКА</b>\nID: <code>{target}</code>\nИгровой ник: {user.get('nick') or (nick or {}).get('nick') or 'не указан'}\nРоль в беседе: {role[1]} ({role[0]})\nПредупреждения: {(warns or {}).get('n',0)}")
+            return await reply(m,f"<b>СТАТИСТИКА УЧАСТНИКА</b>\\nУчастник: {await target_name(chat,target)}\\nИгровой ник: {html.escape(str(user.get('nick') or (nick or {}).get('nick') or 'не указан'))}\\nРоль в беседе: {html.escape(str(role[1]))} ({role[0]})\\nПредупреждения: {(warns or {}).get('n',0)}")
         if cmd=="reg":
             target,rest=parse_target(m,args); target=target or uid
             user=db.user(target)
@@ -587,7 +590,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
             if not argtext: return await reply(m,"Формат: !report текст обращения")
             admins=rows(db,f"SELECT uid FROM cm_roles WHERE chat_id={ph(db)} AND level>=40",(chat,))
             for a in admins:
-                try: await bot.send_message(a["uid"],f"🚨 Репорт из {m.chat.title}\nОт: {m.from_user.full_name} ({uid})\n{argtext}")
+                try: await bot.send_message(a["uid"],f"🚨 Репорт из {html.escape(str(m.chat.title or 'беседы'))}\\nОт: {await user_label(bot,chat,uid,m.from_user)}\\n{html.escape(argtext)}",parse_mode="HTML")
                 except Exception: pass
             return await reply(m,"Обращение передано руководству беседы.")
         if cmd=="try": return await reply(m,f"🎲 {await user_label(bot,chat,uid,m.from_user)}, удача сегодня на твоей стороне!" if uid%2 else f"🎲 {await user_label(bot,chat,uid,m.from_user)}, попробуй ещё раз!")
@@ -729,7 +732,10 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 await cmui_show(c,"<b>🛡 МОДЕРАЦИЯ</b>\n\nДействия над участником выполняются в самой группе ответом на его сообщение: !mute 15m, !unmute, !warn причина, !ban причина, !kick.\n\nФильтры: !filteradd фраза и !filterdel фраза. Белый список ссылок: !addlink https://example.com.",back)
             elif section=="roles":
                 rr=rows(db,f"SELECT uid,level,title FROM cm_roles WHERE chat_id={ph(db)} AND level>0 ORDER BY level DESC",(chat_id,))
-                body="<b>👥 РОЛИ И РУКОВОДСТВО</b>\n"+("\n".join(f"• {x['title']} · <code>{x['uid']}</code> · {x['level']}" for x in rr) if rr else "Роли ещё не назначены.")
+            role_cards=[]
+            for x in rr:
+                role_cards.append(f"• {html.escape(str(x['title']))} · {await target_name(chat,x['uid'])} · {x['level']}")
+            body="<b>👥 РОЛИ И РУКОВОДСТВО</b>\\n"+("\\n".join(role_cards) if role_cards else "Роли ещё не назначены.")
                 await cmui_show(c,body,back)
             else:
                 await cmui_show(c,"<b>FENIX MANAGER</b>\nИспользуй кнопки настроек и модерации. Полный справочник команд доступен отдельной статьёй.",back)
