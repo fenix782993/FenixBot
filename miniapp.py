@@ -610,6 +610,10 @@ async def wheel_spin(req):
         elif prize=="cash":
             prize_type,prize_value="game_cash",random.randint(1_000_000,5_000_000)
             prize_name=f"{prize_value:,} игровой валюты".replace(","," ")
+        elif prize=="nothing":
+            # Empty result is a valid outcome: charge the spin and save it,
+            # but do not try to look it up as a shop product.
+            pass
         else:
             item=next(p for p in WHEEL_ITEMS if p["code"]==prize)
             prize_type,prize_name,prize_value="item",item["name"],item["code"]
