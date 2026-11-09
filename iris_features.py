@@ -51,7 +51,7 @@ def register(dp,bot,db):
         if args and args[0].isdigit(): return int(args[0])
         return None
     @router.message(Command("fenix"))
-    async def iris_menu(m):
+    async def fenix_menu(m):
         kb=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🛡 Модерация",callback_data="fenix:moderation"),InlineKeyboardButton(text="⚙️ Настройки",callback_data="fenix:settings")],
             [InlineKeyboardButton(text="👤 Профиль и репутация",callback_data="fenix:profile"),InlineKeyboardButton(text="🎲 Развлечения",callback_data="fenix:games")],
@@ -59,7 +59,7 @@ def register(dp,bot,db):
             [InlineKeyboardButton(text="📚 Все команды",callback_data="fenix:help")]])
         await m.answer("<b>FENIX · CHAT MANAGER</b>\nВыбери раздел управления беседой:",parse_mode="HTML",reply_markup=kb)
     @router.callback_query(F.data.startswith("fenix:"))
-    async def iris_menu_cb(c):
+    async def fenix_menu_cb(c):
         section=c.data.split(":",1)[1]
         if section=="back":
             kb=InlineKeyboardMarkup(inline_keyboard=[
@@ -81,7 +81,7 @@ def register(dp,bot,db):
         await c.message.edit_text("<b>"+texts.get(section,texts["help"])+"</b>",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← В меню",callback_data="fenix:back")]]))
         await c.answer()
     @router.callback_query(F.data=="fenix:back")
-    async def iris_back(c):
+    async def fenix_back(c):
         kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📚 Все команды",callback_data="fenix:help")],[InlineKeyboardButton(text="🎲 Развлечения",callback_data="fenix:games"),InlineKeyboardButton(text="👤 Профиль",callback_data="fenix:profile")]])
         await c.message.edit_text("<b>FENIX · CHAT MANAGER</b>\nВыбери раздел:",parse_mode="HTML",reply_markup=kb); await c.answer()
     @router.callback_query(F.data.startswith("irg:join:"))
@@ -93,7 +93,7 @@ def register(dp,bot,db):
         else: run(db,f"INSERT OR IGNORE INTO iris_giveaway_users(gid,uid) VALUES({p},{p})",(gid,c.from_user.id))
         await c.answer("Ты участвуешь!")
     feature_commands="dice|кубик|coin|монетка|profile|профиль|rep|реп|note|заметка|notes|заметки|bookmark|закладка|bookmarks|закладки|clan|клан|circle|круг|marry|брак|divorce|развод|timer|таймер|giveaway|розыгрыш|gstop|access|доступ|triggeradd|triggerdel|triggers|триггеры|antispam|антиспам"
-    feature_pattern=re.compile(r"(?i)^(?:[!./](?:"+feature_commands+r")(?=$|[^a-zA-Z0-9_])"+feature_commands+r")(?=$|[^a-zA-Z0-9_]))")
+    feature_pattern=re.compile(r"(?i)^[!./](?:"+feature_commands+r")(?=$|[^a-zA-Z0-9_])")
     @router.message(F.text.regexp(feature_pattern))
     async def features(m):
         if m.chat.type=="private": return
