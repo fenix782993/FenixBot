@@ -25,7 +25,8 @@ def init(db):
             "CREATE TABLE IF NOT EXISTS iris_rep(chat_id BIGINT,uid BIGINT,score INTEGER DEFAULT 0,PRIMARY KEY(chat_id,uid))",
             "CREATE TABLE IF NOT EXISTS iris_rep_log(chat_id BIGINT,giver BIGINT,target BIGINT,created TEXT,PRIMARY KEY(chat_id,giver,target))",
             "CREATE TABLE IF NOT EXISTS cm_giveaways(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,creator BIGINT,prize TEXT,draw_at TEXT,status TEXT DEFAULT 'open',winner BIGINT,created TEXT)",
-            "CREATE TABLE IF NOT EXISTS cm_giveaway_entries(giveaway_id BIGINT,uid BIGINT,created TEXT,PRIMARY KEY(giveaway_id,uid))"]
+            "CREATE TABLE IF NOT EXISTS cm_giveaway_entries(giveaway_id BIGINT,uid BIGINT,created TEXT,PRIMARY KEY(giveaway_id,uid))",
+            "CREATE TABLE IF NOT EXISTS cm_duels(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,challenger BIGINT,opponent BIGINT,status TEXT DEFAULT 'pending',created TEXT,winner BIGINT)"]
             for x in sql:c.execute(x)
         else:
             c.executescript("""
@@ -33,6 +34,7 @@ def init(db):
             CREATE TABLE IF NOT EXISTS iris_rep_log(chat_id INTEGER,giver INTEGER,target INTEGER,created TEXT,PRIMARY KEY(chat_id,giver,target));
             CREATE TABLE IF NOT EXISTS cm_giveaways(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,creator INTEGER,prize TEXT,draw_at TEXT,status TEXT DEFAULT 'open',winner INTEGER,created TEXT);
             CREATE TABLE IF NOT EXISTS cm_giveaway_entries(giveaway_id INTEGER,uid INTEGER,created TEXT,PRIMARY KEY(giveaway_id,uid));
+            CREATE TABLE IF NOT EXISTS cm_duels(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,challenger INTEGER,opponent INTEGER,status TEXT DEFAULT 'pending',created TEXT,winner INTEGER);
             """)
 def level(db,chat,uid):
     x=one(db,f"SELECT level FROM cm_roles WHERE chat_id={ph(db)} AND uid={ph(db)}",(chat,uid))
@@ -46,7 +48,7 @@ def register(dp,bot,db,owners=()):
                 p=ph(db)
                 execq(db,f"INSERT INTO cm_roles(chat_id,uid,level,title,by_uid,updated) VALUES({','.join([p]*6)}) ON CONFLICT(chat_id,uid) DO UPDATE SET level=100,title='Владелец',updated=excluded.updated",(chat_id,user_id,100,"Владелец",user_id,db._now()))
         except Exception:pass
-    social_commands="dice|кости|rep|reputation|топреп|giveaway|розыгрыш|gstop"
+    social_commands="dice|кости|duel|дуэль|rep|reputation|топреп|giveaway|розыгрыш|gstop"
     rx=re.compile(r"(?i)^(?:[!./](?:"+social_commands+r")(?=$|[^a-zA-Z0-9_])|ирис(?:ка)?[ ]+(?:"+social_commands+r")(?=$|[^a-zA-Z0-9_]))")
     @router.message(F.text.regexp(rx))
     async def social(m):
@@ -58,6 +60,16 @@ def register(dp,bot,db,owners=()):
         if cmd in ("dice","кости"):
             emoji=args[0] if args and args[0] in ("🎲","🎯","🏀","⚽","🎳","🎰") else "🎲"
             await bot.send_dice(chat,emoji=emoji);return
+        if cmd in ("duel","дуэль"):
+            target=m.reply_to_message.from_user.id if m.reply_to_message and m.reply_to_message.from_user else (int(args[0]) if args and args[0].isdigit() else None)
+            if not target:return await m.answer("Ответь командой !duel на сообщение участника.")
+            if target==uid:return await m.answer("Нельзя вызвать на дуэль самого себя.")
+            if db.use_postgres:
+                x,_=execq(db,f"INSERT INTO cm_duels(chat_id,challenger,opponent,status,created) VALUES({p},{p},{p},'pending',{p}) RETURNING id",(chat,uid,target,db._now()));did=int(x["id"])
+            else:
+                _,last=execq(db,f"INSERT INTO cm_duels(chat_id,challenger,opponent,status,created) VALUES({p},{p},{p},'pending',{p})",(chat,uid,target,db._now()));did=int(last)
+            kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⚔️ Принять дуэль",callback_data=f"fenduel:{did}")]])
+            return await m.answer(f"⚔️ <a href=\\"tg://user?id={uid}\\">Участник</a> вызывает <code>{target}</code> на дуэль в кости!",parse_mode="HTML",reply_markup=kb)
         if cmd in ("rep","reputation"):
             target=m.reply_to_message.from_user.id if m.reply_to_message and m.reply_to_message.from_user else (int(args[0]) if args and args[0].isdigit() else None)
             if not target:return await m.answer("Ответь !rep на сообщение или укажи Telegram ID.")
@@ -92,6 +104,28 @@ def register(dp,bot,db,owners=()):
             if not args or not args[0].isdigit():return await m.answer("Формат: !gstop ID")
             execq(db,f"UPDATE cm_giveaways SET status='cancelled' WHERE id={p} AND chat_id={p} AND status='open'",(int(args[0]),chat))
             return await m.answer("Розыгрыш отменён.")
+    @router.callback_query(F.data.startswith("fenduel:"))
+    async def accept_duel(c):
+        try:
+            did=int(c.data.split(":")[-1]);p=ph(db)
+            duel=one(db,f"SELECT * FROM cm_duels WHERE id={p}",(did,))
+            if not duel or duel["status"]!="pending":return await c.answer("Дуэль уже завершена.",show_alert=True)
+            if int(duel["opponent"])!=c.from_user.id:return await c.answer("Принять вызов может только приглашённый участник.",show_alert=True)
+            with db.con() as conn:
+                cur=conn.execute(f"UPDATE cm_duels SET status='rolling' WHERE id={p} AND status='pending'",(did,))
+                claimed=cur.rowcount
+            if claimed!=1:return await c.answer("Дуэль уже обрабатывается.",show_alert=True)
+            first=await bot.send_dice(duel["chat_id"],emoji="🎲")
+            second=await bot.send_dice(duel["chat_id"],emoji="🎲")
+            a=int(first.dice.value);b=int(second.dice.value)
+            winner=int(duel["challenger"]) if a>b else int(duel["opponent"]) if b>a else 0
+            run_result=execq(db,f"UPDATE cm_duels SET status='finished',winner={p} WHERE id={p}",(winner,did))
+            text_result=f"⚔️ <b>ДУЭЛЬ #{did}</b>\\nПервый бросок: <code>{a}</code>\\nВторой бросок: <code>{b}</code>\\n"
+            text_result+=f"🏆 Победитель: <code>{winner}</code>" if winner else "🤝 Ничья!"
+            await c.message.answer(text_result,parse_mode="HTML")
+            await c.answer("Дуэль сыграна!")
+        except Exception:log.exception("duel failed");await c.answer("Не удалось провести дуэль.",show_alert=True)
+
     @router.callback_query(F.data.startswith("fenixgive:"))
     async def enter(c):
         try:
