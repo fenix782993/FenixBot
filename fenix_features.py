@@ -236,7 +236,7 @@ def register(dp,bot,db):
             message=" ".join(args[1:])
             async def remind():
                 await asyncio.sleep(seconds)
-                try: await bot.send_message(chat,f"⏰ Напоминание для {m.from_user.full_name}: {message}")
+                try: await bot.send_message(chat,f"⏰ Напоминание для {await user_label(bot,chat,m.from_user.id,m.from_user)}: {message}",parse_mode="HTML")
                 except Exception: log.exception("Timer delivery failed")
             asyncio.create_task(remind())
             return await m.answer(f"⏰ Напоминание установлено на {args[0]}. Важно: таймеры в текущей версии сбрасываются при перезапуске бота.")
