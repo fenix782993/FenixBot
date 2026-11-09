@@ -132,7 +132,14 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 p=ph(db); q(db,f"INSERT INTO cm_roles(chat_id,uid,level,title,by_uid,updated) VALUES({','.join([p]*6)}) ON CONFLICT(chat_id,uid) DO UPDATE SET level=100,title='Владелец',updated=excluded.updated",(m.chat.id,m.from_user.id,100,"Владелец",m.from_user.id,now(db)))
         except Exception: pass
     async def reply(m,text,markup=None):
-        await m.reply(text,reply_markup=markup,parse_mode="HTML",disable_web_page_preview=True)
+        try:
+            await m.reply(text,reply_markup=markup,parse_mode="HTML",disable_web_page_preview=True)
+        except Exception:
+            if "<tg-emoji " not in str(text):
+                raise
+            logging.exception("Telegram rejected a Premium Custom Emoji in Chat Manager response; sending text without a standard-emoji substitute")
+            plain = re.sub(r'<tg-emoji\\s+emoji-id="[^"]+">.*?</tg-emoji>', "", str(text))
+            await m.reply(plain,reply_markup=markup,parse_mode="HTML",disable_web_page_preview=True)
     async def target_name(chat,uid):
         try:
             x=await bot.get_chat_member(chat,uid); u=x.user
