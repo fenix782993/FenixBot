@@ -60,13 +60,17 @@ async def bot_star_balance():
     result=await api("getMyStarBalance")
     return int(result.get("amount",0)) if isinstance(result,dict) else int(result or 0)
 
-async def ensure_recipient(user_ref):
-    """Resolve a numeric Telegram ID or public @username before taking payment."""
+async def ensure_recipient(user_ref, db):
+    """Resolve a numeric ID or a username already known to this bot."""
     raw=str(user_ref or "").strip()
     if raw.startswith("@"):
-        if not raw[1:] or not raw[1:].replace("_","").isalnum():
-            raise ValueError("Укажи корректный публичный @username Telegram.")
-        chat_id=raw
+        username=raw[1:].lower()
+        if not username or not username.replace("_","").isalnum():
+            raise ValueError("Укажи корректный @username Telegram.")
+        row=one(db,f"SELECT uid FROM users WHERE lower(username)={ph(db)}",(username,))
+        if not row:
+            raise ValueError("Не нашёл этот @username среди зарегистрированных игроков FENIX. Получатель должен запустить @FenixMediarobot командой /start, завершить регистрацию и указать публичный username.")
+        chat_id=int(row["uid"])
     else:
         if not raw.isdigit() or int(raw)<=0:
             raise ValueError("Укажи числовой Telegram ID или публичный @username.")
@@ -240,7 +244,7 @@ def register(dp, bot, db, owner_ids=()):
         if not (raw.isdigit() and int(raw)>0) and not (raw.startswith("@") and len(raw)>2):
             return await m.answer("Введи числовой Telegram ID или @username. Для подарка себе нажми кнопку «Себе».")
         try:
-            recipient_chat=await ensure_recipient(raw)
+            recipient_chat=await ensure_recipient(raw,db)
             recipient_id=int(recipient_chat["id"])
         except ValueError as exc:
             return await m.answer(str(exc))
