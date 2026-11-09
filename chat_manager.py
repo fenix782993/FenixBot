@@ -138,7 +138,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
             if "<tg-emoji " not in str(text):
                 raise
             logging.exception("Telegram rejected a Premium Custom Emoji in Chat Manager response; sending text without a standard-emoji substitute")
-            plain = re.sub(r'<tg-emoji\\s+emoji-id="[^"]+">.*?</tg-emoji>', "", str(text))
+            plain = re.sub(r'<tg-emoji\s+emoji-id="[^"]+">.*?</tg-emoji>', "", str(text))
             await m.reply(plain,reply_markup=markup,parse_mode="HTML",disable_web_page_preview=True)
     async def target_name(chat,uid):
         try:
