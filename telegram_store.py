@@ -14,7 +14,9 @@ PREMIUM_PRICES = {3: 1000, 6: 1500, 12: 2500}
 
 def ph(db): return "%s" if db.use_postgres else "?"
 def run(db, sql, args=()):
-    with db.con() as c: return c.execute(sql, args)
+    with db.con() as c:
+        cur=c.execute(sql,args)
+        return cur.rowcount
 def one(db, sql, args=()):
     with db.con() as c:
         row=c.execute(sql,args).fetchone()
@@ -38,7 +40,8 @@ async def api(method, data=None):
     if not result.get("ok"): raise RuntimeError(result.get("description",f"Telegram {method} failed"))
     return result.get("result")
 
-def register(dp, bot, db):
+def register(dp, bot, db, owner_ids=()):
+    owner_ids=set(owner_ids or ())
     init(db)
     router=Router(name="fenix_telegram_stars_store")
     async def invoice(buyer,recipient,kind,item_id,title,stars):
@@ -47,6 +50,10 @@ def register(dp, bot, db):
             (oid,payload,buyer,recipient,kind,str(item_id),title,int(stars),"invoice",datetime.now(timezone.utc).isoformat()))
         await bot.send_invoice(chat_id=buyer,title=title[:32],description=f"Подарок для Telegram ID {recipient}. Оплата Telegram Stars.",
             payload=payload,provider_token="",currency="XTR",prices=[LabeledPrice(label=title[:32],amount=int(stars))])
+
+    @router.message(Command("stars"))
+    async def stars_menu(m):
+        await m.answer("<b>⭐ FENIX · TELEGRAM STARS</b>\\nПодарки Telegram: <code>/giftshop TELEGRAM_ID</code>\\nПодарить Premium: <code>/premiumgift TELEGRAM_ID</code>\\nУзнать свой ID: <code>/myid</code>\\nИстория покупок: <code>/starsorders</code>",parse_mode="HTML")
 
     @router.message(Command("myid"))
     async def myid(m):
@@ -136,7 +143,7 @@ def register(dp, bot, db):
             return await m.answer("Платёж получен, но сумма не совпала с заказом. Доставка остановлена, обратись в поддержку и приложи ID платежа.")
         charge=pay.telegram_payment_charge_id
         claimed=run(db,f"UPDATE tg_store_orders SET status='delivering',charge_id={p} WHERE id={p} AND status='invoice'",(charge,order["id"]))
-        if getattr(claimed,"rowcount",0)!=1:
+        if claimed!=1:
             return await m.answer("Этот платёж уже обрабатывается. Повторная выдача не выполняется.")
         try:
             if order["kind"]=="gift":
@@ -148,6 +155,11 @@ def register(dp, bot, db):
         except Exception as e:
             log.exception("Paid gift delivery failed")
             run(db,f"UPDATE tg_store_orders SET status='delivery_failed',error={p} WHERE id={p}",(str(e)[:1000],order["id"]))
+            for admin_id in owner_ids:
+                try:
+                    await bot.send_message(admin_id,f"⚠️ Ошибка доставки Stars-заказа #{order['id']}\\nПокупатель: {m.from_user.id}\\nПолучатель: {order['recipient_uid']}\\nТип: {order['kind']}\\nОшибка: {str(e)[:700]}")
+                except Exception:
+                    pass
             await m.answer("Оплата принята, но Telegram не выполнил отправку. Заказ сохранён для ручной проверки; повторно оплачивать не нужно.")
 
     dp.include_router(router)
