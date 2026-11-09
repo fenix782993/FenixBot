@@ -279,8 +279,16 @@ def register_chat_manager(dp, bot, db, owner_ids):
             target,rest=parse_target(m,args)
             if cmd in ("nicknames","nonames","banlist","warnlist") and not target: rest=args
             if cmd=="nicknames":
-                rr=rows(db,f"SELECT uid,nick FROM cm_nicks WHERE chat_id={ph(db)} ORDER BY nick",(chat,))
-                return await reply(m,"<b>НИКНЕЙМЫ</b>\n"+("\n".join(f"{x['nick']} — <code>{x['uid']}</code>" for x in rr) if rr else "Список пуст."))
+                rr=rows(db,f"SELECT n.uid,n.nick,r.level,r.title FROM cm_nicks n LEFT JOIN cm_roles r ON r.chat_id=n.chat_id AND r.uid=n.uid WHERE n.chat_id={ph(db)} ORDER BY n.nick",(chat,))
+                if not rr:
+                    return await reply(m,"<b>👥 НИКНЕЙМЫ И ДОЛЖНОСТИ</b>\\nСписок пока пуст.")
+                cards=[]
+                for item in rr:
+                    nickname=html.escape(str(item.get("nick") or "Без ника"))
+                    level=int(item.get("level") or 0)
+                    role=html.escape(str(item.get("title") or ROLE_NAMES.get(level,"Участник")))
+                    cards.append(f"👤 <b>{nickname}</b> — <b>{role}</b>")
+                return await reply(m,"<b>👥 НИКНЕЙМЫ И ДОЛЖНОСТИ</b>\\n\\n"+"\\n".join(cards))
             if cmd=="nonames":
                 rr=rows(db,f"SELECT uid FROM cm_roles WHERE chat_id={ph(db)} AND level=0",(chat,))
                 return await reply(m,"Участники без назначенной роли/ника: "+str(len(rr))+" (Telegram не предоставляет полный список участников боту).")
