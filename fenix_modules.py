@@ -6,6 +6,7 @@ from aiogram.filters import BaseFilter
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 log=logging.getLogger("fenix.modules")
+from fenix_display import user_label
 def ph(db): return "%s" if db.use_postgres else "?"
 class CursorResult:
     def __init__(self, row=None, rowcount=0, lastrowid=None):
@@ -124,7 +125,7 @@ def register(dp,bot,db,owner_ids=()):
                 body=arg.split(maxsplit=1)[1] if len(args)>1 else ""
                 if not body:return await m.answer("Укажи текст заметки.")
                 run(db,f"INSERT INTO cm_notes(chat_id,uid,author_uid,body,created) VALUES({','.join([p]*5)})",(chat,target,uid,body[:2000],stamp(db)))
-                return await m.answer(f"Заметка сохранена для <code>{target}</code>.",parse_mode="HTML")
+                return await m.answer(f"Заметка сохранена для {await user_label(bot,chat,target)}.",parse_mode="HTML")
             if sub=="list":
                 rr=rows(db,f"SELECT id,body FROM cm_notes WHERE chat_id={p} AND uid={p} ORDER BY id DESC LIMIT 20",(chat,target))
                 return await m.answer("<b>ЗАМЕТКИ</b>\n"+("\n".join(f"#{x['id']} · {escape(x['body'])}" for x in rr) if rr else "Нет заметок."),parse_mode="HTML")
