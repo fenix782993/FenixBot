@@ -304,6 +304,7 @@ def menu(uid):
           [InlineKeyboardButton(text="🎡 Колесо фортуны · 50 ₽",url=wheel_url)],
           [InlineKeyboardButton(text="⭐ Пополнить Stars",callback_data="donate_stars"),
            InlineKeyboardButton(text="💳 Ручное пополнение",callback_data="manual_donation")],
+          [InlineKeyboardButton(text="🪪 FENIX ID",callback_data="fenixid:show")],
           [InlineKeyboardButton(text=db.setting("cab_label","👤 Личный кабинет"),callback_data="cab"),
            InlineKeyboardButton(text=db.setting("ref_label","🔗 Моя реферальная ссылка"),callback_data="ref")],
           [InlineKeyboardButton(text=db.setting("stats_label","📊 Статистика"),callback_data="stats"),
