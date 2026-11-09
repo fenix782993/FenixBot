@@ -882,16 +882,17 @@ async def get_telegraph_help_url():
 @dp.message(Command("help"))
 async def help_command(m):
     try:
-        url = await get_telegraph_help_url()
+        from commands_article import ensure_article
+        url = await ensure_article(db)
         await m.answer(
-            "📘 <b>FENIX BOT — СПРАВКА</b>\n\n"
-            "Полная инструкция: все команды, назначение, примеры и уровни доступа.\n\n"
-            f"👉 <a href=\"{html.escape(url, quote=True)}\">Открыть подробную инструкцию в Telegraph</a>",
+            "📘 <b>FENIX BOT — СПРАВОЧНИК КОМАНД</b>\\n\\n"
+            "Полный справочник FENIX BOT и FENIX MANAGER: команды, примеры, функции и уровни доступа.\\n\\n"
+            f"👉 <a href=\"{html.escape(url, quote=True)}\">Открыть полный справочник FENIX</a>",
             parse_mode="HTML",
             disable_web_page_preview=True
         )
     except Exception:
-        logging.exception("Не удалось создать/получить страницу Telegraph Help")
+        logging.exception("Не удалось создать/получить справочник FENIX")
         await m.answer("📘 Не удалось открыть справочник сейчас. Попробуй /help ещё раз немного позже.")
 
 @dp.message(CommandStart())
