@@ -103,17 +103,42 @@ def premium_button_styles():
     value = _json_setting("button_style_map", {})
     return value if isinstance(value, dict) else {}
 
+def _strip_leading_button_emoji(value):
+    """Remove old Unicode emoji so Telegram shows only the OutlineEmoji icon."""
+    text = str(value or "").lstrip()
+    while text:
+        ch = text[0]
+        code = ord(ch)
+        is_symbol = (
+            0x1F000 <= code <= 0x1FAFF
+            or 0x2600 <= code <= 0x27FF
+            or 0x2300 <= code <= 0x23FF
+            or code in (0xFE0E, 0xFE0F, 0x200D, 0x20E3)
+            or 0x1F3FB <= code <= 0x1F3FF
+        )
+        if is_symbol or ch.isspace():
+            text = text[1:]
+        else:
+            break
+    return text.lstrip()
+
+
 def markup(rows):
-    """Apply Telegram Bot API 9.4 button colors and Premium Emoji icons."""
+    """Apply OutlineEmoji custom icons and button styles to every inline button."""
     icons, styles = premium_button_icons(), premium_button_styles()
+    pack = _load_emoji_pack()
+    pack_ids = [
+        str(item.get("id")) for item in pack
+        if isinstance(item, dict) and str(item.get("id", "")).isdigit()
+    ]
     styled_rows = []
     for row in rows:
         styled_row = []
         for button in row:
             try:
                 if isinstance(button, InlineKeyboardButton):
-                    updates = {}
                     callback = getattr(button, "callback_data", None) or ""
+                    original_text = button.text or ""
                     aliases = {
                         "cab": "👤 Личный кабинет",
                         "ref": "🔗 Моя реферальная ссылка",
@@ -122,32 +147,13 @@ def markup(rows):
                         "media": "🤝 Стать медиапартнёром",
                         "owner": "⚙️ Панель владельца",
                     }
-                    keys = [button.text or "", callback, aliases.get(callback, "")]
+                    keys = [original_text, callback, aliases.get(callback, "")]
                     custom_id = next((icons.get(key) for key in keys if icons.get(key)), None)
-                    if not custom_id:
-                        label=(button.text or "").lower()
-                        # Every inline action gets a real custom emoji ID from the configured Outline pack.
-                        icon_fallbacks = [
-                            (("покуп","магаз","донат","товар","оплат","баланс","stars","пополн"), "5280818098960611598"),
-                            (("профил","кабинет","аккаунт","игрок","войти"), "5382224089295365367"),
-                            (("реферал","ссылка","приглас"), "5458394638505223612"),
-                            (("статист","выруч","финанс","продаж","сумм"), "5449875850046481967"),
-                            (("рейтинг","топ","достижен"), "5395597754166682968"),
-                            (("медиа","видео","публикац","канал"), "5210905596273905344"),
-                            (("владел","админ","настрой","управлен"), "5382224089295365367"),
-                            (("заяв","обращен","тикет","поддерж"), "5456149049214249060"),
-                            (("уведом","сообщ","ответ"), "5458421812763307254"),
-                            (("отклон","удал","закры","отмена"), "5447621198374511640"),
-                            (("назад","главн","вернут"), "5456174445355875099"),
-                        ]
-                        # Prefer an ID verified from the imported OutlineEmoji pack.
-                        # Legacy hard-coded IDs may belong to another pack and be rejected by Telegram.
-                        custom_id = pack_ids[0] if pack_ids else next(
-                            (emoji_id for words, emoji_id in icon_fallbacks if any(word in label for word in words)),
-                            "5280818098960611598"
-                        )
+                    if not custom_id and pack_ids:
+                        seed = callback or original_text
+                        custom_id = pack_ids[sum(ord(ch) for ch in seed) % len(pack_ids)]
+
                     style = next((styles.get(key) for key in keys if styles.get(key)), None)
-                    # Default palette mirrors the color-coded Telegram reference.
                     default_styles = {
                         "cab": "primary", "ref": "success", "stats": "primary",
                         "top": "success", "media": "success", "media_cabinet": "success",
@@ -162,15 +168,20 @@ def markup(rows):
                     if not style:
                         style = default_styles.get(callback) or default_styles.get(callback.split(":", 1)[0])
                     if not style:
-                        key_text = (callback + " " + (button.text or "")).lower()
-                        if any(word in key_text for word in ("reject","remove","delete","close","cancel","отклон","удал","закры")):
+                        key_text = (callback + " " + original_text).lower()
+                        if any(word in key_text for word in ("reject", "remove", "delete", "close", "cancel", "отклон", "удал", "закры")):
                             style = "danger"
-                        elif any(word in key_text for word in ("approve","paid","check","confirm","yes","accept","одобр","подтверд","провер")):
+                        elif any(word in key_text for word in ("approve", "paid", "check", "confirm", "yes", "accept", "одобр", "подтверд", "провер")):
                             style = "success"
                         else:
                             style = "primary"
+
+                    updates = {}
                     if custom_id and str(custom_id).isdigit():
                         updates["icon_custom_emoji_id"] = str(custom_id)
+                        clean_text = _strip_leading_button_emoji(original_text)
+                        if clean_text and clean_text != original_text:
+                            updates["text"] = clean_text
                     if style in {"primary", "success", "danger"}:
                         updates["style"] = style
                     if updates:
@@ -178,10 +189,11 @@ def markup(rows):
                         data.update(updates)
                         button = InlineKeyboardButton.model_validate(data)
             except Exception:
-                logging.exception("Не удалось применить оформление кнопки")
+                logging.exception("Не удалось применить OutlineEmoji к кнопке %r", getattr(button, "text", None))
             styled_row.append(button)
         styled_rows.append(styled_row)
     return InlineKeyboardMarkup(inline_keyboard=styled_rows)
+
 
 async def subscribed(uid: int) -> bool:
     # Для приватного канала CHANNEL_ID должен быть задан числовым ID в окружении.
