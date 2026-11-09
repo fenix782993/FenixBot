@@ -39,66 +39,36 @@ def _json_setting(key, default):
         return default
 
 def _emoji_for_button_label(label, pack_ids=None):
-    """Choose a stable custom emoji for any button label."""
-    text = str(label or "").lower()
-    groups = [
-        (("покуп", "магаз", "донат", "товар", "оплат", "баланс", "stars", "пополн"), "5280818098960611598"),
-        (("колес", "форту", "приз", "выигрыш", "удач"), "5395597754166682968"),
-        (("профил", "кабинет", "аккаунт", "игрок", "войти"), "5382224089295365367"),
-        (("реферал", "ссыл", "приглас"), "5458394638505223612"),
-        (("статист", "выруч", "финанс", "продаж", "сумм"), "5449875850046481967"),
-        (("рейтинг", "топ", "достижен"), "5395597754166682968"),
-        (("медиа", "видео", "публикац", "канал"), "5210905596273905344"),
-        (("владел", "админ", "настрой", "управлен", "состав"), "5382224089295365367"),
-        (("заяв", "обращен", "тикет", "поддерж"), "5456149049214249060"),
-        (("уведом", "сообщ", "ответ"), "5458421812763307254"),
-        (("отклон", "удал", "закры", "отмена", "снять"), "5447621198374511640"),
-        (("назад", "главн", "вернут", "спис"), "5456174445355875099"),
-        (("подпис", "провер", "подтверд", "одобр", "принят", "готов"), "5382224089295365367"),
-    ]
-    for words, emoji_id in groups:
-        if any(word in text for word in words):
-            return str(emoji_id)
+    """Return only a real ID from the imported custom-emoji pack."""
     if pack_ids:
-        return str(pack_ids[0])
-    return "5280818098960611598"
+        text = str(label or "").lower()
+        return str(pack_ids[sum(ord(ch) for ch in text) % len(pack_ids)])
+    return None
 
 
 def premium_button_icons():
-    """Return a complete icon map for every known and dynamically named button."""
-    defaults = {
-        "🛍 Донат и товары":"5280818098960611598",
-        "🎡 Колесо фортуны · 50 ₽":"5395597754166682968",
-        "👤 Личный кабинет":"5382224089295365367",
-        "🔗 Моя реферальная ссылка":"5458394638505223612",
-        "📊 Статистика":"5449875850046481967",
-        "🏆 Рейтинг":"5395597754166682968",
-        "🤝 Стать медиапартнёром":"5210905596273905344",
-        "🎬 Кабинет медиапартнёра":"5210905596273905344",
-        "⚙️ Панель владельца":"5382224089295365367",
-        "💳 Пополнить баланс":"5280818098960611598",
-        "🚘 Магазин":"5458696196749008675",
-        "🎫 Мои заявки":"5456149049214249060",
-        "🔔 Уведомления":"5458421812763307254",
-        "💬 Поддержка":"5456304325166900944",
-        "⬅️ Главное меню":"5456174445355875099",
-        "✅ Подтвердить":"5382224089295365367",
-        "❌ Отклонить":"5447621198374511640",
-    }
+    """Build button icon assignments only from IDs actually imported from Telegram."""
     saved = _json_setting("button_custom_emoji_map", {})
     saved = saved if isinstance(saved, dict) else {}
     pack = _load_emoji_pack()
-    pack_ids = [str(item.get("id")) for item in pack if isinstance(item, dict) and str(item.get("id", "")).isdigit()]
-    result = {}
-    labels = list(dict.fromkeys(list(defaults) + list(PREMIUM_BUTTON_CATALOG)))
-    for index, label in enumerate(labels):
-        # Every button receives an ID from the imported OutlineEmoji pack.
-        result[label] = pack_ids[index % len(pack_ids)] if pack_ids else _emoji_for_button_label(label)
-    # Keep explicit assignments only when they point into the currently imported pack.
+    pack_ids = [
+        str(item.get("id")) for item in pack
+        if isinstance(item, dict) and str(item.get("id", "")).isdigit()
+    ]
+    if not pack_ids:
+        logging.warning("Premium button icons unavailable: no valid custom_emoji_id values loaded")
+        return {}
+    labels = list(dict.fromkeys(list(PREMIUM_BUTTON_CATALOG)))
+    result = {
+        label: pack_ids[index % len(pack_ids)]
+        for index, label in enumerate(labels)
+    }
     for label, emoji_id in saved.items():
-        if str(emoji_id).isdigit() and (not pack_ids or str(emoji_id) in pack_ids):
+        if str(emoji_id).isdigit() and str(emoji_id) in pack_ids:
             result[label] = str(emoji_id)
     return result
+
+
 def premium_button_styles():
     value = _json_setting("button_style_map", {})
     return value if isinstance(value, dict) else {}
@@ -179,9 +149,9 @@ def markup(rows):
                     updates = {}
                     if custom_id and str(custom_id).isdigit():
                         updates["icon_custom_emoji_id"] = str(custom_id)
-                        # Keep the normal emoji in the label as a visible fallback.
-                        # Telegram renders icon_custom_emoji_id only when the bot owner
-                        # has Premium (or the bot has eligible Fragment usernames).
+                        # A real custom icon is attached to the button; remove the
+                        # leading Unicode emoji so users do not see a duplicate standard icon.
+                        updates["text"] = _strip_leading_button_emoji(original_text)
                     if style in {"primary", "success", "danger"}:
                         updates["style"] = style
                     if updates:
