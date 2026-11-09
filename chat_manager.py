@@ -160,7 +160,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 if any(x["phrase"].casefold() in low for x in filters):
                     try: await m.delete()
                     except Exception: pass
-                elif re.search(r"https?://|t\\.me/",raw,re.I) and not can(db,m.chat.id,m.from_user.id,40):
+                elif re.search(r"https?://|t\.me/",raw,re.I) and not can(db,m.chat.id,m.from_user.id,40):
                     allowed=rows(db,f"SELECT url FROM cm_links WHERE chat_id={ph(db)}",(m.chat.id,))
                     if not any(x["url"].lower() in raw.lower() for x in allowed):
                         try: await m.delete()
