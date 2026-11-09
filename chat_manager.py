@@ -211,7 +211,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
             p=ph(db); q(db,f"INSERT INTO cm_roles(chat_id,uid,level,title,by_uid,updated) VALUES({','.join([p]*6)}) ON CONFLICT(chat_id,uid) DO UPDATE SET level=excluded.level,title=excluded.title,by_uid=excluded.by_uid,updated=excluded.updated",(chat,target,level,title,uid,now(db)))
             log_action(db,chat,uid,"role_set",target,title); return await reply(m,f"✅ Назначена роль <b>{title}</b> · уровень {level}.")
         if cmd in ("mute","unmute","kick","warn","unwarn","getwarn","warnhistory","warnlist","getnick","setnick","removenick","nicknames","nonames","getbynick","ban","unban","banlist","getban"):
-            levels={"mute":20,"unmute":20,"kick":20,"warn":20,"unwarn":20,"getwarn":20,"warnhistory":20,"getnick":20,"setnick":20,"removenick":20,"nicknames":20,"nonames":20,"getbynick":20,"ban":40,"unban":40,"banlist":40}
+            levels={"mute":20,"unmute":20,"kick":20,"warn":20,"unwarn":20,"getwarn":20,"warnhistory":20,"getnick":20,"setnick":20,"removenick":20,"nicknames":20,"nonames":20,"getbynick":20,"ban":40,"unban":40,"banlist":40,"getban":20,"warnlist":20}
             if not can(db,chat,uid,levels[cmd]) and uid not in owner_ids: return await reply(m,"⛔ Недостаточно прав для этой команды.")
             target,rest=parse_target(m,args)
             if cmd in ("nicknames","nonames","banlist","warnlist") and not target: rest=args
