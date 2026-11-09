@@ -2103,6 +2103,12 @@ async def auto_style_channel_post(message: Message):
     current = message.html_text or message.html_caption or html.escape(message.text or message.caption or "")
     if "FENIX ONLINE" in current and "fenixVPNrobot" in current:
         return
+    # Если в исходном посте уже есть Premium Custom Emoji, не редактируем его:
+    # так Telegram сохраняет оригинальные entities и их ID без повторной сериализации.
+    source_entities = list(message.entities or []) + list(message.caption_entities or [])
+    if any(entity.type == "custom_emoji" and entity.custom_emoji_id for entity in source_entities):
+        logging.info("Skip auto-edit for channel post %s: original Premium Emoji preserved untouched", message.message_id)
+        return
     final_text = (current.strip() + "\n\n" if current.strip() else "") + POST_SIGNATURE_HTML
     try:
         if message.text is not None:
@@ -2204,20 +2210,22 @@ async def main():
     db.init()
     from chat_manager import register_chat_manager
     register_chat_manager(dp, bot, db, OWNER_IDS)
-    # Import the owner's OutlineEmoji custom-emoji pack automatically on startup.
+    # Не перезаписываем пользовательский набор, импортированный владельцем через /emojipack.
+    # Встроенные наборы используются только как стартовый резерв, если пользовательский пак ещё пуст.
     try:
         pack_items = []
-        for pack_name in ("OutlineEmoji", "TONEmoji"):
+        if not _load_emoji_pack():
+            for pack_name in ("OutlineEmoji", "TONEmoji"):
             try:
-                sticker_set = await bot.get_sticker_set(pack_name)
-                pack_items.extend(
-                    {"id": str(sticker.custom_emoji_id), "emoji": getattr(sticker, "emoji", None) or "💎", "pack": pack_name}
-                    for sticker in sticker_set.stickers if getattr(sticker, "custom_emoji_id", None)
-                )
-                logging.info("Loaded %s custom emoji set", pack_name)
-            except Exception:
-                logging.exception("Could not load custom emoji pack %s", pack_name)
-        if pack_items:
+                    sticker_set = await bot.get_sticker_set(pack_name)
+                    pack_items.extend(
+                        {"id": str(sticker.custom_emoji_id), "emoji": getattr(sticker, "emoji", None) or "💎", "pack": pack_name}
+                        for sticker in sticker_set.stickers if getattr(sticker, "custom_emoji_id", None)
+                    )
+                    logging.info("Loaded %s custom emoji set", pack_name)
+                except Exception:
+                    logging.exception("Could not load custom emoji pack %s", pack_name)
+        if pack_items and not _load_emoji_pack():
             unique = {item["id"]: item for item in pack_items}
             db.set_setting("premium_emoji_pack", json.dumps(list(unique.values()), ensure_ascii=False))
             logging.info("Loaded combined Premium Emoji pool: %s IDs", len(unique))
