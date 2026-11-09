@@ -141,11 +141,11 @@ def register_chat_manager(dp, bot, db, owner_ids):
                     [InlineKeyboardButton(text="Как подключить беседу",callback_data="cmui:connect")],
                     [InlineKeyboardButton(text="Обновить",callback_data="cmui:home")]
                 ])
-                return await m.answer("<b>FENIX · УПРАВЛЕНИЕ БЕСЕДАМИ</b>\\n\\nПока не подключено ни одной группы.\\n\\n1. Добавь FENIX в нужную группу.\\n2. Выдай боту права администратора: удаление сообщений, блокировка участников и закрепление.\\n3. После добавления открой эту панель снова — группа появится автоматически.",parse_mode="HTML",reply_markup=keyboard)
+                return await m.answer("<b>FENIX · УПРАВЛЕНИЕ БЕСЕДАМИ</b>\n\nПока не подключено ни одной группы.\n\n1. Добавь FENIX в нужную группу.\n2. Выдай боту права администратора: удаление сообщений, блокировка участников и закрепление.\n3. После добавления открой эту панель снова — группа появится автоматически.",parse_mode="HTML",reply_markup=keyboard)
             keyboard=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text=(x["title"] or "Беседа")[:32],callback_data=f"cmui:chat:{x['chat_id']}")] for x in chats
             ]+[[InlineKeyboardButton(text="Обновить список",callback_data="cmui:home")]])
-            return await m.answer("<b>FENIX MANAGER</b>\\nВыбери беседу для управления:",parse_mode="HTML",reply_markup=keyboard)
+            return await m.answer("<b>FENIX MANAGER</b>\nВыбери беседу для управления:",parse_mode="HTML",reply_markup=keyboard)
         command_text=raw
         is_command=raw.startswith(("!","." ,"/")) or raw.lower().startswith(("ирис ","ириска "))
         if not is_command:
@@ -184,39 +184,39 @@ def register_chat_manager(dp, bot, db, owner_ids):
             return await reply(m,"⛔ Доступ к этой команде ограничен настройками беседы.")
         if cmd=="help":
             text = (
-                "<b>📘 FENIX MANAGER — СПРАВОЧНИК КОМАНД</b>\\n\\n"
-                "<b>👤 Участник</b>\\n"
-                "<code>!help</code> — справочник; <code>!ping</code> — статус; <code>!rules</code> — правила; <code>!admins</code> — руководство.\\n"
-                "<code>!report текст</code> — жалоба; <code>!try</code> — попытка; <code>!kiss</code> — поцеловать; <code>!obnyat</code> — обнять.\\n\\n"
-                "<b>🛡 Помощник · 20</b>\\n"
-                "<code>!stats</code> — статистика; <code>!chatinfo</code> — информация о чате; <code>!logs</code> — журнал.\\n"
-                "<code>!mute 15m причина</code> — мут; <code>!unmute</code> — снять мут; <code>!kick</code> — исключить.\\n"
-                "<code>!warn причина</code> — предупреждение; <code>!unwarn</code> — снять; <code>!getwarn</code> — проверить.\\n"
-                "<code>!warnhistory</code> — история; <code>!warnlist</code> — список.\\n"
-                "<code>!getnick</code>, <code>!setnick ник</code>, <code>!removenick</code>, <code>!nicknames</code>, <code>!nonames</code>, <code>!getbynick ник</code>, <code>!zov</code>.\\n\\n"
-                "<b>🔨 Модератор · 40</b>\\n"
-                "<code>!ban</code> — блокировка; <code>!unban ID</code> — разблокировка; <code>!banlist</code> — список.\\n"
-                "<code>!addhelper ID</code>, <code>!setrole ID роль</code>, <code>!removerole ID</code>, <code>!roles</code>, <code>!silence</code>, <code>!wipe N</code>.\\n\\n"
-                "<b>⚙️ Администратор · 60</b>\\n"
-                "<code>!addmoder ID</code>, <code>!addadmin ID</code> — назначение; <code>!filters</code> — фильтры.\\n"
-                "<code>!filteradd фраза</code>, <code>!filterdel фраза</code>, <code>!addlink URL</code>, <code>!whitelistlinks</code>.\\n\\n"
-                "<b>👑 Главный администратор · 80</b>\\n"
-                "<code>!pin</code>, <code>!unpin</code>, <code>!newrole название уровень</code>, <code>!deleterole название</code>, <code>!welcome текст</code>, <code>!setrules текст</code>.\\n\\n"
-                "<b>🔥 Владелец · 100</b>\\n"
-                "<code>!setup</code>, <code>!settings</code>, <code>!setsettings</code>, <code>!settingsmute</code>, <code>!settingsinvite</code>.\\n"
-                "<code>!unity</code>, <code>!unites</code>, <code>!addunity название</code>, <code>!removeunity</code>, <code>!editunity название</code>, <code>!deleteunity название</code>.\\n\\n"
-                "<b>🧩 Дополнительные модули</b>\\n"
-                "<code>!note add/list/del</code> — заметки; <code>!bookmark</code>/<code>!bookmarks</code> — закладки.\\n"
-                "<code>!timer 10m текст</code>, <code>!timers</code>, <code>!timerdel ID</code> — таймеры.\\n"
-                "<code>!vote вопрос | вариант 1 | вариант 2</code>, <code>!voteresult ID</code>, <code>!voteclose ID</code> — голосования.\\n"
-                "<code>!access команда уровень|off</code> — доступ; <code>!triggeradd фраза => ответ</code>, <code>!triggers</code>, <code>!triggerdel ID</code> — автоответы.\\n"
-                "<code>!purge N</code>, <code>!del</code> — удаление; <code>!dice</code>, <code>!duel</code> — игры.\\n"
-                "<code>!rep</code>, <code>!топреп</code> — репутация; <code>!circle create/join/leave/info/list</code> — круги.\\n"
-                "<code>!giveaway 1h приз</code>, <code>!gstop ID</code> — розыгрыши; <code>!antispam on|off|status</code> — антиспам.\\n\\n"
-                "<b>⭐ Stars-магазин</b>\\n"
-                "<code>/myid</code> — мой ID; <code>/giftshop ID</code> — магазин; <code>/premiumgift ID</code> — Premium-подарок; <code>/starsorders</code> — заказы.\\n\\n"
-                "<b>📌 Общие правила</b>\\n"
-                "Префиксы: <code>!</code>, <code>.</code>, <code>/</code>. Для команды над участником ответь на его сообщение или укажи числовой Telegram ID.\\n"
+                "<b>📘 FENIX MANAGER — СПРАВОЧНИК КОМАНД</b>\n\n"
+                "<b>👤 Участник</b>\n"
+                "<code>!help</code> — справочник; <code>!ping</code> — статус; <code>!rules</code> — правила; <code>!admins</code> — руководство.\n"
+                "<code>!report текст</code> — жалоба; <code>!try</code> — попытка; <code>!kiss</code> — поцеловать; <code>!obnyat</code> — обнять.\n\n"
+                "<b>🛡 Помощник · 20</b>\n"
+                "<code>!stats</code> — статистика; <code>!chatinfo</code> — информация о чате; <code>!logs</code> — журнал.\n"
+                "<code>!mute 15m причина</code> — мут; <code>!unmute</code> — снять мут; <code>!kick</code> — исключить.\n"
+                "<code>!warn причина</code> — предупреждение; <code>!unwarn</code> — снять; <code>!getwarn</code> — проверить.\n"
+                "<code>!warnhistory</code> — история; <code>!warnlist</code> — список.\n"
+                "<code>!getnick</code>, <code>!setnick ник</code>, <code>!removenick</code>, <code>!nicknames</code>, <code>!nonames</code>, <code>!getbynick ник</code>, <code>!zov</code>.\n\n"
+                "<b>🔨 Модератор · 40</b>\n"
+                "<code>!ban</code> — блокировка; <code>!unban ID</code> — разблокировка; <code>!banlist</code> — список.\n"
+                "<code>!addhelper ID</code>, <code>!setrole ID роль</code>, <code>!removerole ID</code>, <code>!roles</code>, <code>!silence</code>, <code>!wipe N</code>.\n\n"
+                "<b>⚙️ Администратор · 60</b>\n"
+                "<code>!addmoder ID</code>, <code>!addadmin ID</code> — назначение; <code>!filters</code> — фильтры.\n"
+                "<code>!filteradd фраза</code>, <code>!filterdel фраза</code>, <code>!addlink URL</code>, <code>!whitelistlinks</code>.\n\n"
+                "<b>👑 Главный администратор · 80</b>\n"
+                "<code>!pin</code>, <code>!unpin</code>, <code>!newrole название уровень</code>, <code>!deleterole название</code>, <code>!welcome текст</code>, <code>!setrules текст</code>.\n\n"
+                "<b>🔥 Владелец · 100</b>\n"
+                "<code>!setup</code>, <code>!settings</code>, <code>!setsettings</code>, <code>!settingsmute</code>, <code>!settingsinvite</code>.\n"
+                "<code>!unity</code>, <code>!unites</code>, <code>!addunity название</code>, <code>!removeunity</code>, <code>!editunity название</code>, <code>!deleteunity название</code>.\n\n"
+                "<b>🧩 Дополнительные модули</b>\n"
+                "<code>!note add/list/del</code> — заметки; <code>!bookmark</code>/<code>!bookmarks</code> — закладки.\n"
+                "<code>!timer 10m текст</code>, <code>!timers</code>, <code>!timerdel ID</code> — таймеры.\n"
+                "<code>!vote вопрос | вариант 1 | вариант 2</code>, <code>!voteresult ID</code>, <code>!voteclose ID</code> — голосования.\n"
+                "<code>!access команда уровень|off</code> — доступ; <code>!triggeradd фраза => ответ</code>, <code>!triggers</code>, <code>!triggerdel ID</code> — автоответы.\n"
+                "<code>!purge N</code>, <code>!del</code> — удаление; <code>!dice</code>, <code>!duel</code> — игры.\n"
+                "<code>!rep</code>, <code>!топреп</code> — репутация; <code>!circle create/join/leave/info/list</code> — круги.\n"
+                "<code>!giveaway 1h приз</code>, <code>!gstop ID</code> — розыгрыши; <code>!antispam on|off|status</code> — антиспам.\n\n"
+                "<b>⭐ Stars-магазин</b>\n"
+                "<code>/myid</code> — мой ID; <code>/giftshop ID</code> — магазин; <code>/premiumgift ID</code> — Premium-подарок; <code>/starsorders</code> — заказы.\n\n"
+                "<b>📌 Общие правила</b>\n"
+                "Префиксы: <code>!</code>, <code>.</code>, <code>/</code>. Для команды над участником ответь на его сообщение или укажи числовой Telegram ID.\n"
                 "Время: <code>30s</code> — секунды, <code>15m</code> — минуты, <code>2h</code> — часы, <code>3d</code> — дни."
             )
             return await reply(m, text)
@@ -357,12 +357,12 @@ def register_chat_manager(dp, bot, db, owner_ids):
             warns=one(db,f"SELECT COUNT(*) AS n FROM cm_warns WHERE chat_id={ph(db)} AND uid={ph(db)} AND active=1",(chat,target))
             nick=one(db,f"SELECT nick FROM cm_nicks WHERE chat_id={ph(db)} AND uid={ph(db)}",(chat,target))
             role=get_role(db,chat,target)
-            return await reply(m,f"<b>СТАТИСТИКА УЧАСТНИКА</b>\\nID: <code>{target}</code>\\nИгровой ник: {user.get('nick') or (nick or {}).get('nick') or 'не указан'}\\nРоль в беседе: {role[1]} ({role[0]})\\nПредупреждения: {(warns or {}).get('n',0)}")
+            return await reply(m,f"<b>СТАТИСТИКА УЧАСТНИКА</b>\nID: <code>{target}</code>\nИгровой ник: {user.get('nick') or (nick or {}).get('nick') or 'не указан'}\nРоль в беседе: {role[1]} ({role[0]})\nПредупреждения: {(warns or {}).get('n',0)}")
         if cmd=="reg":
             target,rest=parse_target(m,args); target=target or uid
             user=db.user(target)
             if user and user.get("created"):
-                return await reply(m,f"Дата регистрации в FENIX: <code>{user['created']}</code>\\nДата регистрации Telegram через Bot API недоступна.")
+                return await reply(m,f"Дата регистрации в FENIX: <code>{user['created']}</code>\nДата регистрации Telegram через Bot API недоступна.")
             return await reply(m,"Дата регистрации Telegram не предоставляется Bot API. Пользователь ещё не найден в базе FENIX.")
         if cmd=="online":
             return await reply(m,"Telegram Bot API не предоставляет боту полный список участников и их статус онлайн. Используй !admins для просмотра руководства.")
@@ -473,12 +473,12 @@ def register_chat_manager(dp, bot, db, owner_ids):
         if c.from_user.id not in owner_ids and not db.is_admin(c.from_user.id):
             return await c.answer("Нет доступа",show_alert=True)
         chats=rows(db,"SELECT chat_id,title,updated FROM cm_settings ORDER BY updated DESC LIMIT 50")
-        body="<b>FENIX MANAGER</b>\\n\\n"
+        body="<b>FENIX MANAGER</b>\n\n"
         if chats:
-            body += "\\n".join(f"• {x['title'] or 'Без названия'} — <code>{x['chat_id']}</code>" for x in chats)
+            body += "\n".join(f"• {x['title'] or 'Без названия'} — <code>{x['chat_id']}</code>" for x in chats)
         else:
             body += "Пока нет подключённых групп. Добавь FENIX в беседу и назначь администратором — после этого группа появится в панели автоматически."
-        body += "\\n\\nКоманды: !settings · !setup · !welcome · !setrules · !roles · !admins · !logs"
+        body += "\n\nКоманды: !settings · !setup · !welcome · !setrules · !roles · !admins · !logs"
         keyboard=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Обновить",callback_data="chat_manager_admin")],
             [InlineKeyboardButton(text="Назад",callback_data="owner")]
@@ -503,7 +503,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
         chats=rows(db,"SELECT chat_id,title,updated FROM cm_settings ORDER BY updated DESC LIMIT 50")
         if not chats:
             return await m.answer("Пока нет подключённых групп. Добавь FENIX в беседу и назначь администратором — после этого группа появится в панели автоматически.")
-        text="<b>FENIX · ПОДКЛЮЧЁННЫЕ БЕСЕДЫ</b>\\n\\n"+"\\n".join(f"• {x['title'] or 'Без названия'} · <code>{x['chat_id']}</code>" for x in chats)
+        text="<b>FENIX · ПОДКЛЮЧЁННЫЕ БЕСЕДЫ</b>\n\n"+"\n".join(f"• {x['title'] or 'Без названия'} · <code>{x['chat_id']}</code>" for x in chats)
         await m.answer(text,parse_mode="HTML")
     @router.my_chat_member()
     async def bot_membership(update):
@@ -539,24 +539,24 @@ def register_chat_manager(dp, bot, db, owner_ids):
         data=c.data.split(":")
         action=data[1] if len(data)>1 else ""
         if action=="connect":
-            await cmui_show(c,"<b>ПОДКЛЮЧЕНИЕ БЕСЕДЫ</b>\\n\\nДобавь бота в группу и назначь администратором. После события добавления Telegram автоматически зарегистрирует беседу. Затем снова открой /chatmanager.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← Назад",callback_data="cmui:home")]]))
+            await cmui_show(c,"<b>ПОДКЛЮЧЕНИЕ БЕСЕДЫ</b>\n\nДобавь бота в группу и назначь администратором. После события добавления Telegram автоматически зарегистрирует беседу. Затем снова открой /chatmanager.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← Назад",callback_data="cmui:home")]]))
         elif action=="home":
             chats=rows(db,"SELECT chat_id,title FROM cm_settings ORDER BY updated DESC LIMIT 50")
             if not chats:
-                await cmui_show(c,"<b>FENIX · УПРАВЛЕНИЕ БЕСЕДАМИ</b>\\n\\nПока нет подключённых групп. Добавь бота в группу и выдай ему права администратора.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Как подключить",callback_data="cmui:connect")]]))
+                await cmui_show(c,"<b>FENIX · УПРАВЛЕНИЕ БЕСЕДАМИ</b>\n\nПока нет подключённых групп. Добавь бота в группу и выдай ему права администратора.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Как подключить",callback_data="cmui:connect")]]))
             else:
                 kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=(x["title"] or "Беседа")[:32],callback_data=f"cmui:chat:{x['chat_id']}")] for x in chats]+[[InlineKeyboardButton(text="Обновить",callback_data="cmui:home")]])
-                await cmui_show(c,"<b>FENIX MANAGER</b>\\nВыбери беседу:",kb)
+                await cmui_show(c,"<b>FENIX MANAGER</b>\nВыбери беседу:",kb)
         elif action=="chat" and len(data)>2:
             chat_id=int(data[2]); s=chat_settings(db,chat_id)
             info=one(db,f"SELECT title FROM cm_settings WHERE chat_id={ph(db)}",(chat_id,)) or {}
-            body=f"<b>{info.get('title') or 'Беседа'}</b>\\n<code>{chat_id}</code>\\n\\nПриветствие: {'установлено' if s.get('welcome') else 'не задано'}\\nПравила: {'установлены' if s.get('rules') else 'не заданы'}\\nРежим тишины: {'включён' if s.get('silence') else 'выключен'}"
+            body=f"<b>{info.get('title') or 'Беседа'}</b>\n<code>{chat_id}</code>\n\nПриветствие: {'установлено' if s.get('welcome') else 'не задано'}\nПравила: {'установлены' if s.get('rules') else 'не заданы'}\nРежим тишины: {'включён' if s.get('silence') else 'выключен'}"
             await cmui_show(c,body,cmui_keyboard(chat_id))
         elif action=="section" and len(data)>3:
             chat_id=int(data[2]); section=data[3]; s=chat_settings(db,chat_id)
             back=cmui_keyboard(chat_id)
             if section=="settings":
-                body=f"<b>⚙️ НАСТРОЙКИ</b>\\nПриветствие: {'есть' if s.get('welcome') else 'нет'}\\nПравила: {'есть' if s.get('rules') else 'нет'}\\nТишина: {'включена' if s.get('silence') else 'выключена'}\\nОграничение ссылок: {'включено' if s.get('invite_mode')=='on' else 'выключено'}"
+                body=f"<b>⚙️ НАСТРОЙКИ</b>\nПриветствие: {'есть' if s.get('welcome') else 'нет'}\nПравила: {'есть' if s.get('rules') else 'нет'}\nТишина: {'включена' if s.get('silence') else 'выключена'}\nОграничение ссылок: {'включено' if s.get('invite_mode')=='on' else 'выключено'}"
                 kb=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text=("🔕 Выключить тишину" if s.get("silence") else "🔔 Включить тишину"),callback_data=f"cmui:toggle:{chat_id}:silence")],
                     [InlineKeyboardButton(text="Как изменить приветствие",callback_data=f"cmui:hint:{chat_id}:welcome")],
@@ -565,21 +565,21 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 ])
                 await cmui_show(c,body,kb)
             elif section=="moderation":
-                await cmui_show(c,"<b>🛡 МОДЕРАЦИЯ</b>\\n\\nДействия над участником выполняются в самой группе ответом на его сообщение: !mute 15m, !unmute, !warn причина, !ban причина, !kick.\\n\\nФильтры: !filteradd фраза и !filterdel фраза. Белый список ссылок: !addlink https://example.com.",back)
+                await cmui_show(c,"<b>🛡 МОДЕРАЦИЯ</b>\n\nДействия над участником выполняются в самой группе ответом на его сообщение: !mute 15m, !unmute, !warn причина, !ban причина, !kick.\n\nФильтры: !filteradd фраза и !filterdel фраза. Белый список ссылок: !addlink https://example.com.",back)
             elif section=="roles":
                 rr=rows(db,f"SELECT uid,level,title FROM cm_roles WHERE chat_id={ph(db)} AND level>0 ORDER BY level DESC",(chat_id,))
-                body="<b>👥 РОЛИ И РУКОВОДСТВО</b>\\n"+("\\n".join(f"• {x['title']} · <code>{x['uid']}</code> · {x['level']}" for x in rr) if rr else "Роли ещё не назначены.")
+                body="<b>👥 РОЛИ И РУКОВОДСТВО</b>\n"+("\n".join(f"• {x['title']} · <code>{x['uid']}</code> · {x['level']}" for x in rr) if rr else "Роли ещё не назначены.")
                 await cmui_show(c,body,back)
             else:
-                await cmui_show(c,"<b>FENIX MANAGER</b>\\nИспользуй кнопки настроек и модерации. Полный справочник команд доступен отдельной статьёй.",back)
+                await cmui_show(c,"<b>FENIX MANAGER</b>\nИспользуй кнопки настроек и модерации. Полный справочник команд доступен отдельной статьёй.",back)
         elif action=="commands":
             article=(db.setting("fenix_commands_article_url","") or "").strip()
             kb=InlineKeyboardMarkup(inline_keyboard=([[InlineKeyboardButton(text="📖 Открыть справочник команд",url=article)]] if article else [])+[[InlineKeyboardButton(text="← Назад",callback_data="cmui:home")]])
-            await cmui_show(c,"<b>FENIX MANAGER · КОМАНДЫ</b>\\nПолный справочник команд проекта.",kb)
+            await cmui_show(c,"<b>FENIX MANAGER · КОМАНДЫ</b>\nПолный справочник команд проекта.",kb)
         elif action=="gifts":
             me=await bot.get_me()
             url=f"https://t.me/{me.username}?start=fenix_gifts"
-            await cmui_show(c,"<b>🎁 TELEGRAM-ПОДАРКИ</b>\\nНажми кнопку ниже, чтобы открыть магазин FENIX в личном чате. Там можно купить настоящий подарок Telegram или Premium за Stars.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🎁 Открыть магазин подарков",url=url)],[InlineKeyboardButton(text="← Назад",callback_data="cmui:home")]]))
+            await cmui_show(c,"<b>🎁 TELEGRAM-ПОДАРКИ</b>\nНажми кнопку ниже, чтобы открыть магазин FENIX в личном чате. Там можно купить настоящий подарок Telegram или Premium за Stars.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🎁 Открыть магазин подарков",url=url)],[InlineKeyboardButton(text="← Назад",callback_data="cmui:home")]]))
         elif action=="toggle" and len(data)>3:
             chat_id=int(data[2]); setting=data[3]
             if setting=="silence":
@@ -587,12 +587,12 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 q(db,f"UPDATE cm_settings SET silence={p},updated={p} WHERE chat_id={p}",(val,now(db),chat_id))
                 log_action(db,chat_id,c.from_user.id,"silence_panel",None,str(val))
                 await c.answer("Режим тишины обновлён")
-                await cmui_show(c,f"<b>⚙️ НАСТРОЙКИ</b>\\nРежим тишины теперь {'включён' if val else 'выключен'}.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← К настройкам",callback_data=f"cmui:section:{chat_id}:settings")]]))
+                await cmui_show(c,f"<b>⚙️ НАСТРОЙКИ</b>\nРежим тишины теперь {'включён' if val else 'выключен'}.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← К настройкам",callback_data=f"cmui:section:{chat_id}:settings")]]))
                 return
         elif action=="hint" and len(data)>3:
             field=data[3]
             text_hint=("В группе отправь: !welcome текст приветствия" if field=="welcome" else "В группе отправь: !setrules текст правил")
-            await cmui_show(c,"<b>ИЗМЕНЕНИЕ ТЕКСТА</b>\\n\\n"+text_hint,InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← К настройкам",callback_data=f"cmui:section:{data[2]}:settings")]]))
+            await cmui_show(c,"<b>ИЗМЕНЕНИЕ ТЕКСТА</b>\n\n"+text_hint,InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← К настройкам",callback_data=f"cmui:section:{data[2]}:settings")]]))
         await c.answer()
     dp.include_router(router)
     log.info("FENIX Chat Manager router registered")
