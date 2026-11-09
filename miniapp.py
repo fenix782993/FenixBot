@@ -883,6 +883,12 @@ async def main():
     register_iris_social(core.dp, tg, db, core.OWNER_IDS)
     from iris_features import register as register_iris_features
     register_iris_features(core.dp, tg, db)
+    from commands_article import register as register_commands_reference, ensure_article
+    register_commands_reference(core.dp, db)
+    try:
+        await ensure_article(db)
+    except Exception:
+        log.exception("FENIX command reference publishing failed; /commands will retry after next deploy")
     from chat_manager import register_chat_manager
     register_chat_manager(core.dp, tg, db, core.OWNER_IDS)
     # Load the exact OutlineEmoji custom-emoji pack in the real Render entrypoint.
