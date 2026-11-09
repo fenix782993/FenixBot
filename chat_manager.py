@@ -4,7 +4,7 @@ import logging
 import html
 from datetime import datetime, timedelta, timezone
 from aiogram import Router, F
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand, BotCommandScopeAllGroupChats
 from aiogram.filters import Command
 
 log = logging.getLogger("fenix.chat_manager")
@@ -720,5 +720,59 @@ def register_chat_manager(dp, bot, db, owner_ids):
             text_hint=("В группе отправь: !welcome текст приветствия" if field=="welcome" else "В группе отправь: !setrules текст правил")
             await cmui_show(c,"<b>ИЗМЕНЕНИЕ ТЕКСТА</b>\n\n"+text_hint,InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← К настройкам",callback_data=f"cmui:section:{data[2]}:settings")]]))
         await c.answer()
+    async def publish_group_command_menu():
+        # Telegram supports at most 100 commands per scope. Keep every English
+        # Chat Manager command/alias in the group command picker.
+        names = [
+            "help","cmds","start","ping","status","test","rules","setup","settings","setsettings",
+            "settingsmute","settingsinvite","welcome","setrules","admins","staff","stats","reg",
+            "getban","online","wipe","newrole","deleterole","delrole","editunity","voice","mafia",
+            "emoji","enick","chatinfo","info","mute","unmute","kick","warn","unwarn","getwarn",
+            "warnhistory","warnlist","ban","unban","banlist","addhelper","helper","addmoder",
+            "moder","addadmin","setrole","role","removerole","rr","roles","filters","filteradd",
+            "filterdel","filteredit","addlink","whitelistlinks","logs","nick","getnick","gnick",
+            "setnick","snick","removenick","rnick","nicknames","nlist","nonames","getbynick",
+            "unity","unites","addunity","removeunity","editunity","deleteunity","pin","unpin",
+            "silence","zov","try","kiss","obnyat","report","chatmanager"
+        ]
+        descriptions = {
+            "help":"Полный список команд FENIX","cmds":"Список команд FENIX","start":"Проверить подключение",
+            "ping":"Проверить работу бота","status":"Статус менеджера","test":"Тест менеджера",
+            "rules":"Правила беседы","setup":"Первичная настройка беседы","settings":"Настройки беседы",
+            "setsettings":"Изменить режим настроек","settingsmute":"Режим ограничений",
+            "settingsinvite":"Режим приглашений","welcome":"Настроить приветствие","setrules":"Настроить правила",
+            "admins":"Список руководства","staff":"Список руководства","stats":"Карточка участника",
+            "reg":"Дата регистрации FENIX","getban":"Проверить блокировку","online":"Информация об онлайне",
+            "wipe":"Очистка данных беседы","newrole":"Название уровня роли","deleterole":"Удалить назначения роли",
+            "delrole":"Удалить назначения роли","editunity":"Переименовать объединение",
+            "voice":"Голосовая функция (не активна)","mafia":"Мафия (не активна)",
+            "emoji":"Эмодзи (не активна)","enick":"Эмодзи ника (не активна)",
+            "chatinfo":"Информация о беседе","info":"Информация о беседе","mute":"Ограничить участника",
+            "unmute":"Снять ограничение","kick":"Исключить участника","warn":"Выдать предупреждение",
+            "unwarn":"Снять предупреждение","getwarn":"История предупреждений","warnhistory":"История предупреждений",
+            "warnlist":"Список предупреждений","ban":"Заблокировать участника","unban":"Снять блокировку",
+            "banlist":"Список блокировок","addhelper":"Назначить помощника","helper":"Назначить помощника",
+            "addmoder":"Назначить модератора","moder":"Назначить модератора","addadmin":"Назначить администратора",
+            "setrole":"Установить роль","role":"Установить роль","removerole":"Снять роль","rr":"Снять роль",
+            "roles":"Иерархия ролей","filters":"Список фильтров","filteradd":"Добавить фильтр",
+            "filterdel":"Удалить фильтр","filteredit":"Показать фильтры","addlink":"Разрешить ссылку",
+            "whitelistlinks":"Белый список ссылок","logs":"Журнал действий","nick":"Игровой ник",
+            "getnick":"Игровой ник","gnick":"Игровой ник","setnick":"Установить игровой ник",
+            "snick":"Установить игровой ник","removenick":"Удалить игровой ник","rnick":"Удалить игровой ник",
+            "nicknames":"Список игровых ников","nlist":"Список игровых ников","nonames":"Участники без ника",
+            "getbynick":"Поиск по игровому нику","unity":"Текущее объединение","unites":"Список объединений",
+            "addunity":"Создать объединение","removeunity":"Отключить объединение",
+            "deleteunity":"Удалить объединение","pin":"Закрепить сообщение","unpin":"Снять закрепление",
+            "silence":"Переключить режим тишины","zov":"Команда вызова","try":"Игровая попытка",
+            "kiss":"Виртуальный поцелуй","obnyat":"Виртуальное объятие","report":"Отправить жалобу",
+            "chatmanager":"Панель управления беседами"
+        }
+        try:
+            commands = [BotCommand(command=name, description=descriptions.get(name, "Команда FENIX Chat Manager")) for name in names]
+            await bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
+            log.info("FENIX group command menu published: %s commands", len(commands))
+        except Exception:
+            log.exception("Failed to publish FENIX group command menu")
+    router.startup.register(publish_group_command_menu)
     dp.include_router(router)
     log.info("FENIX Chat Manager router registered")
