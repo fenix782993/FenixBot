@@ -63,6 +63,7 @@ def register(dp, bot, db, owner_ids=()):
         note=State()
         admin_recipient=State()
         admin_note=State()
+        admin_promo=State()
 
     async def gifts():
         result=await api("getAvailableGifts")
@@ -97,6 +98,29 @@ def register(dp, bot, db, owner_ids=()):
     async def gifts_command(m):
         await m.answer("🎁 Открой магазин подарков через кнопку меню.",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🎁 Открыть подарки",callback_data="tgs:catalog")]]))
 
+    @router.callback_query(F.data=="tgs:promos")
+    async def promo_admin(c,state: FSMContext):
+        if c.from_user.id not in owner_ids and not db.is_admin(c.from_user.id):
+            return await c.answer("Нет доступа.",show_alert=True)
+        await state.set_state(GiftFlow.admin_promo)
+        await c.message.answer("🎟 СОЗДАНИЕ ПРОМОКОДА\nОтправь: КОД СКИДКА_В_STARS КОЛИЧЕСТВО_АКТИВАЦИЙ\nПример: FENIX5 5 100\nСкидка уменьшает комиссию, максимум 5 ⭐.")
+        await c.answer()
+
+    @router.message(GiftFlow.admin_promo)
+    async def promo_create(m,state: FSMContext):
+        if m.from_user.id not in owner_ids and not db.is_admin(m.from_user.id):
+            await state.clear(); return
+        parts=(m.text or "").strip().split()
+        if len(parts)!=3 or not parts[1].isdigit() or not parts[2].isdigit() or not parts[0].isalnum():
+            return await m.answer("Формат: FENIX5 5 100")
+        code=parts[0].upper(); discount=max(1,min(MARKUP_STARS,int(parts[1]))); uses=max(1,min(100000,int(parts[2])))
+        with db.con() as conn:
+            if db.use_postgres:
+                conn.execute("INSERT INTO tg_store_promos(code,discount,uses_left,active,created) VALUES(%s,%s,%s,1,%s) ON CONFLICT(code) DO UPDATE SET discount=EXCLUDED.discount,uses_left=EXCLUDED.uses_left,active=1",(code,discount,uses,datetime.now(timezone.utc).isoformat()))
+            else:
+                conn.execute("INSERT OR REPLACE INTO tg_store_promos(code,discount,uses_left,active,created) VALUES(?,?,?,1,?)",(code,discount,uses,datetime.now(timezone.utc).isoformat()))
+        await state.clear()
+        await m.answer(f"Промокод {code} создан. Скидка {discount} ⭐. Активаций: {uses}.")
     @router.callback_query(F.data=="tgs:history")
     async def order_history(c):
         stats=one(db,f"SELECT COUNT(*) AS total, SUM(CASE WHEN status IN ('delivering','delivered','delivery_failed') THEN 1 ELSE 0 END) AS paid, SUM(CASE WHEN status='delivered' THEN 1 ELSE 0 END) AS delivered, SUM(CASE WHEN status='delivery_failed' THEN 1 ELSE 0 END) AS failed, SUM(CASE WHEN status='invoice' THEN 1 ELSE 0 END) AS unpaid, COALESCE(SUM(CASE WHEN status IN ('delivering','delivered','delivery_failed') THEN stars ELSE 0 END),0) AS spent FROM tg_store_orders WHERE buyer_uid={ph(db)}",(c.from_user.id,)) or {}
