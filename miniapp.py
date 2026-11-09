@@ -876,12 +876,13 @@ async def main():
     # leaves all chat-manager commands and callback buttons without handlers.
     from telegram_store import register as register_telegram_store
     register_telegram_store(core.dp, tg, db)
-    from iris_features import register as register_iris_features
-    register_iris_features(core.dp, tg, db)
+    # Register narrow command routers before the legacy catch-all text router.
     from iris_modules import register as register_iris_modules
     register_iris_modules(core.dp, tg, db, core.OWNER_IDS)
     from iris_social import register as register_iris_social
     register_iris_social(core.dp, tg, db, core.OWNER_IDS)
+    from iris_features import register as register_iris_features
+    register_iris_features(core.dp, tg, db)
     from chat_manager import register_chat_manager
     register_chat_manager(core.dp, tg, db, core.OWNER_IDS)
     # Load the exact OutlineEmoji custom-emoji pack in the real Render entrypoint.
