@@ -295,6 +295,31 @@ async def edit_panel(message, text, reply_markup=None, parse_mode="HTML"):
         except Exception:
             return await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
 
+@dp.callback_query(F.data == "fenixid:show")
+async def fenix_id_open(c):
+    try:
+        from fenix_id import render as render_fenix_id
+        text = render_fenix_id(db, c.from_user)
+        await edit_panel(c.message, text, parse_mode="HTML", reply_markup=markup([
+            [InlineKeyboardButton(text="🔄 Обновить профиль", callback_data="fenixid:show")],
+            [InlineKeyboardButton(text="⬅️ В меню", callback_data="back_home")]
+        ]))
+        await c.answer()
+    except Exception:
+        logging.exception("FENIX ID open failed")
+        await c.answer("Не удалось открыть FENIX ID. Ошибка записана.", show_alert=True)
+
+@dp.message(Command("fenixid"))
+@dp.message(Command("idcard"))
+async def fenix_id_command(m):
+    try:
+        from fenix_id import render as render_fenix_id
+        await m.answer(render_fenix_id(db, m.from_user), parse_mode="HTML",
+            reply_markup=markup([[InlineKeyboardButton(text="🪪 Открыть FENIX ID", callback_data="fenixid:show")]]))
+    except Exception:
+        logging.exception("FENIX ID command failed")
+        await m.answer("Не удалось открыть FENIX ID. Попробуй ещё раз позже.")
+
 def menu(uid):
     media_status=(db.media_current(uid) or {}).get("status")
     label=db.setting("home_label","📢 Новости FENIX ONLINE")
@@ -760,7 +785,7 @@ async def stars_invoice(c):
     )
     await c.answer("Счёт Telegram Stars отправлен.")
 
-@dp.pre_checkout_query()
+@dp.pre_checkout_query(F.invoice_payload.startswith("fenix_nmz:"))
 async def stars_pre_checkout(q):
     try:
         parts=q.invoice_payload.split(":")
@@ -769,7 +794,7 @@ async def stars_pre_checkout(q):
     except Exception: valid=False
     await q.answer(ok=bool(valid), error_message=None if valid else "Счёт недействителен. Открой пополнение заново.")
 
-@dp.message(F.successful_payment)
+@dp.message(F.successful_payment.invoice_payload.startswith("fenix_nmz:"))
 async def stars_success(m):
     payment=m.successful_payment
     try:
