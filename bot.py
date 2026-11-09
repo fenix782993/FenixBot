@@ -590,29 +590,35 @@ async def list_pack_emojis(m: Message):
     if not items:
         return await m.answer("Пак ещё не загружен. Используй /emojipack ссылка")
 
-    # Telegram renders a real custom emoji only when the message carries
-    # a custom_emoji MessageEntity with the corresponding custom_emoji_id.
-    lines = ["💎 PREMIUM CUSTOM EMOJI ИЗ ПАКА", "━━━━━━━━━━━━━━━━━━"]
-    # Build the complete text first, then calculate offsets from the exact
-    # final string. A single-code-point fallback avoids broken UTF-16 ranges.
-    positions = []
-    for i, item in enumerate(items, 1):
-        custom_id = str(item.get("id") or "")
-        line = f"{i}. 💎  ID: {custom_id}"
-        positions.append((len("\n".join(lines)) + (1 if lines else 0) + len(f"{i}. "), custom_id))
-        lines.append(line)
+    # Split large libraries into small Telegram messages and calculate entity
+    # offsets from each exact chunk to stay below Telegram's message limit.
+    chunk_size = 30
+    for start_index in range(0, len(items), chunk_size):
+        chunk = items[start_index:start_index + chunk_size]
+        lines = [
+            f"💎 PREMIUM CUSTOM EMOJI · {start_index + 1}-{start_index + len(chunk)} ИЗ {len(items)}",
+            "━━━━━━━━━━━━━━━━━━"
+        ]
+        positions = []
+        for local_index, item in enumerate(chunk):
+            global_index = start_index + local_index + 1
+            custom_id = str(item.get("id") or "")
+            line = f"{global_index}. 💎  ID: {custom_id}"
+            char_offset = len("\n".join(lines)) + 1 + len(f"{global_index}. ")
+            positions.append((char_offset, custom_id))
+            lines.append(line)
 
-    text = "\n".join(lines)
-    entities = []
-    for char_offset, custom_id in positions:
-        if custom_id:
-            entities.append(MessageEntity(
-                type="custom_emoji",
-                offset=len(text[:char_offset].encode("utf-16-le")) // 2,
-                length=1,
-                custom_emoji_id=custom_id
-            ))
-    await m.answer(text, entities=entities)
+        text = "\n".join(lines)
+        entities = []
+        for char_offset, custom_id in positions:
+            if custom_id:
+                entities.append(MessageEntity(
+                    type="custom_emoji",
+                    offset=len(text[:char_offset].encode("utf-16-le")) // 2,
+                    length=1,
+                    custom_emoji_id=custom_id
+                ))
+        await m.answer(text, entities=entities)
 
 @dp.message(Command("btnlist"))
 async def list_premium_buttons(m: Message):
