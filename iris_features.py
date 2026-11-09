@@ -52,11 +52,14 @@ def register(dp,bot,db):
         return None
     @router.message(Command("fenix"))
     async def fenix_menu(m):
-        kb=InlineKeyboardMarkup(inline_keyboard=[
+        rows=[
             [InlineKeyboardButton(text="🛡 Модерация",callback_data="fenix:moderation"),InlineKeyboardButton(text="⚙️ Настройки",callback_data="fenix:settings")],
             [InlineKeyboardButton(text="👤 Профиль и репутация",callback_data="fenix:profile"),InlineKeyboardButton(text="🎲 Развлечения",callback_data="fenix:games")],
             [InlineKeyboardButton(text="📝 Заметки и закладки",callback_data="fenix:notes"),InlineKeyboardButton(text="🏆 Кланы и розыгрыши",callback_data="fenix:community")],
-            [InlineKeyboardButton(text="📚 Все команды",callback_data="fenix:help")],\n            ([InlineKeyboardButton(text="📖 Полный справочник FENIX",url=(db.setting("fenix_commands_article_url","") or "").strip())] if (db.setting("fenix_commands_article_url","") or "").strip() else [])])
+            [InlineKeyboardButton(text="📚 Все команды",callback_data="fenix:help")]]
+        article=(db.setting("fenix_commands_article_url","") or "").strip()
+        if article: rows.append([InlineKeyboardButton(text="📖 Полный справочник FENIX",url=article)])
+        kb=InlineKeyboardMarkup(inline_keyboard=rows)
         await m.answer("<b>FENIX · CHAT MANAGER</b>\nВыбери раздел управления беседой:",parse_mode="HTML",reply_markup=kb)
     @router.callback_query(F.data.startswith("fenix:"))
     async def fenix_menu_cb(c):
