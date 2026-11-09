@@ -1891,7 +1891,7 @@ def _decorate_post_html(content):
     return "\\n".join(lines)
 
 def _plain_post_fallback(content):
-    return re.sub(r'<tg-emoji\\s+emoji-id="[^"]+">([^<]+)</tg-emoji>', r'\\1', content)
+    return re.sub(r'<tg-emoji\s+emoji-id="[^"]+">([^<]+)</tg-emoji>', r'\1', content)
 
 def _build_post_html(raw):
     author = _decorate_post_html(html.escape((raw or "").strip()))
