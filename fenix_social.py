@@ -176,8 +176,8 @@ def register(dp,bot,db,owners=()):
             a=int(first.dice.value);b=int(second.dice.value)
             winner=int(duel["challenger"]) if a>b else int(duel["opponent"]) if b>a else 0
             run_result=execq(db,f"UPDATE cm_duels SET status='finished',winner={p} WHERE id={p}",(winner,did))
-            challenger_name=escape(duel.get("challenger_name") or "Игрок 1")
-            opponent_name=escape(duel.get("opponent_name") or "Игрок 2")
+            challenger_name=duel.get("challenger_name") or "Игрок 1"
+            opponent_name=duel.get("opponent_name") or "Игрок 2"
             text_result=f"⚔️ <b>ДУЭЛЬ #{did}</b>\n{challenger_name}: <b>{a}</b>\n{opponent_name}: <b>{b}</b>\n"
             text_result+=f"🏆 Победитель: <b>{challenger_name if winner==int(duel['challenger']) else opponent_name}</b>" if winner else "🤝 Ничья!"
             await c.message.answer(text_result,parse_mode="HTML")
