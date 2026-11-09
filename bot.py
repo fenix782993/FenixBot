@@ -126,7 +126,10 @@ def markup(rows):
                         "owner": "⚙️ Панель владельца",
                     }
                     keys = [original_text, callback, aliases.get(callback, "")]
-                    custom_id = next((icons.get(key) for key in keys if icons.get(key)), None)
+                    custom_id = (
+                        getattr(button, "icon_custom_emoji_id", None)
+                        or next((icons.get(key) for key in keys if icons.get(key)), None)
+                    )
                     if not custom_id and pack_ids:
                         seed = callback or original_text
                         custom_id = pack_ids[sum(ord(ch) for ch in seed) % len(pack_ids)]
