@@ -1883,7 +1883,9 @@ def _decorate_post_html(content):
     return "\n".join(lines)
 
 def _plain_post_fallback(content):
-    return re.sub(r'<tg-emoji\s+emoji-id="[^"]+">([^<]+)</tg-emoji>', r'\1', content)
+    # If Telegram rejects Premium Custom Emoji, remove the icon entirely.
+    # Never silently replace it with a standard Unicode emoji.
+    return re.sub(r'<tg-emoji\s+emoji-id="[^"]+">([^<]+)</tg-emoji>', "", content)
 
 def _build_post_html(raw):
     author = _decorate_post_html(html.escape((raw or "").strip()))
