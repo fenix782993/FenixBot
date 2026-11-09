@@ -1,16 +1,16 @@
-"""FENIX Telegram Stars store: real Telegram gifts and Premium subscriptions."""
-import logging
-import os
-import secrets
+"""FENIX Manager: Telegram Gifts store paid in Stars and admin gifting."""
+import logging, os, secrets
 from datetime import datetime, timezone
 import aiohttp
 from aiogram import Router, F
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import LabeledPrice, InlineKeyboardMarkup, InlineKeyboardButton
 
 log = logging.getLogger("fenix.telegram_store")
 TOKEN = os.getenv("BOT_TOKEN", "").strip()
-PREMIUM_PRICES = {3: 1000, 6: 1500, 12: 2500}
+MARKUP_STARS = 3
 
 def ph(db): return "%s" if db.use_postgres else "?"
 def run(db, sql, args=()):
@@ -26,10 +26,14 @@ def init(db):
     with db.con() as c:
         if db.use_postgres:
             c.execute("""CREATE TABLE IF NOT EXISTS tg_store_items(token TEXT PRIMARY KEY,owner_uid BIGINT NOT NULL,recipient_uid BIGINT NOT NULL,gift_id TEXT NOT NULL,title TEXT,stars INTEGER NOT NULL,created TEXT NOT NULL)""")
-            c.execute("""CREATE TABLE IF NOT EXISTS tg_store_orders(id TEXT PRIMARY KEY,payload TEXT UNIQUE NOT NULL,buyer_uid BIGINT NOT NULL,recipient_uid BIGINT NOT NULL,kind TEXT NOT NULL,item_id TEXT NOT NULL,title TEXT NOT NULL,stars INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'invoice',charge_id TEXT UNIQUE,error TEXT,created TEXT NOT NULL,delivered TEXT)""")
+            c.execute("""CREATE TABLE IF NOT EXISTS tg_store_orders(id TEXT PRIMARY KEY,payload TEXT UNIQUE NOT NULL,buyer_uid BIGINT NOT NULL,recipient_uid BIGINT NOT NULL,kind TEXT NOT NULL,item_id TEXT NOT NULL,title TEXT NOT NULL,stars INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'invoice',charge_id TEXT UNIQUE,error TEXT,created TEXT NOT NULL,delivered TEXT,note TEXT)""")
+            try: c.execute("ALTER TABLE tg_store_orders ADD COLUMN IF NOT EXISTS note TEXT")
+            except Exception: pass
         else:
             c.executescript("""CREATE TABLE IF NOT EXISTS tg_store_items(token TEXT PRIMARY KEY,owner_uid INTEGER NOT NULL,recipient_uid INTEGER NOT NULL,gift_id TEXT NOT NULL,title TEXT,stars INTEGER NOT NULL,created TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS tg_store_orders(id TEXT PRIMARY KEY,payload TEXT UNIQUE NOT NULL,buyer_uid INTEGER NOT NULL,recipient_uid INTEGER NOT NULL,kind TEXT NOT NULL,item_id TEXT NOT NULL,title TEXT NOT NULL,stars INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'invoice',charge_id TEXT UNIQUE,error TEXT,created TEXT NOT NULL,delivered TEXT);""")
+            CREATE TABLE IF NOT EXISTS tg_store_orders(id TEXT PRIMARY KEY,payload TEXT UNIQUE NOT NULL,buyer_uid INTEGER NOT NULL,recipient_uid INTEGER NOT NULL,kind TEXT NOT NULL,item_id TEXT NOT NULL,title TEXT NOT NULL,stars INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'invoice',charge_id TEXT UNIQUE,error TEXT,created TEXT NOT NULL,delivered TEXT,note TEXT);""")
+            try: c.execute("ALTER TABLE tg_store_orders ADD COLUMN note TEXT")
+            except Exception: pass
 
 async def api(method, data=None):
     if not TOKEN: raise RuntimeError("BOT_TOKEN is not configured")
@@ -40,121 +44,184 @@ async def api(method, data=None):
     if not result.get("ok"): raise RuntimeError(result.get("description",f"Telegram {method} failed"))
     return result.get("result")
 
+async def bot_star_balance():
+    result=await api("getMyStarBalance")
+    return int(result.get("amount",0)) if isinstance(result,dict) else int(result or 0)
+
 def register(dp, bot, db, owner_ids=()):
     owner_ids=set(owner_ids or ())
     init(db)
-    router=Router(name="fenix_telegram_stars_store")
-    async def invoice(buyer,recipient,kind,item_id,title,stars):
-        oid=secrets.token_hex(6); payload="fenix:"+oid; p=ph(db)
-        run(db,f"INSERT INTO tg_store_orders(id,payload,buyer_uid,recipient_uid,kind,item_id,title,stars,status,created) VALUES({','.join([p]*10)})",
-            (oid,payload,buyer,recipient,kind,str(item_id),title,int(stars),"invoice",datetime.now(timezone.utc).isoformat()))
-        await bot.send_invoice(chat_id=buyer,title=title[:32],description=f"Подарок для Telegram ID {recipient}. Оплата Telegram Stars.",
-            payload=payload,provider_token="",currency="XTR",prices=[LabeledPrice(label=title[:32],amount=int(stars))])
+    router=Router(name="fenix_telegram_gifts")
+    class GiftFlow(StatesGroup):
+        recipient=State()
+        note=State()
+        admin_recipient=State()
+        admin_note=State()
 
-    @router.message(Command("stars"))
-    async def stars_menu(m):
-        kb=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🎁 Купить Telegram-подарок",callback_data="tgs:catalog")],
-            [InlineKeyboardButton(text="⭐ Купить Telegram Premium",callback_data="tgs:premium_catalog")],
-            [InlineKeyboardButton(text="🆔 Мой Telegram ID",callback_data="tgs:showid")],
-        ])
-        await m.answer("<b>⭐ FENIX · МАГАЗИН TELEGRAM</b>\\nВыбери покупку. Подарок можно отправить себе кнопкой ниже или другому человеку командой /giftshop TELEGRAM_ID. Premium — /premiumgift TELEGRAM_ID.",parse_mode="HTML",reply_markup=kb)
+    async def gifts():
+        result=await api("getAvailableGifts")
+        return [g for g in result.get("gifts",[]) if int(g.get("star_count",0))>0]
 
-    async def show_gifts(chat_id,buyer_id,recipient_id):
-        gifts=(await api("getAvailableGifts")).get("gifts",[])
-        gifts=[g for g in gifts if int(g.get("star_count",0))>0]
-        if not gifts:
+    async def create_invoice(buyer, recipient, gift, note):
+        base=int(gift["star_count"]); total=base+MARKUP_STARS
+        oid=secrets.token_hex(6); payload="fenixgift:"+oid; p=ph(db)
+        title=(gift.get("sticker") or {}).get("emoji") or "🎁"
+        title=f"{title} Telegram-подарок"
+        run(db,f"INSERT INTO tg_store_orders(id,payload,buyer_uid,recipient_uid,kind,item_id,title,stars,status,created,note) VALUES({','.join([p]*11)})",
+            (oid,payload,buyer,recipient,"gift",str(gift["id"]),title,total,"invoice",datetime.now(timezone.utc).isoformat(),note))
+        await bot.send_invoice(chat_id=buyer,title=title[:32],description=f"Подарок Telegram · {base} ⭐ + 3 ⭐ сервисный сбор. Получатель ID {recipient}.",
+            payload=payload,provider_token="",currency="XTR",prices=[LabeledPrice(label=title[:32],amount=total)])
+
+    async def send_catalog(chat_id, owner_id, recipient_id, prefix="tgs:buy:"):
+        catalog=await gifts()
+        if not catalog:
             return await bot.send_message(chat_id,"Telegram сейчас не вернул доступных подарков.")
-        buttons=[]
-        for gift in gifts[:40]:
-            emoji=(gift.get("sticker") or {}).get("emoji") or "🎁"; stars=int(gift["star_count"])
-            label=f"{emoji} Купить · {stars} ⭐"; token=secrets.token_urlsafe(6).replace("-","").replace("_","")[:8]
+        rows=[]
+        for gift in catalog[:50]:
+            emoji=(gift.get("sticker") or {}).get("emoji") or "🎁"
+            base=int(gift["star_count"])
+            token=secrets.token_urlsafe(7).replace("-","").replace("_","")[:10]
             run(db,f"INSERT INTO tg_store_items(token,owner_uid,recipient_uid,gift_id,title,stars,created) VALUES({','.join([ph(db)]*7)})",
-                (token,buyer_id,recipient_id,str(gift["id"]),label,stars,datetime.now(timezone.utc).isoformat()))
-            buttons.append([InlineKeyboardButton(text=label[:60],callback_data=f"tgs:g:{token}")])
-        buttons.append([InlineKeyboardButton(text="⭐ Telegram Premium",callback_data=f"tgs:p:3:{recipient_id}")])
-        await bot.send_message(chat_id,"<b>FENIX · TELEGRAM GIFTS</b>\\nВыбери подарок. После нажатия «Купить» Telegram откроет счёт в Stars; подарок будет отправлен только после успешной оплаты.",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+                (token,owner_id,recipient_id,str(gift["id"]),emoji,base,datetime.now(timezone.utc).isoformat()))
+            rows.append([InlineKeyboardButton(text=f"{emoji} {base+3} ⭐",callback_data=f"{prefix}{token}")])
+        await bot.send_message(chat_id,"<b>🎁 ПОДАРКИ TELEGRAM · FENIX</b>\nЦена включает +3 ⭐ к стоимости подарка. Выбери подарок:",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+    @router.message(Command("gifts"))
+    async def gifts_command(m):
+        await m.answer("🎁 Открой магазин подарков через кнопку меню.",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🎁 Открыть подарки",callback_data="tgs:catalog")]]))
 
     @router.callback_query(F.data=="tgs:catalog")
-    async def open_gift_catalog(c):
-        try:
-            await show_gifts(c.from_user.id,c.from_user.id,c.from_user.id)
-            await c.answer()
-        except Exception as e:
-            log.exception("Gift catalog error")
-            await c.answer("Не удалось загрузить подарки Telegram.",show_alert=True)
-
-    @router.callback_query(F.data=="tgs:premium_catalog")
-    async def open_premium_catalog(c):
-        kb=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="3 месяца · 1000 ⭐",callback_data=f"tgs:p:3:{c.from_user.id}")],
-            [InlineKeyboardButton(text="6 месяцев · 1500 ⭐",callback_data=f"tgs:p:6:{c.from_user.id}")],
-            [InlineKeyboardButton(text="12 месяцев · 2500 ⭐",callback_data=f"tgs:p:12:{c.from_user.id}")]])
-        await c.message.answer("<b>Выбери срок Telegram Premium для себя</b>",parse_mode="HTML",reply_markup=kb)
+    async def catalog_callback(c, state: FSMContext):
+        await state.clear()
+        await state.set_state(GiftFlow.recipient)
+        await c.message.answer("Кому отправить подарок? Отправь числовой Telegram ID получателя. Чтобы подарить себе — нажми кнопку.",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🎁 Себе",callback_data="tgs:self")]]))
         await c.answer()
 
-    @router.callback_query(F.data=="tgs:showid")
-    async def show_own_id(c):
-        await c.answer(f"Твой Telegram ID: {c.from_user.id}",show_alert=True)
+    @router.callback_query(F.data=="tgs:self")
+    async def self_recipient(c,state: FSMContext):
+        await state.update_data(recipient=c.from_user.id)
+        await state.clear()
+        try: await send_catalog(c.from_user.id,c.from_user.id,c.from_user.id)
+        except Exception:
+            log.exception("Gift catalog failed"); await c.answer("Не удалось загрузить каталог.",show_alert=True); return
+        await c.answer()
 
-    @router.message(Command("myid"))
-    async def myid(m):
-        await m.answer(f"Твой Telegram ID: <code>{m.from_user.id}</code>",parse_mode="HTML")
+    @router.message(GiftFlow.recipient)
+    async def recipient_input(m,state: FSMContext):
+        raw=(m.text or "").strip()
+        if not raw.isdigit() or int(raw)<=0:
+            return await m.answer("Нужен числовой Telegram ID. Для подарка себе нажми кнопку «Себе».")
+        await state.clear()
+        try: await send_catalog(m.chat.id,m.from_user.id,int(raw))
+        except Exception:
+            log.exception("Gift catalog failed"); await m.answer("Не удалось загрузить каталог Telegram.")
 
-    @router.message(Command("starsorders"))
-    async def starsorders(m):
-        p=ph(db)
-        with db.con() as c:
-            items=[dict(x) for x in c.execute(f"SELECT id,title,stars,status,created,recipient_uid FROM tg_store_orders WHERE buyer_uid={p} ORDER BY created DESC LIMIT 15",(m.from_user.id,)).fetchall()]
-        if not items:
-            return await m.answer("Покупок Telegram Stars пока нет.")
-        body="<b>МОИ ЗАКАЗЫ STARS</b>\\n"+"\\n".join(f"#{x['id']} · {x['title']} · {x['stars']} ⭐ · {x['status']} · получатель {x['recipient_uid']}" for x in items)
-        await m.answer(body,parse_mode="HTML")
+    @router.callback_query(F.data.startswith("tgs:buy:"))
+    async def select_gift(c,state: FSMContext):
+        token=c.data.split(":")[-1]
+        item=one(db,f"SELECT * FROM tg_store_items WHERE token={ph(db)}",(token,))
+        if not item or int(item["owner_uid"])!=c.from_user.id:
+            return await c.answer("Каталог устарел. Открой заново.",show_alert=True)
+        await state.update_data(token=token)
+        await state.set_state(GiftFlow.note)
+        await c.message.answer("Добавить надпись к подарку? Отправь текст (до 128 символов) или нажми «Без надписи».",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Без надписи",callback_data="tgs:nonote")]]))
+        await c.answer()
 
-    @router.message(Command("giftshop"))
-    async def giftshop(m):
-        args=(m.text or "").split()
-        if len(args)>1 and args[1].isdigit():
-            recipient=int(args[1])
-        else:
-            recipient=m.from_user.id
+    async def issue_invoice(c, state, note):
+        data=await state.get_data(); item=one(db,f"SELECT * FROM tg_store_items WHERE token={ph(db)}",(data.get("token",""),))
+        if not item or int(item["owner_uid"])!=c.from_user.id:
+            await state.clear(); return await c.answer("Позиция устарела.",show_alert=True)
+        gift={"id":item["gift_id"],"star_count":item["stars"],"sticker":{"emoji":item["title"]}}
         try:
-            await show_gifts(m.chat.id,m.from_user.id,recipient)
+            await create_invoice(c.from_user.id,int(item["recipient_uid"]),gift,note)
+            await state.clear(); await c.answer("Счёт создан")
+        except Exception:
+            log.exception("Gift invoice create failed"); await c.answer("Не удалось создать счёт.",show_alert=True)
+
+    @router.callback_query(F.data=="tgs:nonote")
+    async def no_note(c,state: FSMContext):
+        await issue_invoice(c,state,"")
+
+    @router.message(GiftFlow.note)
+    async def note_input(m,state: FSMContext):
+        note=(m.text or "").strip()
+        if len(note)>128: return await m.answer("Максимум 128 символов. Сократи надпись.")
+        data=await state.get_data(); item=one(db,f"SELECT * FROM tg_store_items WHERE token={ph(db)}",(data.get("token",""),))
+        if not item or int(item["owner_uid"])!=m.from_user.id:
+            await state.clear(); return await m.answer("Каталог устарел. Открой магазин заново.")
+        gift={"id":item["gift_id"],"star_count":item["stars"],"sticker":{"emoji":item["title"]}}
+        try:
+            await create_invoice(m.from_user.id,int(item["recipient_uid"]),gift,note)
+            await state.clear()
+        except Exception:
+            log.exception("Gift invoice failed"); await m.answer("Не удалось создать счёт.")
+
+    @router.callback_query(F.data=="tgs:admin")
+    async def admin_gifts(c,state: FSMContext):
+        if c.from_user.id not in owner_ids and not db.is_admin(c.from_user.id):
+            return await c.answer("Нет доступа.",show_alert=True)
+        await state.clear()
+        await state.set_state(GiftFlow.admin_recipient)
+        await c.message.answer("🎁 <b>АДМИН · ПОДАРИТЬ ПОДАРОК</b>\nОтправь числовой Telegram ID получателя.",parse_mode="HTML")
+        await c.answer()
+
+    @router.message(GiftFlow.admin_recipient)
+    async def admin_recipient(m,state: FSMContext):
+        if m.from_user.id not in owner_ids and not db.is_admin(m.from_user.id):
+            await state.clear(); return
+        raw=(m.text or "").strip()
+        if not raw.isdigit() or int(raw)<=0: return await m.answer("Введи числовой Telegram ID.")
+        await state.update_data(admin_recipient=int(raw))
+        await state.set_state(GiftFlow.admin_note)
+        await m.answer("Надпись к подарку? Отправь текст или напиши «-» без надписи.")
+
+    @router.message(GiftFlow.admin_note)
+    async def admin_note(m,state: FSMContext):
+        if m.from_user.id not in owner_ids and not db.is_admin(m.from_user.id):
+            await state.clear(); return
+        note=(m.text or "").strip()
+        if note=="-": note=""
+        if len(note)>128: return await m.answer("Максимум 128 символов.")
+        data=await state.get_data()
+        try:
+            catalog=await gifts()
+            if not catalog: return await m.answer("Нет доступных подарков.")
+            await state.update_data(admin_note=note)
+            rows=[]
+            for gift in catalog[:50]:
+                emoji=(gift.get("sticker") or {}).get("emoji") or "🎁"
+                rows.append([InlineKeyboardButton(text=f"{emoji} · {gift['star_count']} ⭐",callback_data=f"tgs:adminpick:{gift['id']}")])
+            await m.answer("Выбери подарок. Он будет оплачен с баланса Stars бота.",reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+        except Exception:
+            log.exception("Admin gift catalog error"); await m.answer("Не удалось загрузить каталог.")
+        await state.update_data(admin_recipient=data["admin_recipient"])
+        await state.set_state(GiftFlow.admin_note)
+
+    @router.callback_query(F.data.startswith("tgs:adminpick:"))
+    async def admin_pick(c,state: FSMContext):
+        if c.from_user.id not in owner_ids and not db.is_admin(c.from_user.id):
+            return await c.answer("Нет доступа.",show_alert=True)
+        gift_id=c.data.split(":",2)[2]
+        data=await state.get_data()
+        if not data.get("admin_recipient"): return await c.answer("Сессия истекла.",show_alert=True)
+        try:
+            catalog=await gifts(); gift=next((g for g in catalog if str(g["id"])==gift_id),None)
+            if not gift: return await c.answer("Подарок больше недоступен.",show_alert=True)
+            cost=int(gift["star_count"]); balance=await bot_star_balance()
+            if balance<cost: return await c.answer(f"На балансе {balance} ⭐, нужно {cost} ⭐.",show_alert=True)
+            payload={"user_id":int(data["admin_recipient"]),"gift_id":gift_id}
+            if data.get("admin_note"): payload["text"]=data["admin_note"]
+            await api("sendGift",payload)
+            await state.clear()
+            await c.message.answer(f"✅ Подарок отправлен пользователю <code>{data['admin_recipient']}</code>.\nСписано: {cost} ⭐. Остаток до операции: {balance} ⭐.",parse_mode="HTML")
+            await c.answer("Отправлено")
         except Exception as e:
-            log.exception("Gift catalog error")
-            await m.answer(f"Не удалось получить каталог Telegram: {str(e)[:200]}")
+            log.exception("Admin gift send failed"); await c.answer(f"Ошибка отправки: {str(e)[:150]}",show_alert=True)
 
-    @router.message(Command("premiumgift"))
-    async def premiumgift(m):
-        args=(m.text or "").split()
-        recipient=int(args[1]) if len(args)>1 and args[1].isdigit() else m.from_user.id
-        kb=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="3 месяца · 1000 ⭐",callback_data=f"tgs:p:3:{recipient}")],
-            [InlineKeyboardButton(text="6 месяцев · 1500 ⭐",callback_data=f"tgs:p:6:{recipient}")],
-            [InlineKeyboardButton(text="12 месяцев · 2500 ⭐",callback_data=f"tgs:p:12:{recipient}")]])
-        await m.answer("<b>Выбери срок Telegram Premium</b>",parse_mode="HTML",reply_markup=kb)
-
-    @router.callback_query(F.data.startswith("tgs:g:"))
-    async def choose_gift(c):
-        token=c.data.split(":")[-1]; item=one(db,f"SELECT * FROM tg_store_items WHERE token={ph(db)}",(token,))
-        if not item or int(item["owner_uid"])!=c.from_user.id: return await c.answer("Позиция устарела. Открой каталог заново.",show_alert=True)
-        try:
-            await invoice(c.from_user.id,int(item["recipient_uid"]),"gift",item["gift_id"],item["title"],int(item["stars"]))
-            await c.answer("Счёт создан")
-        except Exception:
-            log.exception("Gift invoice error"); await c.answer("Не удалось создать счёт",show_alert=True)
-
-    @router.callback_query(F.data.startswith("tgs:p:"))
-    async def choose_premium(c):
-        parts=c.data.split(":")
-        months,recipient=(int(parts[-2]),int(parts[-1]))
-        stars=PREMIUM_PRICES.get(months)
-        if not stars or recipient<=0: return await c.answer("Некорректный запрос",show_alert=True)
-        try:
-            await invoice(c.from_user.id,recipient,"premium",months,f"Telegram Premium · {months} мес.",stars)
-            await c.answer("Счёт создан")
-        except Exception:
-            log.exception("Premium invoice error"); await c.answer("Не удалось создать счёт",show_alert=True)
+    @router.callback_query(F.data.startswith("tgs:buy:"))
+    async def duplicate_guard(c):
+        await c.answer("Обнови каталог.",show_alert=True)
 
     @router.pre_checkout_query()
     async def pre_checkout(q):
@@ -167,31 +234,29 @@ def register(dp, bot, db, owner_ids=()):
         pay=m.successful_payment; p=ph(db)
         order=one(db,f"SELECT * FROM tg_store_orders WHERE payload={p}",(pay.invoice_payload,))
         if not order or int(order["buyer_uid"])!=m.from_user.id:
-            log.error("Unmatched successful Stars payment %s",pay.invoice_payload)
-            return await m.answer("Платёж получен, но заказ не найден. Обратись в поддержку и приложи ID платежа.")
-        if pay.currency != "XTR" or int(pay.total_amount) != int(order["stars"]):
-            log.error("Stars payment mismatch for order %s: currency=%s amount=%s expected=%s", order["id"], pay.currency, pay.total_amount, order["stars"])
-            return await m.answer("Платёж получен, но сумма не совпала с заказом. Доставка остановлена, обратись в поддержку и приложи ID платежа.")
+            log.error("Unmatched gift payment %s",pay.invoice_payload)
+            return await m.answer("Платёж получен, но заказ не найден. Обратись в поддержку.")
+        if pay.currency!="XTR" or int(pay.total_amount)!=int(order["stars"]):
+            return await m.answer("Платёж получен, но сумма не совпала. Заказ передан на проверку.")
         charge=pay.telegram_payment_charge_id
         claimed=run(db,f"UPDATE tg_store_orders SET status='delivering',charge_id={p} WHERE id={p} AND status='invoice'",(charge,order["id"]))
-        if claimed!=1:
-            return await m.answer("Этот платёж уже обрабатывается. Повторная выдача не выполняется.")
+        if claimed!=1: return await m.answer("Этот платёж уже обрабатывается.")
         try:
-            if order["kind"]=="gift":
-                await api("sendGift",{"user_id":int(order["recipient_uid"]),"gift_id":str(order["item_id"]),"text":"Подарок от FENIX"})
-            else:
-                await api("giftPremiumSubscription",{"user_id":int(order["recipient_uid"]),"month_count":int(order["item_id"]),"star_count":int(order["stars"]),"text":"Telegram Premium от FENIX"})
+            balance=await bot_star_balance()
+            gift_cost=int(one(db,f"SELECT stars FROM tg_store_items WHERE gift_id={p} AND owner_uid={p} ORDER BY created DESC LIMIT 1",(order["item_id"],order["buyer_uid"]))["stars"])
+            if balance<gift_cost: raise RuntimeError(f"Недостаточно Stars на балансе бота: {balance}, нужно {gift_cost}")
+            payload={"user_id":int(order["recipient_uid"]),"gift_id":str(order["item_id"])}
+            if order.get("note"): payload["text"]=order["note"]
+            await api("sendGift",payload)
             run(db,f"UPDATE tg_store_orders SET status='delivered',delivered={p},error=NULL WHERE id={p}",(datetime.now(timezone.utc).isoformat(),order["id"]))
-            await m.answer(f"✅ {order['title']} отправлен пользователю <code>{order['recipient_uid']}</code>.",parse_mode="HTML")
+            await m.answer(f"✅ Подарок отправлен пользователю <code>{order['recipient_uid']}</code>. Оплата: {order['stars']} ⭐.",parse_mode="HTML")
         except Exception as e:
             log.exception("Paid gift delivery failed")
             run(db,f"UPDATE tg_store_orders SET status='delivery_failed',error={p} WHERE id={p}",(str(e)[:1000],order["id"]))
             for admin_id in owner_ids:
-                try:
-                    await bot.send_message(admin_id,f"⚠️ Ошибка доставки Stars-заказа #{order['id']}\\nПокупатель: {m.from_user.id}\\nПолучатель: {order['recipient_uid']}\\nТип: {order['kind']}\\nОшибка: {str(e)[:700]}")
-                except Exception:
-                    pass
-            await m.answer("Оплата принята, но Telegram не выполнил отправку. Заказ сохранён для ручной проверки; повторно оплачивать не нужно.")
+                try: await bot.send_message(admin_id,f"⚠️ Заказ #{order['id']} оплачен, но подарок не отправлен. Получатель {order['recipient_uid']}. Ошибка: {str(e)[:500]}")
+                except Exception: pass
+            await m.answer("Оплата принята, но Telegram не выполнил отправку. Заказ сохранён для проверки; повторно платить не нужно.")
 
     dp.include_router(router)
-    log.info("FENIX Telegram Stars store router registered")
+    log.info("FENIX Telegram gifts store router registered")
