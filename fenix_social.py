@@ -6,6 +6,7 @@ from aiogram.filters import BaseFilter
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 log=logging.getLogger("fenix.social")
+from fenix_display import user_label
 def ph(db):return "%s" if db.use_postgres else "?"
 def rows(db,sql,args=()):
     with db.con() as c:return [dict(x) for x in c.execute(sql,args).fetchall()]
@@ -107,15 +108,11 @@ def register(dp,bot,db,owners=()):
             target=replied.id if replied else (int(args[0]) if args and args[0].isdigit() else None)
             if not target:return await m.answer("Ответь командой !duel на сообщение участника.")
             if target==uid:return await m.answer("Нельзя вызвать на дуэль самого себя.")
-            challenger_name=escape(m.from_user.full_name or m.from_user.first_name or "Игрок")
+            challenger_name=await user_label(bot,chat,uid,m.from_user)
             if replied:
-                opponent_name=escape(replied.full_name or replied.first_name or "Игрок")
+                opponent_name=await user_label(bot,chat,target,replied)
             else:
-                try:
-                    target_chat=await bot.get_chat(target)
-                    opponent_name=escape(target_chat.full_name or target_chat.first_name or target_chat.username or "Игрок")
-                except Exception:
-                    opponent_name="Игрок"
+                opponent_name=await user_label(bot,chat,target)
             if db.use_postgres:
                 x,_=execq(db,f"INSERT INTO cm_duels(chat_id,challenger,opponent,status,created,challenger_name,opponent_name) VALUES({p},{p},{p},'pending',{p},{p},{p}) RETURNING id",(chat,uid,target,db._now(),challenger_name,opponent_name));did=int(x["id"])
             else:
@@ -134,7 +131,7 @@ def register(dp,bot,db,owners=()):
             if db.use_postgres:execq(db,f"INSERT INTO iris_rep(chat_id,uid,score) VALUES({p},{p},1) ON CONFLICT(chat_id,uid) DO UPDATE SET score=iris_rep.score+1",(chat,target))
             else:execq(db,f"INSERT INTO iris_rep(chat_id,uid,score) VALUES({p},{p},1) ON CONFLICT(chat_id,uid) DO UPDATE SET score=score+1",(chat,target))
             x=one(db,f"SELECT score FROM iris_rep WHERE chat_id={p} AND uid={p}",(chat,target))
-            return await m.answer(f"⭐ Репутация <code>{target}</code>: {x['score']}",parse_mode="HTML")
+            return await m.answer(f"⭐ Репутация {await user_label(bot,chat,target)}: {x['score']}",parse_mode="HTML")
         if cmd in ("топреп","toprep"):
             rr=rows(db,f"SELECT uid,score FROM iris_rep WHERE chat_id={p} ORDER BY score DESC LIMIT 10",(chat,))
             return await m.answer("<b>⭐ ТОП РЕПУТАЦИИ</b>\n"+("\n".join(f"{i+1}. <code>{x['uid']}</code> — {x['score']}" for i,x in enumerate(rr)) if rr else "Пока нет оценок."),parse_mode="HTML")
