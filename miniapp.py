@@ -551,9 +551,17 @@ async def audio_track_delete(req):
 
 # FENIX Wheel: 100 FNZ equals the requested 50 RUB at the current 1 RUB = 2 FNZ rate.
 WHEEL_ITEMS = [p for p in shop.PRODUCTS if p.get("code") not in ("vehicle_plate",)]
-WHEEL_WEIGHTS = [
-    ("nothing", 60.0), ("fnz500", 15.0), ("cash", 10.0),
-] + [(p["code"], 15.0 / max(1, len(WHEEL_ITEMS))) for p in WHEEL_ITEMS]
+_wheel_items_weight = 15.0 / max(1, len(WHEEL_ITEMS))
+WHEEL_WEIGHTS = []
+# Interleave low-probability prize sectors between empty sectors around the wheel.
+for _i in range(max(12, len(WHEEL_ITEMS))):
+    WHEEL_WEIGHTS.append(("nothing", 5.0))
+    if _i in (0, 4, 8):
+        WHEEL_WEIGHTS.append(("fnz500", 5.0))
+    if _i in (0, 6):
+        WHEEL_WEIGHTS.append(("cash", 5.0))
+    if _i < len(WHEEL_ITEMS):
+        WHEEL_WEIGHTS.append((WHEEL_ITEMS[_i]["code"], _wheel_items_weight))
 
 async def wheel_home(req):
     user_id=uid(req)
@@ -562,7 +570,14 @@ async def wheel_home(req):
         "cost_rub":50,
         "balance":shop.balance(db,user_id),
         "history":db._all(f"SELECT id,prize_type,prize_name,prize_value,created FROM wheel_spins WHERE uid={db._ph()} ORDER BY id DESC LIMIT 20",(user_id,)),
-        "items":[{"code":p["code"],"name":p["name"],"image":{ "bmw_m3":"/assets/bmw-m3.png","cybertruck":"/assets/cybertruck.png","audi_tt":"/assets/audi-tt.png","lancer_evo":"/assets/lancer-evolution.png","stage3_chip":"/assets/chip-stage-3.png","drift_smoke":"/assets/drift-smoke.svg","audio_system":"/assets/audio-system.png","nitro":"/assets/nitro.png","neon":"/assets/neon.png","military_id":"/assets/military-id.png"}.get(p["code"],"/assets/vehicle-number.png"),"weight":round(w,3)} for (code,w) in WHEEL_WEIGHTS if code not in ("nothing","fnz500","cash") for p in WHEEL_ITEMS if p["code"]==code],
+        "items":[{"code":p["code"],"name":p["name"],"image":{ "bmw_m3":"/assets/bmw-m3.png","cybertruck":"/assets/cybertruck.png","audi_tt":"/assets/audi-tt.png","lancer_evo":"/assets/lancer-evolution.png","stage3_chip":"/assets/chip-stage-3.png","drift_smoke":"/assets/drift-smoke.svg","audio_system":"/assets/audio-system.png","nitro":"/assets/nitro.png","neon":"/assets/neon.png","military_id":"/assets/military-id.png"}.get(p["code"],"/assets/vehicle-number.png"),"weight":round(_wheel_items_weight,3)} for p in WHEEL_ITEMS],
+        "sectors":[
+            {"code":code,"name":("Пусто" if code=="nothing" else "500 FNZ" if code=="fnz500" else "1–5 млн игровой валюты" if code=="cash" else next((p["name"] for p in WHEEL_ITEMS if p["code"]==code),"Приз")),
+             "image":("/assets/prize-empty.svg" if code=="nothing" else "/assets/prize-fnz.svg" if code=="fnz500" else "/assets/prize-cash.svg" if code=="cash" else { "bmw_m3":"/assets/bmw-m3.png","cybertruck":"/assets/cybertruck.png","audi_tt":"/assets/audi-tt.png","lancer_evo":"/assets/lancer-evolution.png","stage3_chip":"/assets/chip-stage-3.png","drift_smoke":"/assets/drift-smoke.svg","audio_system":"/assets/audio-system.png","nitro":"/assets/nitro.png","neon":"/assets/neon.png","military_id":"/assets/military-id.png"}.get(code,"/assets/vehicle-number.png")),
+             "type":("nothing" if code=="nothing" else "fnz" if code=="fnz500" else "game_cash" if code=="cash" else "item"),
+             "weight":round(weight,3)}
+            for code,weight in WHEEL_WEIGHTS
+        ],
         "probabilities":{"nothing":60,"fnz500":15,"cash":10,"shop_items_total":15},"special_images":{"nothing":"/assets/prize-empty.svg","fnz500":"/assets/prize-fnz.svg","cash":"/assets/prize-cash.svg"}
     })
 
