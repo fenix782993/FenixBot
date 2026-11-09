@@ -181,7 +181,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
             ]+[[InlineKeyboardButton(text="Обновить список",callback_data="cmui:home")]])
             return await m.answer("<b>FENIX MANAGER</b>\nВыбери беседу для управления:",parse_mode="HTML",reply_markup=keyboard)
         command_text=raw
-        is_command=raw.startswith(("!","." ,"/")) or raw.lower().startswith(("ирис ","ириска "))
+        is_command=raw.startswith(("!","." ,"/","+")) or raw.lower().startswith(("ирис ","ириска "))
         if not is_command:
             if m.chat.type!="private":
                 s=chat_settings(db,m.chat.id)
@@ -202,12 +202,14 @@ def register_chat_manager(dp, bot, db, owner_ids):
             return
         if raw.lower().startswith(("ирис ","ириска ")):
             command_text=raw.split(maxsplit=1)[1]
+        elif raw.startswith("+"):
+            command_text=raw
         else:
             command_text=raw[1:]
         promote = re.match(r"^(?:\+модер|\+админ|повысить)\s*(?:(\d)\s+)?(.+)$", command_text, re.I)
         demote = re.match(r"^(?:понизить)\s+(.+)$", command_text, re.I)
         if promote:
-            rank = int(promote.group(1) or 1)
+            rank = int(promote.group(1) or (2 if command_text.lower().startswith('+модер') else 3 if command_text.lower().startswith('+админ') else 1))
             mapped = {1:20, 2:40, 3:60, 4:80, 5:100}.get(rank)
             if mapped is None: return await reply(m,"Ранг должен быть от 1 до 5.")
             command_text = f"setrole {promote.group(2)} {mapped}"
