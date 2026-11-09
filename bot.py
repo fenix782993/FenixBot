@@ -354,6 +354,37 @@ def _load_emoji_pack():
 def _save_button_emoji_map(mapping):
     db.set_setting("button_custom_emoji_map", json.dumps(mapping, ensure_ascii=False))
 
+PRELOADED_PREMIUM_EMOJI_IDS = """6149708975286787333 6149776427748170057 6149682943490006685 6149911994095902077 6152144874578648179 6152430107651742289 6149789329829928855 6149949240052293087 6149688947854285838 6150170168875032208 6151932930827492892 6150008304442548288 6150142084083883107 6149937982943011430 6149727641214656643 6152194537285491848 6150207023989398832 6152113959404051144 6150205417671631185 6150109901893934118 6150142157098327787 6149838365471546625 6149783016228003257 6149701867115912061 6149726447213748936 6150064967946083503 6150173076567892508 6150170246184443369 6149802124537502762 6149986451648945964 6150140022499581458 6150122838335429687 6149747050171866674 6150225926140469315 6149949733973532005 6150123194817715213 6149816564217552042 6150174794554810216 6149973390653399100 6150222576065976966 6150009867810643451 6149726477278517861 6149919609072918203 6152443147172453549 6149686727356193752 6149893139189472556 6150013570072453885 6149751916369812052 6149686650046782697 6149966720569189625 6150077947337252309 6149875912075649367 6150067231393849817 6149909842317286351 6149740096619814521 6149938987965358495 6150186438211148313 6149764994545228734 6149773653199297342 6149756481920048719 6150002270013496700 6149913484449555062 6149994401633410345 6149952680321097572 6150077586559999187 6149895428407040450 6150166720016291837 6149888410430479999 6150111143139482161 6149997107462808409 6149844670483536965 6149902725556476643 6150213397720866930 6150200749042179429 6149850928250887426 6150003202021401087 6151966255478742047 6150067510566722669 6149841543747345507 6149997657218621734 6149752805428042853 6149875070262058497 6150220175179259460 6150080670346519674 6150211538000027100""".split()
+
+
+@dp.message(Command("emojiids85"))
+async def import_preloaded_emoji_ids(m: Message):
+    if not is_owner(m.from_user.id):
+        return await m.answer("⛔ Импортировать Premium Emoji может только владелец бота.")
+    try:
+        stickers = await bot.get_custom_emoji_stickers(custom_emoji_ids=PRELOADED_PREMIUM_EMOJI_IDS)
+    except Exception:
+        logging.exception("Telegram не смог проверить список из 85 Custom Emoji ID")
+        return await m.answer(
+            "❌ Telegram не подтвердил список ID. Проверь логи сервиса и Premium у аккаунта-владельца бота."
+        )
+    items = []
+    seen = set()
+    for sticker in stickers:
+        custom_id = str(getattr(sticker, "custom_emoji_id", "") or "")
+        if custom_id and custom_id not in seen:
+            seen.add(custom_id)
+            items.append({"id": custom_id, "emoji": getattr(sticker, "emoji", None) or "💎"})
+    db.set_setting("premium_emoji_pack", json.dumps(items, ensure_ascii=False))
+    await m.answer(
+        "💎 <b>ПРОВЕРКА 85 PREMIUM EMOJI ЗАВЕРШЕНА</b>\\n"
+        f"Передано ID: <b>{len(PRELOADED_PREMIUM_EMOJI_IDS)}</b>\\n"
+        f"Подтверждено Telegram: <b>{len(items)}</b>\\n"
+        f"Не найдено: <b>{len(PRELOADED_PREMIUM_EMOJI_IDS)-len(items)}</b>\\n\\n"
+        "Теперь отправь /emojilist. Если Telegram вернул все 85 — они появятся в списке.",
+        parse_mode="HTML"
+    )
+
 @dp.message(Command("emojipack"))
 async def import_emoji_pack(m: Message):
     if not is_owner(m.from_user.id):
@@ -398,7 +429,7 @@ async def import_emoji_pack(m: Message):
         ""
     ]
     entities = []
-    utf16_offset = sum(len(line.encode("utf-16-le")) // 2 for line in lines) + len(lines)
+    utf16_offset = sum(len(line.encode("utf-16-le")) // 2 for line in lines) + max(0, len(lines) - 1)
     for i, item in enumerate(items[:30], 1):
         # Telegram требует, чтобы custom_emoji entity оборачивала ровно один emoji fallback,
         # а не букву X. Берём emoji из StickerSet и заменяем его Premium-рендером по ID.
@@ -408,7 +439,7 @@ async def import_emoji_pack(m: Message):
         entities.append(MessageEntity(
             type="custom_emoji",
             offset=marker_offset,
-            length=1,
+            length=len(fallback_emoji.encode("utf-16-le")) // 2,
             custom_emoji_id=str(item["id"])
         ))
         lines.append(line)
@@ -421,7 +452,7 @@ async def import_emoji_pack(m: Message):
         "Список кнопок: /btnlist",
         "Список эмодзи: /emojilist"
     ]
-    await m.answer("\\n".join(lines), entities=entities)
+    await m.answer("\n".join(lines), entities=entities)
 
 @dp.message(Command("emojistatus"))
 async def emoji_pack_status(m: Message):
@@ -442,7 +473,7 @@ async def emoji_pack_status(m: Message):
         "Доступные подходящие символы: " + (html.escape(" ".join(available)) if available else "нет"),
         f"Кнопок с назначенными ID: <b>{len(premium_button_icons())}</b>",
     ]
-    await m.answer("\\n".join(lines), parse_mode="HTML")
+    await m.answer("\n".join(lines), parse_mode="HTML")
 
 
 @dp.message(Command("emojilist"))
@@ -458,7 +489,7 @@ async def list_pack_emojis(m: Message):
     lines = ["💎 PREMIUM CUSTOM EMOJI ИЗ ПАКА", "━━━━━━━━━━━━━━━━━━"]
     entities = []
     # Сначала учитываем обе строки заголовка и переводы строк.
-    utf16_offset = sum(len(line.encode("utf-16-le")) // 2 for line in lines) + len(lines)
+    utf16_offset = sum(len(line.encode("utf-16-le")) // 2 for line in lines) + max(0, len(lines) - 1)
     for i, item in enumerate(items, 1):
         custom_id = str(item.get("id") or "")
         # custom_emoji entity обязана накрывать один валидный emoji-символ,
@@ -470,7 +501,7 @@ async def list_pack_emojis(m: Message):
             entities.append(MessageEntity(
                 type="custom_emoji",
                 offset=marker_offset,
-                length=1,
+                length=len(marker.encode("utf-16-le")) // 2,
                 custom_emoji_id=custom_id
             ))
         lines.append(line)
