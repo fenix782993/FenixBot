@@ -224,14 +224,8 @@ def register(dp, bot, db, owner_ids=()):
         order=one(db,f"SELECT * FROM tg_store_orders WHERE payload={ph(db)}",(q.invoice_payload,))
         ok=bool(order and order["status"]=="invoice" and int(order["buyer_uid"])==q.from_user.id and int(order["stars"])==int(q.total_amount) and q.currency=="XTR")
         error="Счёт недействителен. Открой магазин заново."
-        if ok:
-            try:
-                if await bot_star_balance() < int(order["stars"])-MARKUP_STARS:
-                    ok=False
-                    error="У магазина временно недостаточно Stars для отправки подарка. Попробуй позже."
-            except Exception:
-                ok=False
-                error="Не удалось проверить баланс магазина. Попробуй позже."
+        # Не проверяем баланс до оплаты: Stars по счёту должны поступить боту.
+        # После успешной оплаты проверяем, что номинала хватает на sendGift.
         await q.answer(ok=ok,error_message=None if ok else error)
 
     @router.message(F.successful_payment)
