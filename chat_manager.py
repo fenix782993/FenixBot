@@ -46,6 +46,26 @@ def one(db, sql, args=()):
     with db.con() as c:
         x=c.execute(sql,args).fetchone()
         return dict(x) if x else None
+
+def premium_affection_emoji(db, kind):
+    """Return an actual Custom Emoji HTML tag from the imported pack, or empty text."""
+    preferred = {
+        "kiss": ("💋", "😘", "💗", "💖", "❤️", "💛", "💕"),
+        "hug": ("🫂", "🤗", "💞", "💗", "💛", "❤️", "💕"),
+    }.get(kind, ())
+    try:
+        pack = json.loads(db.setting("premium_emoji_pack", "[]") or "[]")
+    except Exception:
+        pack = []
+    for wanted in preferred:
+        for item in pack:
+            if not isinstance(item, dict):
+                continue
+            emoji_id = str(item.get("id") or "")
+            fallback = str(item.get("emoji") or "")
+            if emoji_id.isdigit() and fallback == wanted:
+                return f'<tg-emoji emoji-id="{emoji_id}">{html.escape(fallback)}</tg-emoji>'
+    return ""
 def init_schema(db):
     with db.con() as c:
         if db.use_postgres:
@@ -494,7 +514,11 @@ def register_chat_manager(dp, bot, db, owner_ids):
             if not target and m.reply_to_message and m.reply_to_message.from_user: target=m.reply_to_message.from_user.id
             if not target: return await reply(m,"Ответь на сообщение участника или укажи его Telegram ID.")
             verb="поцеловал(а)" if cmd=="kiss" else "обнял(а)"
-            return await reply(m,f"{m.from_user.full_name} {verb} {await target_name(chat,target)} 💛")
+            custom_emoji = premium_affection_emoji(db, cmd)
+            suffix = (" " + custom_emoji) if custom_emoji else ""
+            if not custom_emoji:
+                logging.warning("No matching Premium affection emoji in imported pack for action %s", cmd)
+            return await reply(m,f"{html.escape(m.from_user.full_name)} {verb} {await target_name(chat,target)}{suffix}")
         if cmd in ("unity","unites","addunity","removeunity","editunity","deleteunity"):
             if not can(db,chat,uid,100) and uid not in owner_ids: return await reply(m,"⛔ Только владелец беседы.")
             p=ph(db)
