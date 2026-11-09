@@ -209,10 +209,15 @@ def register_chat_manager(dp, bot, db, owner_ids):
         promote = re.match(r"^(?:\+модер|\+админ|повысить)\s*(?:(\d)\s+)?(.+)$", command_text, re.I)
         demote = re.match(r"^(?:понизить)\s+(.+)$", command_text, re.I)
         if promote:
-            rank = int(promote.group(1) or (2 if command_text.lower().startswith('+модер') else 3 if command_text.lower().startswith('+админ') else 1))
-            mapped = {1:20, 2:40, 3:60, 4:80, 5:100}.get(rank)
-            if mapped is None: return await reply(m,"Ранг должен быть от 1 до 5.")
-            command_text = f"setrole {promote.group(2)} {mapped}"
+            target_token = promote.group(2).strip()
+            if command_text.lower().startswith("повысить"):
+                current = get_role(db, m.chat.id, int(target_token))[0] if target_token.isdigit() else 0
+                mapped = min(100, current + 20)
+            else:
+                rank = int(promote.group(1) or (2 if command_text.lower().startswith("+модер") else 3))
+                mapped = {1:20, 2:40, 3:60, 4:80, 5:100}.get(rank)
+                if mapped is None: return await reply(m,"Ранг должен быть от 1 до 5.")
+            command_text = f"setrole {target_token} {mapped}"
         elif demote:
             target_id = demote.group(1).strip()
             current_level = get_role(db,m.chat.id,int(target_id))[0] if target_id.isdigit() else 0
