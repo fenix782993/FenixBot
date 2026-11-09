@@ -400,7 +400,10 @@ async def import_emoji_pack(m: Message):
     entities = []
     utf16_offset = sum(len(line.encode("utf-16-le")) // 2 for line in lines) + len(lines)
     for i, item in enumerate(items[:30], 1):
-        line = f"{i}. X  ID: {item['id']}"
+        # Telegram требует, чтобы custom_emoji entity оборачивала ровно один emoji fallback,
+        # а не букву X. Берём emoji из StickerSet и заменяем его Premium-рендером по ID.
+        fallback_emoji = str(item.get("emoji") or "💎")
+        line = f"{i}. {fallback_emoji}  ID: {item['id']}"
         marker_offset = utf16_offset + len(f"{i}. ".encode("utf-16-le")) // 2
         entities.append(MessageEntity(
             type="custom_emoji",
@@ -458,9 +461,11 @@ async def list_pack_emojis(m: Message):
     utf16_offset = sum(len(line.encode("utf-16-le")) // 2 for line in lines) + len(lines)
     for i, item in enumerate(items, 1):
         custom_id = str(item.get("id") or "")
-        marker = "X"
+        # custom_emoji entity обязана накрывать один валидный emoji-символ,
+        # обычная буква X не является допустимым fallback для Telegram.
+        marker = str(item.get("emoji") or "💎")
         line = f"{i}. {marker}  ID: {custom_id}"
-        marker_offset = utf16_offset + len(f"{i}. ")
+        marker_offset = utf16_offset + len(f"{i}. ".encode("utf-16-le")) // 2
         if custom_id:
             entities.append(MessageEntity(
                 type="custom_emoji",
