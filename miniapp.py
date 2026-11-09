@@ -879,12 +879,12 @@ async def main():
     from fenix_id import register as register_fenix_id
     register_fenix_id(core.dp, db)
     # Register narrow command routers before the legacy catch-all text router.
-    from iris_modules import register as register_iris_modules
-    register_iris_modules(core.dp, tg, db, core.OWNER_IDS)
-    from iris_social import register as register_iris_social
-    register_iris_social(core.dp, tg, db, core.OWNER_IDS)
-    from iris_features import register as register_iris_features
-    register_iris_features(core.dp, tg, db)
+    from fenix_modules import register as register_fenix_modules
+    register_fenix_modules(core.dp, tg, db, core.OWNER_IDS)
+    from fenix_social import register as register_fenix_social
+    register_fenix_social(core.dp, tg, db, core.OWNER_IDS)
+    from fenix_features import register as register_fenix_features
+    register_fenix_features(core.dp, tg, db)
     from commands_article import register as register_commands_reference, ensure_article
     register_commands_reference(core.dp, db)
     try:
