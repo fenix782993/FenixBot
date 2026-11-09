@@ -83,6 +83,10 @@ SECTIONS=[
 "!ban [ДНИ] ПРИЧИНА — заблокировать участника; без срока — бессрочно.",
 "!unban ID — снять блокировку.",
 "!getban ID — проверить блокировку.",
+"!nick или !getnick — посмотреть сохранённый игровой ник.",
+"!nicknames — список сохранённых игровых ников и должностей.",
+"!nonames — количество записей без назначенной роли/ника в базе (не полный список участников Telegram).",
+"!getbynick НИК — найти пользователя по игровому нику.",
 "!banlist — список блокировок.",
 "!del — удалить сообщение (ответом).",
 "!purge N — удалить последние N сообщений.",
@@ -113,7 +117,7 @@ SECTIONS=[
 "!settingsinvite — показать режим приглашений.",
 "!filteradd ФРАЗА — добавить фильтр.",
 "!filterdel ФРАЗА — удалить фильтр.",
-"!filteredit СТАРАЯ => НОВАЯ — изменить фильтр (если поддерживается настройками модуля).",
+"!filteredit — показать список фильтров (дополнительный псевдоним !filters).",
 "!filters — список фильтров.",
 "!addlink URL — добавить разрешённую ссылку.",
 "!whitelistlinks — показать разрешённые ссылки.",
@@ -121,7 +125,9 @@ SECTIONS=[
 "!triggeradd ФРАЗА => ОТВЕТ — добавить автоответ.",
 "!triggers — список автоответов.",
 "!triggerdel ФРАЗА — удалить автоответ.",
-"!logs — журнал действий и модерации."
+"!logs — журнал действий и модерации.",
+"!zov — команда вызова/объявления; Telegram не позволяет боту гарантированно получить полный список участников для массового упоминания.",
+"!voice, !mafia, !emoji, !enick — зарезервированные команды; в текущем Chat Manager функции не активированы."
 ]),
 ("Заметки, закладки, таймеры и опросы",[
 "!note add ТЕКСТ — сохранить заметку.",
@@ -196,7 +202,7 @@ async def ensure_article(db):
     existing=(db.setting("fenix_commands_article_url","") or "").strip()
     saved_token=(db.setting("fenix_commands_article_token","") or "").strip()
     saved_path=(db.setting("fenix_commands_article_path","") or "").strip()
-    version="fenix-manager-full-2026-11-09-v4"
+    version="fenix-manager-full-2026-11-09-v5"
     if existing and db.setting("fenix_commands_article_version","") == version:
         return existing
     timeout=aiohttp.ClientTimeout(total=35)
