@@ -146,7 +146,9 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 [InlineKeyboardButton(text=(x["title"] or "Беседа")[:32],callback_data=f"cmui:chat:{x['chat_id']}")] for x in chats
             ]+[[InlineKeyboardButton(text="Обновить список",callback_data="cmui:home")]])
             return await m.answer("<b>FENIX · CHAT MANAGER</b>\\nВыбери беседу для управления:",parse_mode="HTML",reply_markup=keyboard)
-        if not raw.startswith("!"): 
+        command_text=raw
+        is_command=raw.startswith(("!","." ,"/")) or raw.lower().startswith(("ирис ","ириска "))
+        if not is_command:
             if m.chat.type!="private":
                 s=chat_settings(db,m.chat.id)
                 if s.get("silence") and not can(db,m.chat.id,m.from_user.id,40):
@@ -158,13 +160,21 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 if any(x["phrase"].casefold() in low for x in filters):
                     try: await m.delete()
                     except Exception: pass
-                elif re.search(r"https?://|t\.me/",raw,re.I) and not can(db,m.chat.id,m.from_user.id,40):
+                elif re.search(r"https?://|t\\.me/",raw,re.I) and not can(db,m.chat.id,m.from_user.id,40):
                     allowed=rows(db,f"SELECT url FROM cm_links WHERE chat_id={ph(db)}",(m.chat.id,))
                     if not any(x["url"].lower() in raw.lower() for x in allowed):
                         try: await m.delete()
                         except Exception: pass
             return
-        parts=raw[1:].split(maxsplit=1); name=parts[0].lower().split("@")[0]; argtext=parts[1] if len(parts)>1 else ""
+        if raw.lower().startswith(("ирис ","ириска ")):
+            command_text=raw.split(maxsplit=1)[1]
+        else:
+            command_text=raw[1:]
+            if command_text.startswith("/"):
+                command_text=command_text.split("@",1)[0]+( " "+raw.split(maxsplit=1)[1] if len(raw.split(maxsplit=1))>1 else "")
+            elif command_text.startswith(("!",".")):
+                command_text=command_text[1:]
+        parts=command_text.split(maxsplit=1); name=parts[0].lower().split("@")[0] if parts else ""; argtext=parts[1] if len(parts)>1 else ""
         cmd=ALIASES.get(name)
         if not cmd: return
         if m.chat.type=="private":
@@ -174,7 +184,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
         await ensure_creator(m)
         chat=m.chat.id; uid=m.from_user.id; args=argtext.split()
         if cmd=="help":
-            return await reply(m,"<b>FENIX CHAT MANAGER · КОМАНДЫ</b>\n\n<b>Участник</b>: !help, !ping, !rules, !admins, !report, !try, !kiss, !obnyat\n<b>Помощник · 20</b>: !stats, !chatinfo, !mute, !unmute, !kick, !warn, !unwarn, !getwarn, !warnhistory, !warnlist, !getnick, !setnick, !removenick, !nicknames, !nonames, !getbynick, !zov, !logs\n<b>Модератор · 40</b>: !ban, !unban, !banlist, !addhelper, !setrole, !removerole, !roles, !silence, !wipe\n<b>Администратор · 60</b>: !addmoder, !addadmin, !filters, !filteradd, !filterdel, !addlink, !whitelistlinks\n<b>Главный администратор · 80</b>: !pin, !unpin, !newrole, !deleterole, !welcome, !setrules\n<b>Владелец · 100</b>: !setup, !settings, !setsettings, !settingsmute, !settingsinvite, !unity, !unites, !addunity, !removeunity, !editunity, !deleteunity\n\nВремя мута: 30s, 15m, 2h, 3d. Для действий над участником ответь на его сообщение или укажи числовой Telegram ID.")
+            return await reply(m,"<b>FENIX CHAT MANAGER · КОМАНДЫ</b>\n\n<b>Участник</b>: !help, !ping, !rules, !admins, !report, !try, !kiss, !obnyat\n<b>Помощник · 20</b>: !stats, !chatinfo, !mute, !unmute, !kick, !warn, !unwarn, !getwarn, !warnhistory, !warnlist, !getnick, !setnick, !removenick, !nicknames, !nonames, !getbynick, !zov, !logs\n<b>Модератор · 40</b>: !ban, !unban, !banlist, !addhelper, !setrole, !removerole, !roles, !silence, !wipe\n<b>Администратор · 60</b>: !addmoder, !addadmin, !filters, !filteradd, !filterdel, !addlink, !whitelistlinks\n<b>Главный администратор · 80</b>: !pin, !unpin, !newrole, !deleterole, !welcome, !setrules\n<b>Владелец · 100</b>: !setup, !settings, !setsettings, !settingsmute, !settingsinvite, !unity, !unites, !addunity, !removeunity, !editunity, !deleteunity\n\n<b>Дополнительные модули:</b> !note add/list/del, !bookmark, !bookmarks, !timer 10m текст, !vote вопрос | вариант 1 | вариант 2, !access команда уровень|off, !triggeradd фраза => ответ, !triggers, !triggerdel, !purge N, !del, !dice, !rep, !топреп, !giveaway 1h приз, !gstop ID.\n<b>Stars-магазин:</b> /myid, /giftshop ID, /premiumgift ID, /starsorders.\n\nКоманды принимают префиксы !, точку, /, а также «Ирис команда» и «Ириска команда». Время мута: 30s, 15m, 2h, 3d. Для действий над участником ответь на его сообщение или укажи числовой Telegram ID.")
         if cmd=="start":
             return await reply(m,"<b>FENIX CHAT MANAGER подключён</b>\nБеседа: "+(m.chat.title or "без названия")+"\nДля списка возможностей используй !help.")
         if cmd=="ping":
