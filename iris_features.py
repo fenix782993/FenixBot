@@ -83,12 +83,14 @@ def register(dp,bot,db):
         if db.use_postgres: run(db,f"INSERT INTO iris_giveaway_users(gid,uid) VALUES({p},{p}) ON CONFLICT DO NOTHING",(gid,c.from_user.id))
         else: run(db,f"INSERT OR IGNORE INTO iris_giveaway_users(gid,uid) VALUES({p},{p})",(gid,c.from_user.id))
         await c.answer("Ты участвуешь!")
-    @router.message(F.text.regexp(r"^!(dice|кубик|coin|монетка|profile|профиль|rep|реп|note|заметка|notes|заметки|bookmark|закладка|bookmarks|закладки|clan|клан|marry|брак|divorce|развод|timer|таймер|giveaway|розыгрыш)\b"))
+    feature_commands="dice|кубик|coin|монетка|profile|профиль|rep|реп|note|заметка|notes|заметки|bookmark|закладка|bookmarks|закладки|clan|клан|marry|брак|divorce|развод|timer|таймер|giveaway|розыгрыш"
+    feature_pattern=re.compile(r"(?i)^(?:[!./](?:"+feature_commands+r")(?=$|[^a-zA-Z0-9_])|ирис(?:ка)?[ ]+(?:"+feature_commands+r")(?=$|[^a-zA-Z0-9_]))")
+    @router.message(F.text.regexp(feature_pattern))
     async def features(m):
         if m.chat.type=="private": return
-        raw=(m.text or "").strip(); parts=raw[1:].split(maxsplit=1); cmd=parts[0].lower(); arg=parts[1] if len(parts)>1 else ""; args=arg.split(); uid=m.from_user.id; chat=m.chat.id; p=ph(db)
-        if cmd in ("dice","кубик"):
-            value=random.randint(1,6); return await m.answer(f"🎲 {m.from_user.full_name}: <b>{value}</b>",parse_mode="HTML")
+        raw=(m.text or "").strip()
+        command_text=raw.split(maxsplit=1)[1] if raw.lower().startswith(("ирис ","ириска ")) else raw[1:]
+        parts=command_text.split(maxsplit=1); cmd=parts[0].lower(); arg=parts[1] if len(parts)>1 else ""; args=arg.split(); uid=m.from_user.id; chat=m.chat.id; p=ph(db)
         if cmd in ("coin","монетка"):
             return await m.answer("🪙 "+random.choice(["Орёл","Решка"]))
         if cmd in ("profile","профиль"):
