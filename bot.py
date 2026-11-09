@@ -385,7 +385,7 @@ async def import_emoji_pack(m: Message):
         ""
     ]
     entities = []
-    utf16_offset = sum(len(line.encode("utf-16-le")) // 2 + 1 for line in lines)
+    utf16_offset = sum(len(line.encode("utf-16-le")) // 2 for line in lines) + max(0, len(lines) - 1)
     for i, item in enumerate(items[:30], 1):
         line = f"{i}. X  ID: {item['id']}"
         marker_offset = utf16_offset + len(f"{i}. ".encode("utf-16-le")) // 2
