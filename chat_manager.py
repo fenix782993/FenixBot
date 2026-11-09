@@ -145,7 +145,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
             keyboard=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text=(x["title"] or "Беседа")[:32],callback_data=f"cmui:chat:{x['chat_id']}")] for x in chats
             ]+[[InlineKeyboardButton(text="Обновить список",callback_data="cmui:home")]])
-            return await m.answer("<b>FENIX · CHAT MANAGER</b>\\nВыбери беседу для управления:",parse_mode="HTML",reply_markup=keyboard)
+            return await m.answer("<b>FENIX MANAGER</b>\\nВыбери беседу для управления:",parse_mode="HTML",reply_markup=keyboard)
         command_text=raw
         is_command=raw.startswith(("!","." ,"/")) or raw.lower().startswith(("ирис ","ириска "))
         if not is_command:
@@ -179,7 +179,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
         if not cmd: return
         if m.chat.type=="private":
             if cmd in ("help","ping"): 
-                return await reply(m,"<b>FENIX CHAT MANAGER</b>\nКоманды управления работают внутри привязанной группы. Добавь бота в беседу и выдай права администратора.")
+                return await reply(m,"<b>FENIX MANAGER</b>\nКоманды управления работают внутри привязанной группы. Добавь бота в беседу и выдай права администратора.")
             return
         await ensure_creator(m)
         chat=m.chat.id; uid=m.from_user.id; args=argtext.split()
@@ -187,11 +187,11 @@ def register_chat_manager(dp, bot, db, owner_ids):
         if access and (not int(access.get("enabled",1)) or get_role(db,chat,uid)[0] < int(access.get("min_level",0))):
             return await reply(m,"⛔ Доступ к этой команде ограничен настройками беседы.")
         if cmd=="help":
-            return await reply(m,"<b>FENIX CHAT MANAGER · КОМАНДЫ</b>\n\n<b>Участник</b>: !help, !ping, !rules, !admins, !report, !try, !kiss, !obnyat\n<b>Помощник · 20</b>: !stats, !chatinfo, !mute, !unmute, !kick, !warn, !unwarn, !getwarn, !warnhistory, !warnlist, !getnick, !setnick, !removenick, !nicknames, !nonames, !getbynick, !zov, !logs\n<b>Модератор · 40</b>: !ban, !unban, !banlist, !addhelper, !setrole, !removerole, !roles, !silence, !wipe\n<b>Администратор · 60</b>: !addmoder, !addadmin, !filters, !filteradd, !filterdel, !addlink, !whitelistlinks\n<b>Главный администратор · 80</b>: !pin, !unpin, !newrole, !deleterole, !welcome, !setrules\n<b>Владелец · 100</b>: !setup, !settings, !setsettings, !settingsmute, !settingsinvite, !unity, !unites, !addunity, !removeunity, !editunity, !deleteunity\n\n<b>Дополнительные модули:</b> !note add/list/del, !bookmark, !bookmarks, !timer 10m текст, !vote вопрос | вариант 1 | вариант 2, !access команда уровень|off, !triggeradd фраза => ответ, !triggers, !triggerdel, !purge N, !del, !dice, !rep, !топреп, !giveaway 1h приз, !gstop ID, !antispam on|off|status.\n<b>Stars-магазин:</b> /myid, /giftshop ID, /premiumgift ID, /starsorders.\n\nКоманды принимают префиксы !, точку, /, а также «Ирис команда» и «Ириска команда». Время мута: 30s, 15m, 2h, 3d. Для действий над участником ответь на его сообщение или укажи числовой Telegram ID.")
+            return await reply(m,"<b>FENIX MANAGER · КОМАНДЫ</b>\n\n<b>Участник</b>: !help, !ping, !rules, !admins, !report, !try, !kiss, !obnyat\n<b>Помощник · 20</b>: !stats, !chatinfo, !mute, !unmute, !kick, !warn, !unwarn, !getwarn, !warnhistory, !warnlist, !getnick, !setnick, !removenick, !nicknames, !nonames, !getbynick, !zov, !logs\n<b>Модератор · 40</b>: !ban, !unban, !banlist, !addhelper, !setrole, !removerole, !roles, !silence, !wipe\n<b>Администратор · 60</b>: !addmoder, !addadmin, !filters, !filteradd, !filterdel, !addlink, !whitelistlinks\n<b>Главный администратор · 80</b>: !pin, !unpin, !newrole, !deleterole, !welcome, !setrules\n<b>Владелец · 100</b>: !setup, !settings, !setsettings, !settingsmute, !settingsinvite, !unity, !unites, !addunity, !removeunity, !editunity, !deleteunity\n\n<b>Дополнительные модули:</b> !note add/list/del, !bookmark, !bookmarks, !timer 10m текст, !vote вопрос | вариант 1 | вариант 2, !access команда уровень|off, !triggeradd фраза => ответ, !triggers, !triggerdel, !purge N, !del, !dice, !rep, !топреп, !giveaway 1h приз, !gstop ID, !antispam on|off|status.\n<b>Stars-магазин:</b> /myid, /giftshop ID, /premiumgift ID, /starsorders.\n\nКоманды принимают префиксы !, точку и /. Время мута: 30s, 15m, 2h, 3d. Для действий над участником ответь на его сообщение или укажи числовой Telegram ID.")
         if cmd=="start":
-            return await reply(m,"<b>FENIX CHAT MANAGER подключён</b>\nБеседа: "+(m.chat.title or "без названия")+"\nДля списка возможностей используй !help.")
+            return await reply(m,"<b>FENIX MANAGER подключён</b>\nБеседа: "+(m.chat.title or "без названия")+"\nДля списка возможностей используй !help.")
         if cmd=="ping":
-            return await reply(m,"<b>FENIX CHAT MANAGER</b>\nСтатус: работает\nБеседа: активна")
+            return await reply(m,"<b>FENIX MANAGER</b>\nСтатус: работает\nБеседа: активна")
         if cmd=="rules":
             s=chat_settings(db,chat); return await reply(m,s.get("rules") or "Правила беседы ещё не настроены.")
         if cmd=="setup":
@@ -440,7 +440,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
         if c.from_user.id not in owner_ids and not db.is_admin(c.from_user.id):
             return await c.answer("Нет доступа",show_alert=True)
         chats=rows(db,"SELECT chat_id,title,updated FROM cm_settings ORDER BY updated DESC LIMIT 50")
-        body="<b>FENIX · CHAT MANAGER</b>\\n\\n"
+        body="<b>FENIX MANAGER</b>\\n\\n"
         if chats:
             body += "\\n".join(f"• {x['title'] or 'Без названия'} — <code>{x['chat_id']}</code>" for x in chats)
         else:
@@ -485,8 +485,8 @@ def register_chat_manager(dp, bot, db, owner_ids):
             [InlineKeyboardButton(text="⚙️ Настройки беседы",callback_data=f"cmui:section:{chat_id}:settings")],
             [InlineKeyboardButton(text="🛡 Модерация",callback_data=f"cmui:section:{chat_id}:moderation")],
             [InlineKeyboardButton(text="👥 Роли и руководство",callback_data=f"cmui:section:{chat_id}:roles")],
-            [InlineKeyboardButton(text="📜 Журнал действий",callback_data=f"cmui:section:{chat_id}:logs")],
-            [InlineKeyboardButton(text="📚 Команды и возможности",callback_data=f"cmui:section:{chat_id}:commands")],
+            [InlineKeyboardButton(text="🎁 Telegram-подарки",callback_data="cmui:gifts")],
+            [InlineKeyboardButton(text="📖 Список команд",callback_data="cmui:commands")],
             [InlineKeyboardButton(text="← К списку бесед",callback_data="cmui:home")]
         ])
     async def cmui_show(c, body, keyboard):
@@ -513,7 +513,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 await cmui_show(c,"<b>FENIX · УПРАВЛЕНИЕ БЕСЕДАМИ</b>\\n\\nПока нет подключённых групп. Добавь бота в группу и выдай ему права администратора.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Как подключить",callback_data="cmui:connect")]]))
             else:
                 kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=(x["title"] or "Беседа")[:32],callback_data=f"cmui:chat:{x['chat_id']}")] for x in chats]+[[InlineKeyboardButton(text="Обновить",callback_data="cmui:home")]])
-                await cmui_show(c,"<b>FENIX · CHAT MANAGER</b>\\nВыбери беседу:",kb)
+                await cmui_show(c,"<b>FENIX MANAGER</b>\\nВыбери беседу:",kb)
         elif action=="chat" and len(data)>2:
             chat_id=int(data[2]); s=chat_settings(db,chat_id)
             info=one(db,f"SELECT title FROM cm_settings WHERE chat_id={ph(db)}",(chat_id,)) or {}
@@ -537,13 +537,12 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 rr=rows(db,f"SELECT uid,level,title FROM cm_roles WHERE chat_id={ph(db)} AND level>0 ORDER BY level DESC",(chat_id,))
                 body="<b>👥 РОЛИ И РУКОВОДСТВО</b>\\n"+("\\n".join(f"• {x['title']} · <code>{x['uid']}</code> · {x['level']}" for x in rr) if rr else "Роли ещё не назначены.")
                 await cmui_show(c,body,back)
-            elif section=="logs":
-                rr=rows(db,f"SELECT action,target,details,created FROM cm_logs WHERE chat_id={ph(db)} ORDER BY id DESC LIMIT 12",(chat_id,))
-                body="<b>📜 ПОСЛЕДНИЕ ДЕЙСТВИЯ</b>\\n"+("\\n".join(f"{x['created']} · {x['action']} · {x['details'] or ''}" for x in rr) if rr else "Записей пока нет.")
-                await cmui_show(c,body,back)
             else:
-                body="<b>📚 ВОЗМОЖНОСТИ FENIX CHAT MANAGER</b>\\n\\n<b>Участники:</b> правила, руководство, статистика, репорты, игровые команды.\\n<b>Модерация:</b> мут, снятие мута, предупреждения, бан, разбан, кик, фильтры, белый список ссылок.\\n<b>Управление:</b> роли, приветствие, правила, тишина, закрепление, журнал, объединения.\\n\\nЭто перечень уже существующих в проекте команд, а не заявление о полной совместимости со всеми модулями Iris."
-                await cmui_show(c,body,back)
+                await cmui_show(c,"<b>FENIX MANAGER</b>\\nИспользуй кнопки настроек и модерации. Полный справочник команд доступен отдельной статьёй.",back)
+        elif action=="commands":
+            await cmui_show(c,"<b>FENIX MANAGER · КОМАНДЫ</b>\\nПолный справочник открыт отдельной статьёй. Напиши /commands в личном чате с ботом, чтобы получить ссылку.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← Назад",callback_data="cmui:home")]]))
+        elif action=="gifts":
+            await cmui_show(c,"<b>🎁 TELEGRAM-ПОДАРКИ</b>\\nОткрой личный чат с ботом и нажми /stars. Там есть кнопка покупки подарка и Premium. Для подарка другому человеку используй /giftshop TELEGRAM_ID.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← Назад",callback_data="cmui:home")]]))
         elif action=="toggle" and len(data)>3:
             chat_id=int(data[2]); setting=data[3]
             if setting=="silence":
