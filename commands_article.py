@@ -141,7 +141,7 @@ def nodes():
 
 async def ensure_article(db):
     existing=(db.setting("fenix_commands_article_url","") or "").strip()
-    version="fenix-iris-full-2026-11"
+    version="fenix-manager-full-2026-11"
     if existing and db.setting("fenix_commands_article_version","") == version:
         return existing
     timeout=aiohttp.ClientTimeout(total=35)
