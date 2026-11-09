@@ -99,12 +99,11 @@ def register(dp, bot, db, owner_ids=()):
 
     @router.callback_query(F.data=="tgs:history")
     async def order_history(c):
-        rows=one(db,f"SELECT COUNT(*) AS n,COALESCE(SUM(stars),0) AS spent FROM tg_store_orders WHERE buyer_uid={ph(db)} AND status IN ('delivered','delivery_failed')",(c.from_user.id,)) or {"n":0,"spent":0}
-        items=None
+        stats=one(db,f"SELECT COUNT(*) AS total, SUM(CASE WHEN status IN ('delivering','delivered','delivery_failed') THEN 1 ELSE 0 END) AS paid, SUM(CASE WHEN status='delivered' THEN 1 ELSE 0 END) AS delivered, SUM(CASE WHEN status='delivery_failed' THEN 1 ELSE 0 END) AS failed, SUM(CASE WHEN status='invoice' THEN 1 ELSE 0 END) AS unpaid, COALESCE(SUM(CASE WHEN status IN ('delivering','delivered','delivery_failed') THEN stars ELSE 0 END),0) AS spent FROM tg_store_orders WHERE buyer_uid={ph(db)}",(c.from_user.id,)) or {}
         with db.con() as conn:
             items=conn.execute(f"SELECT id,title,recipient_uid,stars,status,created,error FROM tg_store_orders WHERE buyer_uid={ph(db)} ORDER BY created DESC LIMIT 10",(c.from_user.id,)).fetchall()
-        labels={"invoice":"Ожидает оплаты","delivering":"Отправляется","delivered":"Доставлен","delivery_failed":"Нужна проверка"}
-        lines=[f"🧾 <b>МОИ ЗАКАЗЫ</b>","Всего заказов: <b>{len(items)}</b>","Успешно/ошибки: <b>{rows['n']}</b>","Потрачено: <b>{rows['spent']} ⭐</b>",""]
+        labels={"invoice":"Ожидает оплаты","delivering":"Оплата получена · отправляется","delivered":"Подарок доставлен","delivery_failed":"Оплачено · нужна проверка"}
+        lines=["🧾 <b>МОИ ЗАКАЗЫ</b>",f"Всего заказов: <b>{stats.get('total',0) or 0}</b>",f"Оплачено: <b>{stats.get('paid',0) or 0}</b> · доставлено: <b>{stats.get('delivered',0) or 0}</b>",f"Ошибки доставки: <b>{stats.get('failed',0) or 0}</b> · ожидают оплаты: <b>{stats.get('unpaid',0) or 0}</b>",f"Потрачено: <b>{stats.get('spent',0) or 0} ⭐</b>",""]
         for item in items:
             item=dict(item)
             lines.append(f"• {item['title']} — <b>{item['stars']} ⭐</b>\nПолучатель: <code>{item['recipient_uid']}</code>\nСтатус: {labels.get(item['status'],item['status'])}\nЗаказ: <code>{item['id']}</code>")
@@ -117,9 +116,12 @@ def register(dp, bot, db, owner_ids=()):
         if c.from_user.id not in owner_ids and not db.is_admin(c.from_user.id):
             return await c.answer("Нет доступа.",show_alert=True)
         with db.con() as conn:
-            totals=dict(conn.execute(f"SELECT COUNT(*) AS orders,COALESCE(SUM(stars),0) AS revenue,COALESCE(SUM(CASE WHEN status='delivered' THEN stars-{MARKUP_STARS} ELSE 0 END),0) AS commission,COALESCE(SUM(CASE WHEN status='delivered' THEN 1 ELSE 0 END),0) AS delivered,COALESCE(SUM(CASE WHEN status='delivery_failed' THEN 1 ELSE 0 END),0) AS failed FROM tg_store_orders").fetchone())
+            totals=dict(conn.execute(f"SELECT COUNT(*) AS orders, SUM(CASE WHEN status IN ('delivering','delivered','delivery_failed') THEN 1 ELSE 0 END) AS paid, SUM(CASE WHEN status='invoice' THEN 1 ELSE 0 END) AS unpaid, SUM(CASE WHEN status='delivered' THEN 1 ELSE 0 END) AS delivered, SUM(CASE WHEN status='delivering' THEN 1 ELSE 0 END) AS delivering, SUM(CASE WHEN status='delivery_failed' THEN 1 ELSE 0 END) AS failed, COALESCE(SUM(CASE WHEN status IN ('delivering','delivered','delivery_failed') THEN stars ELSE 0 END),0) AS revenue, COALESCE(SUM(CASE WHEN status IN ('delivering','delivered','delivery_failed') THEN {MARKUP_STARS} ELSE 0 END),0) AS commission_paid, COALESCE(SUM(CASE WHEN status='delivered' THEN {MARKUP_STARS} ELSE 0 END),0) AS commission_delivered, COALESCE(SUM(CASE WHEN status IN ('delivering','delivery_failed') THEN {MARKUP_STARS} ELSE 0 END),0) AS commission_held FROM tg_store_orders").fetchone())
+        for key in ("paid","unpaid","delivered","delivering","failed","orders"):
+            totals[key]=int(totals.get(key) or 0)
         balance=await bot_star_balance()
-        await c.message.answer(f"💰 <b>ФИНАНСЫ FENIX STARS</b>\nЗаказов: <b>{totals['orders']}</b>\nДоставлено: <b>{totals['delivered']}</b>\nОшибок доставки: <b>{totals['failed']}</b>\nПолучено по заказам: <b>{totals['revenue']} ⭐</b>\nКомиссия начислена: <b>{totals['commission']} ⭐</b>\nБаланс бота сейчас: <b>{balance} ⭐</b>\nКомиссия за заказ: <b>{MARKUP_STARS} ⭐</b>",parse_mode="HTML")
+        rub=lambda stars: f"{stars*1.35:.2f}"
+        await c.message.answer(f"💰 <b>ФИНАНСЫ FENIX STARS</b>\n━━━━━━━━━━━━━━━━━━\n🧾 Всего заказов: <b>{totals['orders']}</b>\n💳 Оплачено: <b>{totals['paid']}</b>\n🎁 Доставлено: <b>{totals['delivered']}</b>\n⏳ В процессе отправки: <b>{totals['delivering']}</b>\n⚠️ Ошибки доставки: <b>{totals['failed']}</b>\n🕒 Ожидают оплаты: <b>{totals['unpaid']}</b>\n━━━━━━━━━━━━━━━━━━\n💰 Получено оплат: <b>{totals['revenue']} ⭐</b> · <b>{rub(totals['revenue'])} ₽</b>\n📈 Комиссия получена: <b>{totals['commission_paid']} ⭐</b> · <b>{rub(totals['commission_paid'])} ₽</b>\n✅ Комиссия по доставленным: <b>{totals['commission_delivered']} ⭐</b>\n🔒 Комиссия в заказах с проблемой/доставкой: <b>{totals['commission_held']} ⭐</b>\n━━━━━━━━━━━━━━━━━━\n⭐ Баланс бота сейчас: <b>{balance} ⭐</b> · <b>{rub(balance)} ₽</b>\n🧾 Комиссия за заказ: <b>{MARKUP_STARS} ⭐</b> · <b>{rub(MARKUP_STARS)} ₽</b>\n💱 Курс: <b>1 ⭐ = 1,35 ₽</b>",parse_mode="HTML")
         await c.answer()
 
     @router.callback_query(F.data=="tgs:catalog")
