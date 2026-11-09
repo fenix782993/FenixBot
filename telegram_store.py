@@ -10,7 +10,7 @@ from aiogram.types import LabeledPrice, InlineKeyboardMarkup, InlineKeyboardButt
 
 log = logging.getLogger("fenix.telegram_store")
 TOKEN = os.getenv("BOT_TOKEN", "").strip()
-MARKUP_STARS = 3
+MARKUP_STARS = 5
 
 def ph(db): return "%s" if db.use_postgres else "?"
 def run(db, sql, args=()):
@@ -69,7 +69,7 @@ def register(dp, bot, db, owner_ids=()):
         title=f"{title} Telegram-подарок"
         run(db,f"INSERT INTO tg_store_orders(id,payload,buyer_uid,recipient_uid,kind,item_id,title,stars,status,created,note) VALUES({','.join([p]*11)})",
             (oid,payload,buyer,recipient,"gift",str(gift["id"]),title,total,"invoice",datetime.now(timezone.utc).isoformat(),note))
-        await bot.send_invoice(chat_id=buyer,title=title[:32],description=f"Подарок Telegram · {base} ⭐ + 3 ⭐ сервисный сбор. Получатель ID {recipient}.",
+        await bot.send_invoice(chat_id=buyer,title=title[:32],description=f"Подарок Telegram · {base} ⭐ + 5 ⭐ комиссия. Получатель ID {recipient}.",
             payload=payload,provider_token="",currency="XTR",prices=[LabeledPrice(label=title[:32],amount=total)])
 
     async def send_catalog(chat_id, owner_id, recipient_id, prefix="tgs:buy:"):
@@ -83,8 +83,8 @@ def register(dp, bot, db, owner_ids=()):
             token=secrets.token_urlsafe(7).replace("-","").replace("_","")[:10]
             run(db,f"INSERT INTO tg_store_items(token,owner_uid,recipient_uid,gift_id,title,stars,created) VALUES({','.join([ph(db)]*7)})",
                 (token,owner_id,recipient_id,str(gift["id"]),emoji,base,datetime.now(timezone.utc).isoformat()))
-            rows.append([InlineKeyboardButton(text=f"{emoji} {base+3} ⭐",callback_data=f"{prefix}{token}")])
-        await bot.send_message(chat_id,"<b>🎁 ПОДАРКИ TELEGRAM · FENIX</b>\nЦена включает +3 ⭐ к стоимости подарка. Выбери подарок:",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+            rows.append([InlineKeyboardButton(text=f"{emoji} {base+MARKUP_STARS} ⭐ · {(base+MARKUP_STARS)*1.35:.2f} ₽",callback_data=f"{prefix}{token}")])
+        await bot.send_message(chat_id,"<b>🎁 ПОДАРКИ TELEGRAM · FENIX</b>\nЦена: стоимость подарка + 5 ⭐ комиссия. Курс: 1 ⭐ = 1,35 ₽. Выбери подарок:",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
     @router.message(Command("gifts"))
     async def gifts_command(m):
@@ -254,7 +254,7 @@ def register(dp, bot, db, owner_ids=()):
             if order.get("note"): payload["text"]=order["note"]
             await api("sendGift",payload)
             run(db,f"UPDATE tg_store_orders SET status='delivered',delivered={p},error=NULL WHERE id={p}",(datetime.now(timezone.utc).isoformat(),order["id"]))
-            await m.answer(f"✅ Подарок отправлен пользователю <code>{order['recipient_uid']}</code>. Оплата: {order['stars']} ⭐.",parse_mode="HTML")
+            await m.answer(f"✅ Подарок отправлен пользователю <code>{order['recipient_uid']}</code>. Оплата: {order['stars']} ⭐ (включая комиссию {MARKUP_STARS} ⭐).",parse_mode="HTML")
         except Exception as e:
             log.exception("Paid gift delivery failed")
             run(db,f"UPDATE tg_store_orders SET status='delivery_failed',error={p} WHERE id={p}",(str(e)[:1000],order["id"]))
