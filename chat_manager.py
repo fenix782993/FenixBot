@@ -401,6 +401,19 @@ def register_chat_manager(dp, bot, db, owner_ids):
             if cmd=="deleteunity" and args:
                 q(db,f"DELETE FROM cm_unities WHERE name={p}",(" ".join(args),)); return await reply(m,"Объединение удалено.")
             return await reply(m,f"Текущее объединение: {u['name']}" if u else "Эта беседа не подключена к объединению.")
+    @router.callback_query(F.data=="chat_manager_admin")
+    async def chat_manager_admin(c):
+        if c.from_user.id not in owner_ids and not db.is_admin(c.from_user.id):
+            return await c.answer("Нет доступа",show_alert=True)
+        chats=rows(db,"SELECT chat_id,title,updated FROM cm_settings ORDER BY updated DESC LIMIT 50")
+        body="<b>FENIX · CHAT MANAGER</b>\\n\\n"
+        if chats:
+            body += "\\n".join(f"• {x['title'] or 'Без названия'} — <code>{x['chat_id']}</code>" for x in chats)
+        else:
+            body += "Беседы пока не подключены. Добавь бота в группу, выдай права администратора и выполни !setup."
+        body += "\\n\\nКоманды: !settings · !setup · !welcome · !setrules · !roles · !admins · !logs"
+        await c.message.edit_text(body,parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Обновить",callback_data="chat_manager_admin")],[InlineKeyboardButton(text="Назад",callback_data="owner")]]))
+        await c.answer()
     @router.message(Command("chatmanager"))
     async def global_chat_manager(m: Message):
         if m.from_user.id not in owner_ids and not db.is_admin(m.from_user.id):
