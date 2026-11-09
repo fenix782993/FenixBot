@@ -161,7 +161,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
         chat=m.chat.id; uid=m.from_user.id; args=argtext.split()
         if cmd=="help":
             return await reply(m,"<b>FENIX CHAT MANAGER · КОМАНДЫ</b>\n\n<b>Участник</b>: !help, !ping, !rules, !admins, !report, !try, !kiss, !obnyat\n<b>Помощник · 20</b>: !stats, !chatinfo, !mute, !unmute, !kick, !warn, !unwarn, !getwarn, !warnhistory, !warnlist, !getnick, !setnick, !removenick, !nicknames, !nonames, !getbynick, !zov, !logs\n<b>Модератор · 40</b>: !ban, !unban, !banlist, !addhelper, !setrole, !removerole, !roles, !silence, !wipe\n<b>Администратор · 60</b>: !addmoder, !addadmin, !filters, !filteradd, !filterdel, !addlink, !whitelistlinks\n<b>Главный администратор · 80</b>: !pin, !unpin, !newrole, !deleterole, !welcome, !setrules\n<b>Владелец · 100</b>: !setup, !settings, !setsettings, !settingsmute, !settingsinvite, !unity, !unites, !addunity, !removeunity, !editunity, !deleteunity\n\nВремя мута: 30s, 15m, 2h, 3d. Для действий над участником ответь на его сообщение или укажи числовой Telegram ID.")
-        if cmd=="ping": return await reply(m,"<b>FENIX CHAT MANAGER</b>\nСтатус: работает\nБеседа: активна")
+        if cmd=="start": return await reply(m,"<b>FENIX CHAT MANAGER подключён</b>\\nБеседа: "+(m.chat.title or "без названия")+"\\nДля списка возможностей используй !help.")\n        if cmd=="ping": return await reply(m,"<b>FENIX CHAT MANAGER</b>\nСтатус: работает\nБеседа: активна")
         if cmd=="rules":
             s=chat_settings(db,chat); return await reply(m,s.get("rules") or "Правила беседы ещё не настроены.")
         if cmd=="setup":
