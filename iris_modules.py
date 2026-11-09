@@ -64,7 +64,7 @@ def level(db,chat,uid):
     except Exception:return 0
 def register(dp,bot,db,owner_ids=()):
     init(db); router=Router(name="fenix_iris_modules"); owners=set(owner_ids or ())
-    commands="note|notes|bookmark|bookmarks|unbookmark|timer|timers|timerdel|vote|voteresult|voteclose|access|triggeradd|triggerdel|triggers|purge|del|report|antispam"
+    commands="note|bookmark|bookmarks|unbookmark|timer|timers|timerdel|vote|voteresult|voteclose|access|triggeradd|triggerdel|triggers|purge|del|report|antispam"
     async def ensure_creator(chat_id, user_id):
         try:
             member=await bot.get_chat_member(chat_id,user_id)
