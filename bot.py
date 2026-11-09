@@ -102,6 +102,10 @@ def markup(rows):
         if isinstance(item, dict) and str(item.get("id", "")).isdigit()
     ]
     styled_rows = []
+    registry = _json_setting("button_registry", {})
+    if not isinstance(registry, dict):
+        registry = {}
+    registry_changed = False
     for row in rows:
         styled_row = []
         for button in row:
@@ -109,6 +113,10 @@ def markup(rows):
                 if isinstance(button, InlineKeyboardButton):
                     callback = getattr(button, "callback_data", None) or ""
                     original_text = button.text or ""
+                    registry_key = callback or original_text
+                    if registry_key and registry.get(registry_key) != original_text:
+                        registry[registry_key] = original_text
+                        registry_changed = True
                     aliases = {
                         "cab": "👤 Личный кабинет",
                         "ref": "🔗 Моя реферальная ссылка",
@@ -162,6 +170,8 @@ def markup(rows):
                 logging.exception("Не удалось применить OutlineEmoji к кнопке %r", getattr(button, "text", None))
             styled_row.append(button)
         styled_rows.append(styled_row)
+    if registry_changed:
+        db.set_setting("button_registry", json.dumps(registry, ensure_ascii=False))
     return InlineKeyboardMarkup(inline_keyboard=styled_rows)
 
 
@@ -467,11 +477,15 @@ async def list_premium_buttons(m: Message):
     if not is_owner(m.from_user.id):
         return await m.answer("⛔ Нет доступа.")
     mapping = premium_button_icons()
+    registry = _json_setting("button_registry", {})
+    entries = list(dict.fromkeys(list(PREMIUM_BUTTON_CATALOG) + list(registry.keys())))
     lines = []
-    for i,label in enumerate(PREMIUM_BUTTON_CATALOG,1):
-        status = "💎 назначен" if mapping.get(label) else "— не назначен"
-        lines.append(f"{i}. {html.escape(label)} — {status}")
-    await m.answer("🎛 <b>КНОПКИ БОТА</b>\n\n" + "\n".join(lines), parse_mode="HTML")
+    for i,key in enumerate(entries,1):
+        label = registry.get(key) or key
+        status = "💎 назначен" if mapping.get(key) or mapping.get(label) else "— не назначен"
+        lines.append(f"{i}. {html.escape(str(label))} — {status}\n   Ключ: <code>{html.escape(str(key))}</code>")
+    await m.answer("🎛 <b>КНОПКИ БОТА</b>\n\n" + "\n".join(lines) +
+        "\n\nДля любой кнопки: <code>/setbtnemojiid КЛЮЧ ID_ЭМОДЗИ</code>", parse_mode="HTML")
 
 @dp.message(Command("setbtnemoji"))
 async def set_button_custom_emoji(m: Message):
@@ -497,6 +511,34 @@ async def set_button_custom_emoji(m: Message):
         "Открой соответствующее меню заново, чтобы увидеть изменение.",
         parse_mode="HTML"
     )
+
+@dp.message(Command("setbtnemojiid"))
+async def set_button_custom_emoji_by_key(m: Message):
+    if not is_owner(m.from_user.id):
+        return await m.answer("⛔ Нет доступа.")
+    parts = (m.text or "").split(maxsplit=2)
+    if len(parts) != 3 or not parts[2].isdigit():
+        return await m.answer(
+            "Формат: <code>/setbtnemojiid КЛЮЧ ID_ЭМОДЗИ</code>\n"
+            "Ключ — callback_data из /btnlist. Для URL-кнопки используй её точный текст.",
+            parse_mode="HTML"
+        )
+    key, emoji_id = parts[1].strip(), parts[2].strip()
+    if not key:
+        return await m.answer("Ключ кнопки не может быть пустым.")
+    mapping = _json_setting("button_custom_emoji_map", {})
+    if not isinstance(mapping, dict):
+        mapping = {}
+    mapping[key] = emoji_id
+    _save_button_emoji_map(mapping)
+    await m.answer(
+        "✅ <b>Premium Emoji назначен</b>\n"
+        f"Ключ кнопки: <code>{html.escape(key)}</code>\n"
+        f"Custom Emoji ID: <code>{emoji_id}</code>\n"
+        "Открой экран с этой кнопкой заново. Если Telegram не принимает ID, проверь, что это ID именно Custom Emoji.",
+        parse_mode="HTML"
+    )
+
 
 @dp.message(Command("resetbtnemoji"))
 async def reset_button_custom_emoji(m: Message):
