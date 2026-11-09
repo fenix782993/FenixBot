@@ -1,4 +1,4 @@
-import logging, random, re
+import asyncio, logging, random, re
 from datetime import datetime, timedelta, timezone
 from html import escape
 from aiogram import Router, F
