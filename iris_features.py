@@ -1,4 +1,4 @@
-"""Additional Iris-inspired social modules for FENIX Chat Manager."""
+"""FENIX social features for FENIX Chat Manager."""
 import asyncio
 import logging
 import random
@@ -10,7 +10,7 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-log=logging.getLogger("fenix.iris_features")
+log=logging.getLogger("fenix.features")
 
 def ph(db): return "%s" if db.use_postgres else "?"
 def run(db,sql,args=()):
@@ -44,29 +44,29 @@ def init(db):
             CREATE TABLE IF NOT EXISTS iris_giveaway_users(gid TEXT,uid INTEGER,PRIMARY KEY(gid,uid));""")
 
 def register(dp,bot,db):
-    init(db); router=Router(name="fenix_iris_social_modules")
+    init(db); router=Router(name="fenix_social_features")
     def stamp(): return datetime.now(timezone.utc).isoformat()
     async def target(m,args):
         if m.reply_to_message and m.reply_to_message.from_user: return m.reply_to_message.from_user.id
         if args and args[0].isdigit(): return int(args[0])
         return None
-    @router.message(Command("iris"))
+    @router.message(Command("fenix"))
     async def iris_menu(m):
         kb=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🛡 Модерация",callback_data="iris:moderation"),InlineKeyboardButton(text="⚙️ Настройки",callback_data="iris:settings")],
-            [InlineKeyboardButton(text="👤 Профиль и репутация",callback_data="iris:profile"),InlineKeyboardButton(text="🎲 Развлечения",callback_data="iris:games")],
-            [InlineKeyboardButton(text="📝 Заметки и закладки",callback_data="iris:notes"),InlineKeyboardButton(text="🏆 Кланы и розыгрыши",callback_data="iris:community")],
-            [InlineKeyboardButton(text="📚 Все команды",callback_data="iris:help")]])
+            [InlineKeyboardButton(text="🛡 Модерация",callback_data="fenix:moderation"),InlineKeyboardButton(text="⚙️ Настройки",callback_data="fenix:settings")],
+            [InlineKeyboardButton(text="👤 Профиль и репутация",callback_data="fenix:profile"),InlineKeyboardButton(text="🎲 Развлечения",callback_data="fenix:games")],
+            [InlineKeyboardButton(text="📝 Заметки и закладки",callback_data="fenix:notes"),InlineKeyboardButton(text="🏆 Кланы и розыгрыши",callback_data="fenix:community")],
+            [InlineKeyboardButton(text="📚 Все команды",callback_data="fenix:help")]])
         await m.answer("<b>FENIX · CHAT MANAGER</b>\nВыбери раздел управления беседой:",parse_mode="HTML",reply_markup=kb)
-    @router.callback_query(F.data.startswith("iris:"))
+    @router.callback_query(F.data.startswith("fenix:"))
     async def iris_menu_cb(c):
         section=c.data.split(":",1)[1]
         if section=="back":
             kb=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🛡 Модерация",callback_data="iris:moderation"),InlineKeyboardButton(text="⚙️ Настройки",callback_data="iris:settings")],
-                [InlineKeyboardButton(text="👤 Профиль и репутация",callback_data="iris:profile"),InlineKeyboardButton(text="🎲 Развлечения",callback_data="iris:games")],
-                [InlineKeyboardButton(text="📝 Заметки и закладки",callback_data="iris:notes"),InlineKeyboardButton(text="🏆 Кланы и розыгрыши",callback_data="iris:community")],
-                [InlineKeyboardButton(text="📚 Все команды",callback_data="iris:help")]])
+                [InlineKeyboardButton(text="🛡 Модерация",callback_data="fenix:moderation"),InlineKeyboardButton(text="⚙️ Настройки",callback_data="fenix:settings")],
+                [InlineKeyboardButton(text="👤 Профиль и репутация",callback_data="fenix:profile"),InlineKeyboardButton(text="🎲 Развлечения",callback_data="fenix:games")],
+                [InlineKeyboardButton(text="📝 Заметки и закладки",callback_data="fenix:notes"),InlineKeyboardButton(text="🏆 Кланы и розыгрыши",callback_data="fenix:community")],
+                [InlineKeyboardButton(text="📚 Все команды",callback_data="fenix:help")]])
             await c.message.edit_text("<b>FENIX · CHAT MANAGER</b>\nВыбери раздел управления беседой:",parse_mode="HTML",reply_markup=kb)
             await c.answer()
             return
@@ -77,12 +77,12 @@ def register(dp,bot,db):
         "games":"РАЗВЛЕЧЕНИЯ\n!dice — бросить кубик Telegram.\n!coin — орёл или решка.\n!try — RP-попытка.\n!kiss — поцеловать участника (ответом или ID).\n!obnyat — обнять участника (ответом или ID).\n!duel — вызвать участника на дуэль в кости (ответом или ID).",
         "notes":"ЗАМЕТКИ, ЗАКЛАДКИ И ТАЙМЕРЫ\n!note add текст — сохранить заметку; ответ на участника прикрепляет её к нему.\n!note list — показать заметки; !note del ID — удалить заметку.\n!notes — показать твои заметки.\n!bookmark — сохранить сообщение (ответом); !bookmarks — список; !unbookmark ID — удалить.\n!timer 10m текст — создать напоминание (10 секунд–30 дней); !timers — список; !timerdel ID — отменить.",
         "community":"СООБЩЕСТВО\n!clan create название — создать клан; !clan join название — вступить; !clan leave — выйти; !clan info — сводка крупнейшего клана.\n!circle create/join/leave/info/list — управление кругами беседы.\n!giveaway 1h приз — создать розыгрыш; участники нажимают кнопку.\n!gstop ID — отменить розыгрыш.",
-        "help":"СПРАВОЧНИК\n!help — полный список команд и объяснения.\n/iris — открыть это меню.\nМодерация: !mute, !warn, !ban, !kick, !report.\nПрофиль: !profile, !stats, !rep, !топреп.\nРазвлечения: !dice, !coin, !try, !kiss, !obnyat, !duel.\nЗаметки: !note, !notes, !bookmark, !bookmarks.\nСообщество: !clan, !circle, !giveaway."}
-        await c.message.edit_text("<b>"+texts.get(section,texts["help"])+"</b>",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← В меню",callback_data="iris:back")]]))
+        "help":"СПРАВОЧНИК\n!help — полный список команд и объяснения.\n/fenix — открыть это меню.\nМодерация: !mute, !warn, !ban, !kick, !report.\nПрофиль: !profile, !stats, !rep, !топреп.\nРазвлечения: !dice, !coin, !try, !kiss, !obnyat, !duel.\nЗаметки: !note, !notes, !bookmark, !bookmarks.\nСообщество: !clan, !circle, !giveaway."}
+        await c.message.edit_text("<b>"+texts.get(section,texts["help"])+"</b>",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← В меню",callback_data="fenix:back")]]))
         await c.answer()
-    @router.callback_query(F.data=="iris:back")
+    @router.callback_query(F.data=="fenix:back")
     async def iris_back(c):
-        kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📚 Все команды",callback_data="iris:help")],[InlineKeyboardButton(text="🎲 Развлечения",callback_data="iris:games"),InlineKeyboardButton(text="👤 Профиль",callback_data="iris:profile")]])
+        kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📚 Все команды",callback_data="fenix:help")],[InlineKeyboardButton(text="🎲 Развлечения",callback_data="fenix:games"),InlineKeyboardButton(text="👤 Профиль",callback_data="fenix:profile")]])
         await c.message.edit_text("<b>FENIX · CHAT MANAGER</b>\nВыбери раздел:",parse_mode="HTML",reply_markup=kb); await c.answer()
     @router.callback_query(F.data.startswith("irg:join:"))
     async def giveaway_join(c):
@@ -93,12 +93,12 @@ def register(dp,bot,db):
         else: run(db,f"INSERT OR IGNORE INTO iris_giveaway_users(gid,uid) VALUES({p},{p})",(gid,c.from_user.id))
         await c.answer("Ты участвуешь!")
     feature_commands="dice|кубик|coin|монетка|profile|профиль|rep|реп|note|заметка|notes|заметки|bookmark|закладка|bookmarks|закладки|clan|клан|circle|круг|marry|брак|divorce|развод|timer|таймер|giveaway|розыгрыш|gstop|access|доступ|triggeradd|triggerdel|triggers|триггеры|antispam|антиспам"
-    feature_pattern=re.compile(r"(?i)^(?:[!./](?:"+feature_commands+r")(?=$|[^a-zA-Z0-9_])|ирис(?:ка)?[ ]+(?:"+feature_commands+r")(?=$|[^a-zA-Z0-9_]))")
+    feature_pattern=re.compile(r"(?i)^(?:[!./](?:"+feature_commands+r")(?=$|[^a-zA-Z0-9_])"+feature_commands+r")(?=$|[^a-zA-Z0-9_]))")
     @router.message(F.text.regexp(feature_pattern))
     async def features(m):
         if m.chat.type=="private": return
         raw=(m.text or "").strip()
-        command_text=raw.split(maxsplit=1)[1] if raw.lower().startswith(("ирис ","ириска ")) else raw[1:]
+        command_text=raw[1:]
         parts=command_text.split(maxsplit=1); cmd=parts[0].lower(); arg=parts[1] if len(parts)>1 else ""; args=arg.split(); uid=m.from_user.id; chat=m.chat.id; p=ph(db)
         if cmd in ("access","доступ"):
             if not db.is_admin(uid): return await m.answer("⛔ Только администратор FENIX.")
@@ -268,4 +268,4 @@ def register(dp,bot,db):
         await c.message.edit_reply_markup(reply_markup=None)
         if action=="yes": await c.message.answer("💍 Поздравляем! Пара создана.")
     dp.include_router(router)
-    log.info("FENIX Iris social modules registered")
+    log.info("FENIX social features registered")
