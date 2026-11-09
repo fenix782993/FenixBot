@@ -54,6 +54,19 @@ async def bot_star_balance():
     result=await api("getMyStarBalance")
     return int(result.get("amount",0)) if isinstance(result,dict) else int(result or 0)
 
+async def ensure_recipient(user_id):
+    """Fail before payment if Telegram cannot resolve the recipient for this bot."""
+    try:
+        chat=await api("getChat",{"chat_id":int(user_id)})
+    except Exception as exc:
+        message=str(exc).lower()
+        if "user not found" in message or "chat not found" in message:
+            raise ValueError("Telegram не видит этого пользователя. Получатель должен открыть @FenixMediarobot, нажать /start и отправить любое сообщение. Затем повтори заказ, указав его числовой ID.") from exc
+        raise
+    if not chat or chat.get("type")!="private":
+        raise ValueError("Укажи числовой ID личного Telegram-аккаунта, а не группы или канала.")
+    return chat
+
 def register(dp, bot, db, owner_ids=()):
     owner_ids=set(owner_ids or ())
     init(db)
@@ -169,8 +182,16 @@ def register(dp, bot, db, owner_ids=()):
         raw=(m.text or "").strip()
         if not raw.isdigit() or int(raw)<=0:
             return await m.answer("Нужен числовой Telegram ID. Для подарка себе нажми кнопку «Себе».")
+        recipient_id=int(raw)
+        try:
+            await ensure_recipient(recipient_id)
+        except ValueError as exc:
+            return await m.answer(str(exc))
+        except Exception:
+            log.exception("Recipient validation failed")
+            return await m.answer("Не удалось проверить получателя в Telegram. Попробуй позже.")
         await state.clear()
-        try: await send_catalog(m.chat.id,m.from_user.id,int(raw))
+        try: await send_catalog(m.chat.id,m.from_user.id,recipient_id)
         except Exception:
             log.exception("Gift catalog failed"); await m.answer("Не удалось загрузить каталог Telegram.")
 
@@ -230,6 +251,13 @@ def register(dp, bot, db, owner_ids=()):
             await state.clear(); return
         raw=(m.text or "").strip()
         if not raw.isdigit() or int(raw)<=0: return await m.answer("Введи числовой Telegram ID.")
+        try:
+            await ensure_recipient(int(raw))
+        except ValueError as exc:
+            return await m.answer(str(exc))
+        except Exception:
+            log.exception("Admin recipient validation failed")
+            return await m.answer("Не удалось проверить получателя в Telegram. Попробуй позже.")
         await state.update_data(admin_recipient=int(raw))
         await state.set_state(GiftFlow.admin_note)
         await m.answer("Надпись к подарку? Отправь текст или напиши «-» без надписи.")
@@ -275,7 +303,11 @@ def register(dp, bot, db, owner_ids=()):
             await c.message.answer(f"✅ Подарок отправлен пользователю <code>{data['admin_recipient']}</code>.\nСписано: {cost} ⭐. Остаток до операции: {balance} ⭐.",parse_mode="HTML")
             await c.answer("Отправлено")
         except Exception as e:
-            log.exception("Admin gift send failed"); await c.answer(f"Ошибка отправки: {str(e)[:150]}",show_alert=True)
+            log.exception("Admin gift send failed")
+            message=str(e)
+            if "user not found" in message.lower() or "chat not found" in message.lower():
+                message="Telegram не нашёл получателя. Он должен открыть @FenixMediarobot, нажать /start и отправить любое сообщение. После этого повтори отправку."
+            await c.answer(f"Ошибка отправки: {message[:150]}",show_alert=True)
 
     @router.pre_checkout_query()
     async def pre_checkout(q):
