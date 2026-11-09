@@ -116,7 +116,7 @@ def register(dp,bot,db,owner_ids=()):
             if cmd=="triggerdel":
                 run(db,f"DELETE FROM cm_triggers WHERE chat_id={p} AND lower(phrase)=lower({p})",(chat,arg));return await m.answer("Триггер удалён.")
             rr=rows(db,f"SELECT phrase,response FROM cm_triggers WHERE chat_id={p} ORDER BY id",(chat,))
-            return await m.answer("<b>АВТООТВЕТЫ</b>\\n"+("\\n".join("• "+escape(x["phrase"])+" → "+escape(x["response"]) for x in rr) if rr else "Список пуст."),parse_mode="HTML")
+            return await m.answer("<b>АВТООТВЕТЫ</b>\n"+("\n".join("• "+escape(x["phrase"])+" → "+escape(x["response"]) for x in rr) if rr else "Список пуст."),parse_mode="HTML")
         if cmd=="note":
             if not args:return await m.answer("!note add текст | !note list | !note del ID")
             sub=args[0].lower();target=m.reply_to_message.from_user.id if m.reply_to_message and m.reply_to_message.from_user else uid
@@ -127,7 +127,7 @@ def register(dp,bot,db,owner_ids=()):
                 return await m.answer(f"Заметка сохранена для <code>{target}</code>.",parse_mode="HTML")
             if sub=="list":
                 rr=rows(db,f"SELECT id,body FROM cm_notes WHERE chat_id={p} AND uid={p} ORDER BY id DESC LIMIT 20",(chat,target))
-                return await m.answer("<b>ЗАМЕТКИ</b>\\n"+("\\n".join(f"#{x['id']} · {escape(x['body'])}" for x in rr) if rr else "Нет заметок."),parse_mode="HTML")
+                return await m.answer("<b>ЗАМЕТКИ</b>\n"+("\n".join(f"#{x['id']} · {escape(x['body'])}" for x in rr) if rr else "Нет заметок."),parse_mode="HTML")
             if sub=="del" and len(args)>1 and args[1].isdigit():
                 x=one(db,f"SELECT author_uid FROM cm_notes WHERE id={p} AND chat_id={p}",(int(args[1]),chat))
                 if x and (int(x["author_uid"])==uid or lv>=60 or owner):
@@ -141,7 +141,7 @@ def register(dp,bot,db,owner_ids=()):
             return await m.answer("🔖 Добавлено в закладки.")
         if cmd=="bookmarks":
             rr=rows(db,f"SELECT id,message_id,body FROM cm_bookmarks WHERE chat_id={p} AND uid={p} ORDER BY id DESC LIMIT 20",(chat,uid))
-            return await m.answer("<b>ЗАКЛАДКИ</b>\\n"+("\\n".join(f"#{x['id']} · msg {x['message_id']} · {escape(x['body'][:100])}" for x in rr) if rr else "Закладок нет."),parse_mode="HTML")
+            return await m.answer("<b>ЗАКЛАДКИ</b>\n"+("\n".join(f"#{x['id']} · msg {x['message_id']} · {escape(x['body'][:100])}" for x in rr) if rr else "Закладок нет."),parse_mode="HTML")
         if cmd=="unbookmark":
             if not args or not args[0].isdigit():return await m.answer("Формат: !unbookmark ID")
             run(db,f"DELETE FROM cm_bookmarks WHERE id={p} AND chat_id={p} AND uid={p}",(int(args[0]),chat,uid));return await m.answer("Закладка удалена.")
@@ -154,7 +154,7 @@ def register(dp,bot,db,owner_ids=()):
             return await m.answer("⏰ Напоминание сохранено.")
         if cmd=="timers":
             rr=rows(db,f"SELECT id,body,due_at FROM cm_timers WHERE chat_id={p} AND uid={p} AND status='pending' ORDER BY due_at LIMIT 20",(chat,uid))
-            return await m.answer("<b>МОИ НАПОМИНАНИЯ</b>\\n"+("\\n".join(f"#{x['id']} · {escape(x['body'])} · {x['due_at']}" for x in rr) if rr else "Активных напоминаний нет."),parse_mode="HTML")
+            return await m.answer("<b>МОИ НАПОМИНАНИЯ</b>\n"+("\n".join(f"#{x['id']} · {escape(x['body'])} · {x['due_at']}" for x in rr) if rr else "Активных напоминаний нет."),parse_mode="HTML")
         if cmd=="timerdel":
             if not args or not args[0].isdigit():return await m.answer("Формат: !timerdel ID")
             if lv<40 and not owner:
@@ -190,7 +190,7 @@ def register(dp,bot,db,owner_ids=()):
             if not vote:return await m.answer("Голосование не найдено.")
             result=rows(db,f"SELECT o.label,COUNT(b.uid) AS total FROM cm_vote_options o LEFT JOIN cm_vote_ballots b ON b.option_id=o.id WHERE o.vote_id={p} GROUP BY o.id,o.label ORDER BY total DESC,o.id",(vid,))
             total=sum(int(x["total"]) for x in result)
-            body="<b>"+escape(vote["question"])+"</b>\\nСтатус: "+escape(vote["status"])+" · голосов: "+str(total)+"\\n"+"\\n".join(f"{escape(x['label'])}: {x['total']} ({round(int(x['total'])*100/total) if total else 0}%)" for x in result)
+            body="<b>"+escape(vote["question"])+"</b>\nСтатус: "+escape(vote["status"])+" · голосов: "+str(total)+"\n"+"\n".join(f"{escape(x['label'])}: {x['total']} ({round(int(x['total'])*100/total) if total else 0}%)" for x in result)
             return await m.answer(body,parse_mode="HTML")
         if cmd=="del":
             if not m.reply_to_message:return await m.answer("Ответь !del на сообщение.")
@@ -216,7 +216,7 @@ def register(dp,bot,db,owner_ids=()):
             admins=rows(db,f"SELECT uid FROM cm_roles WHERE chat_id={p} AND level>=40",(chat,))
             kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=f"Закрыть репорт #{rid}",callback_data=f"fenixreport:{rid}")]])
             for a in admins:
-                try:await bot.send_message(a["uid"],f"🚨 Репорт #{rid} из {escape(m.chat.title or 'беседы')}\\n{escape(arg)}",parse_mode="HTML",reply_markup=kb)
+                try:await bot.send_message(a["uid"],f"🚨 Репорт #{rid} из {escape(m.chat.title or 'беседы')}\n{escape(arg)}",parse_mode="HTML",reply_markup=kb)
                 except Exception:pass
             return await m.answer(f"Репорт #{rid} передан руководству.")
 
