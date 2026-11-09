@@ -378,19 +378,34 @@ async def import_emoji_pack(m: Message):
             "Убедись, что это именно набор Custom Emoji, а не обычных стикеров."
         )
     db.set_setting("premium_emoji_pack", json.dumps(items, ensure_ascii=False))
-    preview = "\n".join(f"{i}. {html.escape(x['emoji'])} — <code>{x['id']}</code>" for i,x in enumerate(items[:30],1))
+    lines = [
+        "НАБОР СОХРАНЁН",
+        f"Пак: {pack_name}",
+        f"Premium Custom Emoji загружено: {len(items)}",
+        ""
+    ]
+    entities = []
+    utf16_offset = sum(len(line.encode("utf-16-le")) // 2 + 1 for line in lines)
+    for i, item in enumerate(items[:30], 1):
+        line = f"{i}. X  ID: {item['id']}"
+        marker_offset = utf16_offset + len(f"{i}. ".encode("utf-16-le")) // 2
+        entities.append(MessageEntity(
+            type="custom_emoji",
+            offset=marker_offset,
+            length=1,
+            custom_emoji_id=str(item["id"])
+        ))
+        lines.append(line)
+        utf16_offset += len(line.encode("utf-16-le")) // 2 + 1
     if len(items) > 30:
-        preview += f"\n… и ещё {len(items)-30}"
-    await m.answer(
-        f"✅ <b>НАБОР СОХРАНЁН</b>\n"
-        f"📦 {html.escape(pack_name)}\n"
-        f"💎 Эмодзи загружено: <b>{len(items)}</b>\n\n"
-        f"{preview}\n\n"
-        "Назначить значок кнопке:\n<code>/setbtnemoji НОМЕР_КНОПКИ НОМЕР_ЭМОДЗИ</code>\n"
-        "Список кнопок: <code>/btnlist</code>\n"
-        "Список эмодзи: <code>/emojilist</code>",
-        parse_mode="HTML"
-    )
+        lines.append(f"… и ещё {len(items)-30}")
+    lines += [
+        "",
+        "Назначить значок кнопке: /setbtnemoji НОМЕР_КНОПКИ НОМЕР_ЭМОДЗИ",
+        "Список кнопок: /btnlist",
+        "Список эмодзи: /emojilist"
+    ]
+    await m.answer("\\n".join(lines), entities=entities)
 
 @dp.message(Command("emojistatus"))
 async def emoji_pack_status(m: Message):
