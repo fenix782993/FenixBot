@@ -876,6 +876,8 @@ async def main():
     # leaves all chat-manager commands and callback buttons without handlers.
     from telegram_store import register as register_telegram_store
     register_telegram_store(core.dp, tg, db, core.OWNER_IDS)
+    from fenix_id import register as register_fenix_id
+    register_fenix_id(core.dp, db)
     # Register narrow command routers before the legacy catch-all text router.
     from iris_modules import register as register_iris_modules
     register_iris_modules(core.dp, tg, db, core.OWNER_IDS)
