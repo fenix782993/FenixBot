@@ -874,6 +874,8 @@ async def main():
     # Register the chat manager on the actual Render entrypoint before polling.
     # bot.py delegates startup to miniapp.main(), so registering only in bot.main()
     # leaves all chat-manager commands and callback buttons without handlers.
+    from telegram_store import register as register_telegram_store
+    register_telegram_store(core.dp, tg, db)
     from chat_manager import register_chat_manager
     register_chat_manager(core.dp, tg, db, core.OWNER_IDS)
     # Load the exact OutlineEmoji custom-emoji pack in the real Render entrypoint.
