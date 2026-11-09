@@ -93,11 +93,19 @@ def register(dp, db):
 
     @router.callback_query(F.data == "fenixid:show")
     async def show_id_callback(callback):
-        await callback.message.edit_text(render(db, callback.from_user),
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🎁 Магазин подарков", callback_data="tgs:catalog")]
-            ]))
+        text = render(db, callback.from_user)
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Обновить профиль", callback_data="fenixid:show")],
+            [InlineKeyboardButton(text="🎁 Магазин подарков", callback_data="tgs:catalog")],
+            [InlineKeyboardButton(text="⬅️ В меню", callback_data="back_home")]
+        ])
+        try:
+            await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+        except Exception:
+            try:
+                await callback.message.edit_caption(caption=text, parse_mode="HTML", reply_markup=keyboard)
+            except Exception:
+                await callback.message.answer(text, parse_mode="HTML", reply_markup=keyboard)
         await callback.answer()
 
     dp.include_router(router)
