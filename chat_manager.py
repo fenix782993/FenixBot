@@ -732,10 +732,10 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 await cmui_show(c,"<b>🛡 МОДЕРАЦИЯ</b>\n\nДействия над участником выполняются в самой группе ответом на его сообщение: !mute 15m, !unmute, !warn причина, !ban причина, !kick.\n\nФильтры: !filteradd фраза и !filterdel фраза. Белый список ссылок: !addlink https://example.com.",back)
             elif section=="roles":
                 rr=rows(db,f"SELECT uid,level,title FROM cm_roles WHERE chat_id={ph(db)} AND level>0 ORDER BY level DESC",(chat_id,))
-            role_cards=[]
-            for x in rr:
-                role_cards.append(f"• {html.escape(str(x['title']))} · {await target_name(chat,x['uid'])} · {x['level']}")
-            body="<b>👥 РОЛИ И РУКОВОДСТВО</b>\n"+("\n".join(role_cards) if role_cards else "Роли ещё не назначены.")
+                role_cards=[]
+                for x in rr:
+                    role_cards.append(f"• {html.escape(str(x['title']))} · {await target_name(chat,x['uid'])} · {x['level']}")
+                body="<b>👥 РОЛИ И РУКОВОДСТВО</b>\n"+("\n".join(role_cards) if role_cards else "Роли ещё не назначены.")
                 await cmui_show(c,body,back)
             else:
                 await cmui_show(c,"<b>FENIX MANAGER</b>\nИспользуй кнопки настроек и модерации. Полный справочник команд доступен отдельной статьёй.",back)
