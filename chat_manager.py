@@ -8,6 +8,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, B
 from aiogram.filters import Command
 
 log = logging.getLogger("fenix.chat_manager")
+from fenix_display import user_label
 ROLE_LEVELS = {
     "owner": 100, "владелец": 100,
     "главный администратор": 80, "главный_администратор": 80, "главный": 80,
@@ -148,10 +149,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
             plain = re.sub(r'<tg-emoji\s+emoji-id="[^"]+">.*?</tg-emoji>', "", str(text))
             await m.reply(plain,reply_markup=markup,parse_mode="HTML",disable_web_page_preview=True)
     async def target_name(chat,uid):
-        try:
-            x=await bot.get_chat_member(chat,uid); u=x.user
-            return f"{u.full_name} (<code>{uid}</code>)"
-        except Exception: return f"<code>{uid}</code>"
+        return await user_label(bot,chat,uid)
     async def do_mute(m, uid, seconds, reason):
         until=datetime.now(timezone.utc)+timedelta(seconds=seconds)
         from aiogram.types import ChatPermissions
@@ -449,7 +447,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
             if cmd=="getbynick":
                 if not rest: return await reply(m,"Формат: !getbynick ник")
                 x=one(db,f"SELECT uid,nick FROM cm_nicks WHERE chat_id={ph(db)} AND lower(nick)=lower({ph(db)})",(chat," ".join(rest)))
-                return await reply(m,f"Найден: <code>{x['uid']}</code> — {x['nick']}" if x else "Ник не найден.")
+                return await reply(m,f"Найден: {await target_name(chat,x['uid'])} — {html.escape(x['nick'])}" if x else "Ник не найден.")
             if not target and cmd not in ("warnlist",): return await reply(m,"Укажи ID или ответь на сообщение участника.")
             if cmd=="warn":
                 reason=" ".join(rest) or "Причина не указана"; p=ph(db)
@@ -592,7 +590,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 try: await bot.send_message(a["uid"],f"🚨 Репорт из {m.chat.title}\nОт: {m.from_user.full_name} ({uid})\n{argtext}")
                 except Exception: pass
             return await reply(m,"Обращение передано руководству беседы.")
-        if cmd=="try": return await reply(m,f"🎲 {m.from_user.full_name}, удача сегодня на твоей стороне!" if uid%2 else f"🎲 {m.from_user.full_name}, попробуй ещё раз!")
+        if cmd=="try": return await reply(m,f"🎲 {await user_label(bot,chat,uid,m.from_user)}, удача сегодня на твоей стороне!" if uid%2 else f"🎲 {await user_label(bot,chat,uid,m.from_user)}, попробуй ещё раз!")
         if cmd in ("kiss","hug"):
             target,rest=parse_target(m,args)
             if not target and m.reply_to_message and m.reply_to_message.from_user: target=m.reply_to_message.from_user.id
@@ -602,7 +600,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
             suffix = (" " + custom_emoji) if custom_emoji else ""
             if not custom_emoji:
                 logging.warning("No matching Premium affection emoji in imported pack for action %s", cmd)
-            return await reply(m,f"{html.escape(m.from_user.full_name)} {verb} {await target_name(chat,target)}{suffix}")
+            return await reply(m,f"{await user_label(bot,chat,uid,m.from_user)} {verb} {await target_name(chat,target)}{suffix}")
         if cmd in ("unity","unites","addunity","removeunity","editunity","deleteunity"):
             if not can(db,chat,uid,100) and uid not in owner_ids: return await reply(m,"⛔ Только владелец беседы.")
             p=ph(db)
