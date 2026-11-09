@@ -259,9 +259,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 "<b>ПРАВИЛА</b>\n"
                 "Для выбора участника отвечай на его сообщение; где поддерживается — используй ID. Сроки: 30s, 15m, 2h, 3d. Команды доступны в группах и зависят от уровня и прав бота. Уровни: помощник 20 · модератор 40 · администратор 60 · главный администратор 80 · владелец 100."
             )
-            return await reply(m, text)
-
-        if cmd=="start":
+            article=(db.setting("fenix_commands_article_url","") or "").strip()\n            markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📖 Полный справочник FENIX",url=article)]]) if article else None\n            return await reply(m, text+"\n\n📖 Полный список команд и примеров — в справочнике FENIX.",markup)\n\n        if cmd=="start":
             return await reply(m,"<b>FENIX MANAGER подключён</b>\nБеседа: "+(m.chat.title or "без названия")+"\nДля списка возможностей используй !help.")
         if cmd=="ping":
             return await reply(m,"<b>FENIX MANAGER</b>\nСтатус: работает\nБеседа: активна")
