@@ -570,6 +570,16 @@ async def start(m:Message,state:FSMContext):
         u=db.user(m.from_user.id)
         args=(m.text or '').split(maxsplit=1)
         payload=args[1] if len(args)>1 else ''
+        if u and payload == "fenix_gifts":
+            return await m.answer(
+                "🎁 <b>FENIX · МАГАЗИН TELEGRAM</b>\\nВыбери, что хочешь купить:",
+                parse_mode="HTML",
+                reply_markup=markup([
+                    [InlineKeyboardButton(text="🎁 Купить Telegram-подарок", callback_data="tgs:catalog")],
+                    [InlineKeyboardButton(text="⭐ Купить Telegram Premium", callback_data="tgs:premium_catalog")],
+                    [InlineKeyboardButton(text="🆔 Мой Telegram ID", callback_data="tgs:showid")]
+                ])
+            )
         if u and payload in ("stars", "donate_stars"):
             rows=[[InlineKeyboardButton(text=f"{rub} ₽ · {int(rub*1.05)} ⭐",callback_data=f"stars_rub:{rub}")]
                   for rub in STARS_RUB_PRESETS]
