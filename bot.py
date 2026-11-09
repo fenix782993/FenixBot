@@ -1403,6 +1403,7 @@ async def owner(c):
         [InlineKeyboardButton(text="📈 Общая статистика",callback_data="ostats")],
         [InlineKeyboardButton(text="💰 Выручка и продажи",callback_data="owner_revenue")],
         [InlineKeyboardButton(text="👮 Управление администраторами",callback_data="admins_manage")],
+        [InlineKeyboardButton(text="🛡️ Чат-менеджер",callback_data="chat_manager_admin")],
         [InlineKeyboardButton(text="💎 Premium Emoji для всех кнопок",callback_data="button_emoji_setup")]
     ]))
     await c.answer()
