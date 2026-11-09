@@ -39,7 +39,9 @@ def init(db):
             "CREATE TABLE IF NOT EXISTS cm_timers(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,uid BIGINT,body TEXT,due_at TEXT,status TEXT DEFAULT 'pending',created TEXT)",
             "CREATE TABLE IF NOT EXISTS cm_votes(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,creator BIGINT,question TEXT,status TEXT DEFAULT 'open',created TEXT)",
             "CREATE TABLE IF NOT EXISTS cm_vote_options(id BIGSERIAL PRIMARY KEY,vote_id BIGINT,label TEXT)",
-            "CREATE TABLE IF NOT EXISTS cm_vote_ballots(vote_id BIGINT,uid BIGINT,option_id BIGINT,created TEXT,PRIMARY KEY(vote_id,uid))"]
+            "CREATE TABLE IF NOT EXISTS cm_vote_ballots(vote_id BIGINT,uid BIGINT,option_id BIGINT,created TEXT,PRIMARY KEY(vote_id,uid))",
+            "CREATE TABLE IF NOT EXISTS cm_message_events(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,uid BIGINT,created TEXT)",
+            "CREATE TABLE IF NOT EXISTS cm_antispam(chat_id BIGINT PRIMARY KEY,enabled INTEGER DEFAULT 1,threshold INTEGER DEFAULT 8,window_sec INTEGER DEFAULT 10,mute_sec INTEGER DEFAULT 30)"]
             for x in sql:c.execute(x)
         else:
             c.executescript("""
@@ -52,6 +54,8 @@ def init(db):
             CREATE TABLE IF NOT EXISTS cm_votes(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,creator INTEGER,question TEXT,status TEXT DEFAULT 'open',created TEXT);
             CREATE TABLE IF NOT EXISTS cm_vote_options(id INTEGER PRIMARY KEY AUTOINCREMENT,vote_id INTEGER,label TEXT);
             CREATE TABLE IF NOT EXISTS cm_vote_ballots(vote_id INTEGER,uid INTEGER,option_id INTEGER,created TEXT,PRIMARY KEY(vote_id,uid));
+            CREATE TABLE IF NOT EXISTS cm_message_events(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,uid INTEGER,created TEXT);
+            CREATE TABLE IF NOT EXISTS cm_antispam(chat_id INTEGER PRIMARY KEY,enabled INTEGER DEFAULT 1,threshold INTEGER DEFAULT 8,window_sec INTEGER DEFAULT 10,mute_sec INTEGER DEFAULT 30);
             """)
 def level(db,chat,uid):
     try:
@@ -60,7 +64,7 @@ def level(db,chat,uid):
     except Exception:return 0
 def register(dp,bot,db,owner_ids=()):
     init(db); router=Router(name="fenix_iris_modules"); owners=set(owner_ids or ())
-    commands="note|notes|bookmark|bookmarks|unbookmark|timer|vote|access|triggeradd|triggerdel|triggers|purge|del|report"
+    commands="note|notes|bookmark|bookmarks|unbookmark|timer|vote|access|triggeradd|triggerdel|triggers|purge|del|report|antispam"
     pattern=re.compile(r"(?i)^(?:[!./](?:"+commands+r")(?:@[a-zA-Z0-9_]+)?(?=$|[^a-zA-Z0-9_])|ирис(?:ка)?[ ]+(?:"+commands+r")(?=$|[^a-zA-Z0-9_]))")
     @router.message(F.text.regexp(pattern))
     async def command(m):
@@ -71,6 +75,14 @@ def register(dp,bot,db,owner_ids=()):
         chat,uid,p=m.chat.id,m.from_user.id,ph(db); lv=level(db,chat,uid); owner=uid in owners or db.is_admin(uid)
         ac=one(db,f"SELECT min_level,enabled FROM cm_access WHERE chat_id={p} AND command={p}",(chat,cmd))
         if ac and (not int(ac["enabled"]) or lv<int(ac["min_level"])):return await m.answer("⛔ Доступ к команде ограничен.")
+        if cmd=="antispam":
+            if lv<60 and not owner:return await m.answer("⛔ Требуется уровень 60.")
+            value=args[0].lower() if args else "status"
+            if value not in ("on","off","status"):return await m.answer("Формат: !antispam on|off|status")
+            if value!="status":
+                run(db,f"INSERT INTO cm_antispam(chat_id,enabled) VALUES({p},{p}) ON CONFLICT(chat_id) DO UPDATE SET enabled=excluded.enabled",(chat,1 if value=="on" else 0))
+            cfg=one(db,f"SELECT enabled,threshold,window_sec,mute_sec FROM cm_antispam WHERE chat_id={p}",(chat,)) or {"enabled":1,"threshold":8,"window_sec":10,"mute_sec":30}
+            return await m.answer(f"🛡 Антиспам: {'включён' if cfg['enabled'] else 'выключен'}. Порог: {cfg['threshold']} сообщений за {cfg['window_sec']} сек.; мут: {cfg['mute_sec']} сек.")
         if cmd=="access":
             if lv<80 and not owner:return await m.answer("⛔ Требуется уровень 80.")
             if len(args)<2:return await m.answer("Формат: !access команда уровень|off (0/20/40/60/80).")
@@ -174,6 +186,27 @@ def register(dp,bot,db,owner_ids=()):
                 except Exception:pass
             return await m.answer(f"Репорт #{rid} передан руководству.")
 
+    class SpamFilter(BaseFilter):
+        async def __call__(self,m):
+            if not m.text or m.chat.type=="private" or not m.from_user or m.from_user.is_bot:return False
+            if m.text.startswith(("!","/", ".")) or m.text.lower().startswith(("ирис ","ириска ")):return False
+            if level(db,m.chat.id,m.from_user.id)>=40:return False
+            p=ph(db);cfg=one(db,f"SELECT enabled,threshold,window_sec,mute_sec FROM cm_antispam WHERE chat_id={p}",(m.chat.id,)) or {"enabled":1,"threshold":8,"window_sec":10,"mute_sec":30}
+            if not int(cfg["enabled"]):return False
+            cutoff=(datetime.now(timezone.utc)-timedelta(seconds=int(cfg["window_sec"]))).isoformat()
+            run(db,f"INSERT INTO cm_message_events(chat_id,uid,created) VALUES({p},{p},{p})",(m.chat.id,m.from_user.id,stamp(db)))
+            count=one(db,f"SELECT COUNT(*) AS n FROM cm_message_events WHERE chat_id={p} AND uid={p} AND created>={p}",(m.chat.id,m.from_user.id,cutoff))
+            if int((count or {}).get("n",0))>=int(cfg["threshold"]):return {"spam_mute":int(cfg["mute_sec"])}
+            return False
+    @router.message(F.text,SpamFilter())
+    async def spam_action(m,spam_mute):
+        try:await m.delete()
+        except Exception:pass
+        try:
+            from aiogram.types import ChatPermissions
+            await bot.restrict_chat_member(m.chat.id,m.from_user.id,ChatPermissions(can_send_messages=False),until_date=datetime.now(timezone.utc)+timedelta(seconds=spam_mute))
+            await bot.send_message(m.chat.id,f"🛡 Антиспам: участник ограничен на {spam_mute} сек. за флуд.")
+        except Exception:log.exception("Anti-spam restriction failed")
     class TriggerFilter(BaseFilter):
         async def __call__(self,m):
             if not m.text or m.chat.type=="private" or m.text.startswith(("!","/",".")) or m.text.lower().startswith(("ирис ","ириска ")):return False
