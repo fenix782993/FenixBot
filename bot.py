@@ -299,9 +299,8 @@ def menu(uid):
     media_status=(db.media_current(uid) or {}).get("status")
     label=db.setting("home_label","📢 Новости FENIX ONLINE")
     url=db.setting("home_url",CHANNEL_URL)
-    store_url=os.getenv("WEBAPP_URL","https://fenixbot-vyqo.onrender.com").rstrip("/")+"/store"
     wheel_url=os.getenv("WEBAPP_URL","https://fenixbot-vyqo.onrender.com").rstrip("/")+"/wheel"
-    rows=[[InlineKeyboardButton(text="🛍 Донат и товары",url=store_url)],
+    rows=[[InlineKeyboardButton(text="🎁 Telegram-подарки",callback_data="tgs:catalog")],
           [InlineKeyboardButton(text="🎡 Колесо фортуны · 50 ₽",url=wheel_url)],
           [InlineKeyboardButton(text="⭐ Пополнить Stars",callback_data="donate_stars"),
            InlineKeyboardButton(text="💳 Ручное пополнение",callback_data="manual_donation")],
