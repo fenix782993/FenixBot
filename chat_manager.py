@@ -147,7 +147,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
             ]+[[InlineKeyboardButton(text="Обновить список",callback_data="cmui:home")]])
             return await m.answer("<b>FENIX MANAGER</b>\\nВыбери беседу для управления:",parse_mode="HTML",reply_markup=keyboard)
         command_text=raw
-        is_command=raw.startswith(("!","." ,"/"))
+        is_command=raw.startswith(("!","." ,"/")) or raw.lower().startswith(("ирис ","ириска "))
         if not is_command:
             if m.chat.type!="private":
                 s=chat_settings(db,m.chat.id)
@@ -166,10 +166,10 @@ def register_chat_manager(dp, bot, db, owner_ids):
                         try: await m.delete()
                         except Exception: pass
             return
-        command_text=raw[1:]
-            if command_text.startswith("/"):
-                command_text=command_text.split("@",1)[0]+( " "+raw.split(maxsplit=1)[1] if len(raw.split(maxsplit=1))>1 else "")
-            elif command_text.startswith(("!",".")):
+        if raw.lower().startswith(("ирис ","ириска ")):
+            command_text=raw.split(maxsplit=1)[1]
+        else:
+            command_text=raw[1:]
                 command_text=command_text[1:]
         parts=command_text.split(maxsplit=1); name=parts[0].lower().split("@")[0] if parts else ""; argtext=parts[1] if len(parts)>1 else ""
         cmd=ALIASES.get(name)
