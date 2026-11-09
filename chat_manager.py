@@ -181,7 +181,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
             ]+[[InlineKeyboardButton(text="Обновить список",callback_data="cmui:home")]])
             return await m.answer("<b>FENIX MANAGER</b>\nВыбери беседу для управления:",parse_mode="HTML",reply_markup=keyboard)
         command_text=raw
-        is_command=raw.startswith(("!","." ,"/","+")) or raw.lower().startswith(("ирис ","ириска "))
+        is_command=raw.startswith(("!","." ,"/","+"))
         if not is_command:
             if m.chat.type!="private":
                 s=chat_settings(db,m.chat.id)
@@ -200,9 +200,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
                         try: await m.delete()
                         except Exception: pass
             return
-        if raw.lower().startswith(("ирис ","ириска ")):
-            command_text=raw.split(maxsplit=1)[1]
-        elif raw.startswith("+"):
+        if raw.startswith("+"):
             command_text=raw
         else:
             command_text=raw[1:]
@@ -237,32 +235,91 @@ def register_chat_manager(dp, bot, db, owner_ids):
             return await reply(m,"⛔ Доступ к этой команде ограничен настройками беседы.")
         if cmd=="help":
             text = (
-                "<b>📘 FENIX MANAGER — СПРАВКА</b>\n"
-                "<b>ОБЩИЕ</b>\n"
-                "<code>!start</code> подключение · <code>!help</code> помощь · <code>!ping</code> статус · <code>!rules</code> правила · <code>!admins</code> руководство · <code>!roles</code> роли · <code>!stats</code> карточка · <code>!reg</code> регистрация · <code>!online</code> онлайн · <code>!chatinfo</code> чат · <code>!report ТЕКСТ</code> жалоба · <code>!kiss</code>/<code>!obnyat</code> поцелуй/объятие.\n"
-                "<b>ПОМОЩНИК (20+)</b>\n"
-                "<code>!mute 15m ПРИЧИНА</code>/<code>!unmute</code> мут · <code>!kick</code> исключить · <code>!warn ПРИЧИНА</code>/<code>!unwarn</code> предупреждения · <code>!getwarn</code>/<code>!warnhistory</code>/<code>!warnlist</code> история · <code>!getban</code> бан · <code>!getnick</code>/<code>!setnick ID НИК</code>/<code>!removenick</code> игровой ник · <code>!nicknames</code>/<code>!getbynick НИК</code> поиск.\n"
-                "<b>МОДЕРАТОР (40+)</b>\n"
-                "<code>!ban</code>/<code>!unban ID</code>/<code>!banlist</code> блокировки · <code>!addhelper ID</code> помощник · <code>!wipe warns|filters|logs|nicks</code> очистка · <code>!giveaway 1h ПРИЗ</code>/<code>!gstop ID</code> розыгрыш.\n"
-                "<b>АДМИНИСТРАТОР (60+)</b>\n"
-                "<code>!addmoder ID</code> модератор · <code>!filters</code>/<code>!filteradd ФРАЗА</code>/<code>!filterdel ФРАЗА</code> фильтр · <code>!addlink URL</code>/<code>!whitelistlinks</code> ссылки · <code>!triggeradd ФРАЗА =&gt; ОТВЕТ</code>/<code>!triggers</code>/<code>!triggerdel ФРАЗА</code> автоответы · <code>!antispam on|off|status</code>.\n"
-                "<b>ГЛАВНЫЙ АДМИН (80+)</b>\n"
-                "<code>!addadmin ID</code> · <code>!setrole ID 20|40|60|80</code> · <code>!removerole ID</code> · <code>!newrole УРОВЕНЬ НАЗВАНИЕ</code> · <code>!deleterole УРОВЕНЬ</code> · <code>!welcome ТЕКСТ</code> · <code>!setrules ТЕКСТ</code> · <code>!pin</code>/<code>!unpin</code> · <code>!access КОМАНДА 0|20|40|60|80|off</code>.\n"
-                "<b>ВЛАДЕЛЕЦ (100)</b>\n"
-                "<code>!setup</code>/<code>!settings</code>/<code>!settingsmute</code>/<code>!settingsinvite</code> настройки · <code>!setsettings mute|invite on|off</code> режимы · <code>!silence</code> тишина.\n"
-                "<b>ОБЪЕДИНЕНИЯ</b>\n"
-                "<code>!unity</code>/<code>!unites</code> просмотр · <code>!addunity НАЗВАНИЕ</code>/<code>!removeunity</code>/<code>!editunity НАЗВАНИЕ</code>/<code>!deleteunity НАЗВАНИЕ</code> управление.\n"
-                "<b>ИНСТРУМЕНТЫ</b>\n"
-                "<code>!logs</code> журнал · <code>!note add ТЕКСТ</code>/<code>!note list</code>/<code>!note del ID</code> заметки · <code>!bookmark</code>/<code>!bookmarks</code>/<code>!unbookmark ID</code> закладки · <code>!timer 10m ТЕКСТ</code>/<code>!timers</code>/<code>!timerdel ID</code> напоминания · <code>!vote ВОПРОС | A | B</code>/<code>!voteresult ID</code>/<code>!voteclose ID</code> опросы · <code>!del</code>/<code>!purge N</code> удаление · <code>!access</code> доступ.\n"
-                "<b>СОЦИАЛЬНЫЕ</b>\n"
-                "<code>!dice</code> кости · <code>!duel</code> дуэль (ответом на сообщение) · <code>!rep</code>/<code>!топреп</code> репутация · <code>!circle create|join|leave|info|list</code> круги.\n"
-                "<b>ПРАВИЛА</b>\n"
-                "Для выбора участника отвечай на его сообщение; где поддерживается — используй ID. Сроки: 30s, 15m, 2h, 3d. Команды доступны в группах и зависят от уровня и прав бота. Уровни: помощник 20 · модератор 40 · администратор 60 · главный администратор 80 · владелец 100."
+                "<b>📘 FENIX MANAGER — ВСЕ КОМАНДЫ</b>\n"
+                "<i>Команды вводятся в группе с !. Можно отвечать на сообщение участника вместо указания ID.</i>\n\n"
+                "<b>ОБЩИЕ КОМАНДЫ</b>\n"
+                "<code>!start</code> / <code>!начать</code> — подключение и краткая инструкция.\n"
+                "<code>!help</code> / <code>!cmds</code> / <code>!команды</code> / <code>!помощь</code> — эта справка.\n"
+                "<code>!ping</code> / <code>!пинг</code> / <code>!status</code> / <code>!статус</code> / <code>!test</code> / <code>!тест</code> — проверить работу бота.\n"
+                "<code>!rules</code> / <code>!правила</code> — правила беседы.\n"
+                "<code>!chatinfo</code> / <code>!info</code> / <code>!инфо</code> / <code>!чатинфо</code> — информация о беседе.\n"
+                "<code>!admins</code> / <code>!staff</code> / <code>!админы</code> — список руководства.\n"
+                "<code>!roles</code> / <code>!роли</code> — иерархия ролей.\n"
+                "<code>!stats</code> / <code>!стата</code> / <code>!статистика</code> — статистика беседы.\n"
+                "<code>!reg</code> / <code>!рег</code> — регистрационная команда.\n"
+                "<code>!online</code> / <code>!онлайн</code> — онлайн беседы.\n"
+                "<code>!report ТЕКСТ</code> / <code>!репорт ТЕКСТ</code> — отправить жалобу руководству.\n"
+                "<code>!try</code> / <code>!попытка</code> — случайная попытка.\n"
+                "<code>!kiss</code> / <code>!поцелуй</code> — поцеловать участника (ответом или по ID).\n"
+                "<code>!obnyat</code> / <code>!обнять</code> — обнять участника (ответом или по ID).\n\n"
+                "<b>МОДЕРАЦИЯ · ПОМОЩНИК (20+)</b>\n"
+                "<code>!mute 15m ПРИЧИНА</code> / <code>!мут</code> — выдать мут; срок: 30s, 15m, 2h, 3d.\n"
+                "<code>!unmute</code> / <code>!унмут</code> — снять мут.\n"
+                "<code>!kick</code> / <code>!кик</code> / <code>!исключить</code> — исключить участника.\n"
+                "<code>!warn ПРИЧИНА</code> / <code>!варн</code> / <code>!пред</code> — выдать предупреждение.\n"
+                "<code>!unwarn ID</code> / <code>!унварн</code> — снять предупреждение.\n"
+                "<code>!getwarn</code> / <code>!предупреждения</code> — посмотреть предупреждения участника.\n"
+                "<code>!warnhistory</code> / <code>!историяварнов</code> — история предупреждений.\n"
+                "<code>!warnlist</code> / <code>!преды</code> — список предупреждений беседы.\n"
+                "<code>!getban ID</code> / <code>!гетбан</code> — проверить бан участника.\n"
+                "<code>!getnick ID</code> / <code>!nick</code> / <code>!gnick</code> / <code>!ник</code> — посмотреть игровой ник.\n"
+                "<code>!setnick ID НИК</code> / <code>!snick</code> — установить игровой ник.\n"
+                "<code>!removenick ID</code> / <code>!rnick</code> — удалить игровой ник.\n"
+                "<code>!nicknames</code> / <code>!nlist</code> — список игровых ников.\n"
+                "<code>!nonames</code> / <code>!безников</code> — участники без игрового ника.\n"
+                "<code>!getbynick НИК</code> / <code>!понику</code> — найти участника по игровому нику.\n\n"
+                "<b>МОДЕРАТОР (40+) И ВЫШЕ</b>\n"
+                "<code>!ban ПРИЧИНА</code> / <code>!блок</code> — заблокировать участника.\n"
+                "<code>!unban ID</code> / <code>!унблок</code> — снять блокировку.\n"
+                "<code>!banlist</code> — список заблокированных.\n"
+                "<code>!wipe warns|filters|logs|nicks</code> / <code>!вайп</code> — очистить выбранные данные (доступ зависит от роли).\n\n"
+                "<b>УПРАВЛЕНИЕ РОЛЯМИ</b>\n"
+                "<code>!addhelper ID</code> / <code>!helper</code> — назначить помощника (40+).\n"
+                "<code>!addmoder ID</code> / <code>!moder</code> — назначить модератора (60+).\n"
+                "<code>!addadmin ID</code> — назначить администратора (80+).\n"
+                "<code>!setrole ID 20|40|60|80|100</code> / <code>!role</code> — установить роль (80+).\n"
+                "<code>!removerole ID</code> / <code>!rr</code> — снять роль (80+).\n"
+                "<code>!+модер ID</code>, <code>!+админ ID</code>, <code>!повысить ID</code>, <code>!понизить ID</code> — изменить ранг.\n"
+                "<code>!newrole УРОВЕНЬ НАЗВАНИЕ</code> — создать название роли.\n"
+                "<code>!deleterole УРОВЕНЬ</code> / <code>!delrole</code> — удалить название роли.\n\n"
+                "<b>НАСТРОЙКИ БЕСЕДЫ · ВЛАДЕЛЕЦ (100)</b>\n"
+                "<code>!setup</code> — инструкция первичной настройки.\n"
+                "<code>!settings</code> — показать настройки.\n"
+                "<code>!settingsmute</code> — настройки ограничений.\n"
+                "<code>!settingsinvite</code> — настройки приглашений.\n"
+                "<code>!setsettings mute on|off</code> — включить/выключить режим ограничений.\n"
+                "<code>!setsettings invite on|off</code> — включить/выключить ограничения приглашений.\n"
+                "<code>!welcome ТЕКСТ</code> — задать приветствие; пустой текст очищает его (80+).\n"
+                "<code>!setrules ТЕКСТ</code> — задать правила; пустой текст очищает их (80+).\n"
+                "<code>!silence</code> / <code>!тишина</code> — переключить режим тишины.\n"
+                "<code>!pin</code> / <code>!закрепить</code> — закрепить сообщение (ответом на него).\n"
+                "<code>!unpin</code> / <code>!открепить</code> — снять закрепление.\n\n"
+                "<b>ФИЛЬТРЫ И ССЫЛКИ · АДМИНИСТРАТОР (60+)</b>\n"
+                "<code>!filters</code> / <code>!фильтры</code> / <code>!filteredit</code> — показать фильтры.\n"
+                "<code>!filteradd ФРАЗА</code> — добавить запрещённую фразу.\n"
+                "<code>!filterdel ФРАЗА</code> — удалить фразу из фильтра.\n"
+                "<code>!addlink https://site.ru</code> — добавить разрешённую ссылку.\n"
+                "<code>!whitelistlinks</code> — показать белый список ссылок.\n\n"
+                "<b>ЖУРНАЛ И ОБЪЕДИНЕНИЯ</b>\n"
+                "<code>!logs</code> / <code>!логи</code> — последние действия в беседе.\n"
+                "<code>!zov</code> / <code>!зов</code> / <code>!вызов</code> — подсказка по объявлению для всех.\n"
+                "<code>!unity</code> — показать объединение текущей беседы.\n"
+                "<code>!unites</code> — список объединений.\n"
+                "<code>!addunity НАЗВАНИЕ</code> — создать/подключить объединение.\n"
+                "<code>!removeunity</code> — отключить беседу от объединения.\n"
+                "<code>!editunity НОВОЕ_НАЗВАНИЕ</code> — переименовать объединение.\n"
+                "<code>!deleteunity НАЗВАНИЕ</code> — удалить объединение.\n\n"
+                "<b>НЕАКТИВНЫЕ КОМАНДЫ</b>\n"
+                "<code>!voice</code>, <code>!mafia</code>, <code>!emoji</code>, <code>!enick</code> — зарезервированы, сейчас не выполняют действий.\n\n"
+                "<b>УРОВНИ ДОСТУПА</b>\n"
+                "Помощник — 20 · Модератор — 40 · Администратор — 60 · Главный администратор — 80 · Владелец — 100.\n"
+                "Указание участника: ответь на его сообщение или передай Telegram ID. Сроки мута: 30s, 15m, 2h, 3d. Для работы модерации выдай FENIX права администратора Telegram."
             )
             article=(db.setting("fenix_commands_article_url","") or "").strip()
             markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📖 Полный справочник FENIX",url=article)]]) if article else None
-            return await reply(m, text+"\\n\\n📖 Полный список команд и примеров — в справочнике FENIX.",markup)
-            return await reply(m,"<b>FENIX MANAGER подключён</b>\nБеседа: "+(m.chat.title or "без названия")+"\nДля списка возможностей используй !help.")
+            return await reply(m, text, markup)
+        if cmd=="start":
+            return await reply(m,"<b>FENIX MANAGER подключён</b>\nБеседа: "+html.escape(m.chat.title or "без названия")+"\nДля списка всех возможностей используй !help.")
         if cmd=="ping":
             return await reply(m,"<b>FENIX MANAGER</b>\nСтатус: работает\nБеседа: активна")
         if cmd=="rules":
