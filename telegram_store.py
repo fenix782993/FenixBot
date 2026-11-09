@@ -27,11 +27,17 @@ def init(db):
         if db.use_postgres:
             c.execute("""CREATE TABLE IF NOT EXISTS tg_store_items(token TEXT PRIMARY KEY,owner_uid BIGINT NOT NULL,recipient_uid BIGINT NOT NULL,gift_id TEXT NOT NULL,title TEXT,stars INTEGER NOT NULL,created TEXT NOT NULL)""")
             c.execute("""CREATE TABLE IF NOT EXISTS tg_store_orders(id TEXT PRIMARY KEY,payload TEXT UNIQUE NOT NULL,buyer_uid BIGINT NOT NULL,recipient_uid BIGINT NOT NULL,kind TEXT NOT NULL,item_id TEXT NOT NULL,title TEXT NOT NULL,stars INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'invoice',charge_id TEXT UNIQUE,error TEXT,created TEXT NOT NULL,delivered TEXT,note TEXT)""")
+            c.execute("""CREATE TABLE IF NOT EXISTS tg_store_favorites(uid BIGINT NOT NULL,gift_id TEXT NOT NULL,created TEXT NOT NULL,PRIMARY KEY(uid,gift_id))""")
+            c.execute("""CREATE TABLE IF NOT EXISTS tg_store_promos(code TEXT PRIMARY KEY,discount INTEGER NOT NULL,uses_left INTEGER NOT NULL,active INTEGER NOT NULL DEFAULT 1,created TEXT NOT NULL)""")
+            c.execute("""CREATE TABLE IF NOT EXISTS tg_store_promo_uses(code TEXT NOT NULL,uid BIGINT NOT NULL,order_id TEXT NOT NULL UNIQUE,created TEXT NOT NULL,PRIMARY KEY(code,uid,order_id))""")
             try: c.execute("ALTER TABLE tg_store_orders ADD COLUMN IF NOT EXISTS note TEXT")
             except Exception: pass
         else:
             c.executescript("""CREATE TABLE IF NOT EXISTS tg_store_items(token TEXT PRIMARY KEY,owner_uid INTEGER NOT NULL,recipient_uid INTEGER NOT NULL,gift_id TEXT NOT NULL,title TEXT,stars INTEGER NOT NULL,created TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS tg_store_orders(id TEXT PRIMARY KEY,payload TEXT UNIQUE NOT NULL,buyer_uid INTEGER NOT NULL,recipient_uid INTEGER NOT NULL,kind TEXT NOT NULL,item_id TEXT NOT NULL,title TEXT NOT NULL,stars INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'invoice',charge_id TEXT UNIQUE,error TEXT,created TEXT NOT NULL,delivered TEXT,note TEXT);""")
+            CREATE TABLE IF NOT EXISTS tg_store_orders(id TEXT PRIMARY KEY,payload TEXT UNIQUE NOT NULL,buyer_uid INTEGER NOT NULL,recipient_uid INTEGER NOT NULL,kind TEXT NOT NULL,item_id TEXT NOT NULL,title TEXT NOT NULL,stars INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'invoice',charge_id TEXT UNIQUE,error TEXT,created TEXT NOT NULL,delivered TEXT,note TEXT);
+            CREATE TABLE IF NOT EXISTS tg_store_favorites(uid INTEGER NOT NULL,gift_id TEXT NOT NULL,created TEXT NOT NULL,PRIMARY KEY(uid,gift_id));
+            CREATE TABLE IF NOT EXISTS tg_store_promos(code TEXT PRIMARY KEY,discount INTEGER NOT NULL,uses_left INTEGER NOT NULL,active INTEGER NOT NULL DEFAULT 1,created TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS tg_store_promo_uses(code TEXT NOT NULL,uid INTEGER NOT NULL,order_id TEXT NOT NULL UNIQUE,created TEXT NOT NULL,PRIMARY KEY(code,uid,order_id));""")
             try: c.execute("ALTER TABLE tg_store_orders ADD COLUMN note TEXT")
             except Exception: pass
 
@@ -84,11 +90,37 @@ def register(dp, bot, db, owner_ids=()):
             run(db,f"INSERT INTO tg_store_items(token,owner_uid,recipient_uid,gift_id,title,stars,created) VALUES({','.join([ph(db)]*7)})",
                 (token,owner_id,recipient_id,str(gift["id"]),emoji,base,datetime.now(timezone.utc).isoformat()))
             rows.append([InlineKeyboardButton(text=f"{emoji} {base+MARKUP_STARS} ⭐ · {(base+MARKUP_STARS)*1.35:.2f} ₽",callback_data=f"{prefix}{token}")])
+        rows.append([InlineKeyboardButton(text="🧾 Мои заказы",callback_data="tgs:history")])
         await bot.send_message(chat_id,"<b>🎁 ПОДАРКИ TELEGRAM · FENIX</b>\nЦена: стоимость подарка + 5 ⭐ комиссия. Курс: 1 ⭐ = 1,35 ₽. Выбери подарок:",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
     @router.message(Command("gifts"))
     async def gifts_command(m):
         await m.answer("🎁 Открой магазин подарков через кнопку меню.",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🎁 Открыть подарки",callback_data="tgs:catalog")]]))
+
+    @router.callback_query(F.data=="tgs:history")
+    async def order_history(c):
+        rows=one(db,f"SELECT COUNT(*) AS n,COALESCE(SUM(stars),0) AS spent FROM tg_store_orders WHERE buyer_uid={ph(db)} AND status IN ('delivered','delivery_failed')",(c.from_user.id,)) or {"n":0,"spent":0}
+        items=None
+        with db.con() as conn:
+            items=conn.execute(f"SELECT id,title,recipient_uid,stars,status,created,error FROM tg_store_orders WHERE buyer_uid={ph(db)} ORDER BY created DESC LIMIT 10",(c.from_user.id,)).fetchall()
+        labels={"invoice":"Ожидает оплаты","delivering":"Отправляется","delivered":"Доставлен","delivery_failed":"Нужна проверка"}
+        lines=[f"🧾 <b>МОИ ЗАКАЗЫ</b>","Всего заказов: <b>{len(items)}</b>","Успешно/ошибки: <b>{rows['n']}</b>","Потрачено: <b>{rows['spent']} ⭐</b>",""]
+        for item in items:
+            item=dict(item)
+            lines.append(f"• {item['title']} — <b>{item['stars']} ⭐</b>\nПолучатель: <code>{item['recipient_uid']}</code>\nСтатус: {labels.get(item['status'],item['status'])}\nЗаказ: <code>{item['id']}</code>")
+            if item.get("error") and item["status"]=="delivery_failed": lines.append("Ошибка: "+str(item["error"])[:160])
+        await c.message.answer("\n\n".join(lines),parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🎁 В магазин",callback_data="tgs:catalog")]]))
+        await c.answer()
+
+    @router.callback_query(F.data=="tgs:adminstats")
+    async def admin_stats(c):
+        if c.from_user.id not in owner_ids and not db.is_admin(c.from_user.id):
+            return await c.answer("Нет доступа.",show_alert=True)
+        with db.con() as conn:
+            totals=dict(conn.execute("SELECT COUNT(*) AS orders,COALESCE(SUM(stars),0) AS revenue,COALESCE(SUM(CASE WHEN status='delivered' THEN stars-? ELSE 0 END),0) AS commission,COALESCE(SUM(CASE WHEN status='delivered' THEN 1 ELSE 0 END),0) AS delivered,COALESCE(SUM(CASE WHEN status='delivery_failed' THEN 1 ELSE 0 END),0) AS failed FROM tg_store_orders",(MARKUP_STARS,)).fetchone())
+        balance=await bot_star_balance()
+        await c.message.answer(f"💰 <b>ФИНАНСЫ FENIX STARS</b>\nЗаказов: <b>{totals['orders']}</b>\nДоставлено: <b>{totals['delivered']}</b>\nОшибок доставки: <b>{totals['failed']}</b>\nПолучено по заказам: <b>{totals['revenue']} ⭐</b>\nКомиссия начислена: <b>{totals['commission']} ⭐</b>\nБаланс бота сейчас: <b>{balance} ⭐</b>\nКомиссия за заказ: <b>{MARKUP_STARS} ⭐</b>",parse_mode="HTML")
+        await c.answer()
 
     @router.callback_query(F.data=="tgs:catalog")
     async def catalog_callback(c, state: FSMContext):
