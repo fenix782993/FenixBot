@@ -428,22 +428,23 @@ async def import_emoji_pack(m: Message):
         f"Premium Custom Emoji загружено: {len(items)}",
         ""
     ]
-    entities = []
-    utf16_offset = sum(len(line.encode("utf-16-le")) // 2 for line in lines) + max(0, len(lines) - 1)
+    # Use one known single-code-point fallback (💎). Some sticker fallback
+    # glyphs contain ZWJ/variation selectors and can make Telegram reject offsets.
+    marker_positions = []
     for i, item in enumerate(items[:30], 1):
-        # Telegram требует, чтобы custom_emoji entity оборачивала ровно один emoji fallback,
-        # а не букву X. Берём emoji из StickerSet и заменяем его Premium-рендером по ID.
-        fallback_emoji = str(item.get("emoji") or "💎")
-        line = f"{i}. {fallback_emoji}  ID: {item['id']}"
-        marker_offset = utf16_offset + len(f"{i}. ".encode("utf-16-le")) // 2
+        line = f"{i}. 💎  ID: {item['id']}"
+        marker_positions.append((len("\n".join(lines)) + (1 if lines else 0) + len(f"{i}. "), str(item["id"])))
+        lines.append(line)
+    text = "\n".join(lines)
+    entities = []
+    for char_offset, custom_id in marker_positions:
+        utf16_offset = len(text[:char_offset].encode("utf-16-le")) // 2
         entities.append(MessageEntity(
             type="custom_emoji",
-            offset=marker_offset,
-            length=len(fallback_emoji.encode("utf-16-le")) // 2,
-            custom_emoji_id=str(item["id"])
+            offset=utf16_offset,
+            length=1,
+            custom_emoji_id=custom_id
         ))
-        lines.append(line)
-        utf16_offset += len(line.encode("utf-16-le")) // 2 + 1
     if len(items) > 30:
         lines.append(f"… и ещё {len(items)-30}")
     lines += [
@@ -487,28 +488,25 @@ async def list_pack_emojis(m: Message):
     # Telegram renders a real custom emoji only when the message carries
     # a custom_emoji MessageEntity with the corresponding custom_emoji_id.
     lines = ["💎 PREMIUM CUSTOM EMOJI ИЗ ПАКА", "━━━━━━━━━━━━━━━━━━"]
-    entities = []
-    # Сначала учитываем обе строки заголовка и переводы строк.
-    utf16_offset = sum(len(line.encode("utf-16-le")) // 2 for line in lines) + max(0, len(lines) - 1)
+    # Build the complete text first, then calculate offsets from the exact
+    # final string. A single-code-point fallback avoids broken UTF-16 ranges.
+    positions = []
     for i, item in enumerate(items, 1):
         custom_id = str(item.get("id") or "")
-        # custom_emoji entity обязана накрывать один валидный emoji-символ,
-        # обычная буква X не является допустимым fallback для Telegram.
-        marker = str(item.get("emoji") or "💎")
-        line = f"{i}. {marker}  ID: {custom_id}"
-        marker_offset = utf16_offset + len(f"{i}. ".encode("utf-16-le")) // 2
+        line = f"{i}. 💎  ID: {custom_id}"
+        positions.append((len("\n".join(lines)) + (1 if lines else 0) + len(f"{i}. "), custom_id))
+        lines.append(line)
+
+    text = "\n".join(lines)
+    entities = []
+    for char_offset, custom_id in positions:
         if custom_id:
             entities.append(MessageEntity(
                 type="custom_emoji",
-                offset=marker_offset,
-                length=len(marker.encode("utf-16-le")) // 2,
+                offset=len(text[:char_offset].encode("utf-16-le")) // 2,
+                length=1,
                 custom_emoji_id=custom_id
             ))
-        lines.append(line)
-        # Telegram entity offsets are measured in UTF-16 code units.
-        utf16_offset += len(line.encode("utf-16-le")) // 2 + 1
-
-    text = "\n".join(lines)
     await m.answer(text, entities=entities)
 
 @dp.message(Command("btnlist"))
