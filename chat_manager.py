@@ -132,6 +132,13 @@ def register_chat_manager(dp, bot, db, owner_ids):
     @router.message(F.text)
     async def command_handler(m:Message):
         raw=(m.text or "").strip()
+        if raw.lower().startswith("/chatmanager"):
+            if m.from_user.id not in owner_ids and not db.is_admin(m.from_user.id):
+                return await m.answer("⛔ Доступ только владельцу FENIX.")
+            chats=rows(db,"SELECT chat_id,title,updated FROM cm_settings ORDER BY updated DESC LIMIT 50")
+            body="<b>FENIX · ПОДКЛЮЧЁННЫЕ БЕСЕДЫ</b>\\n\\n"
+            body += ("\\n".join(f"• {x['title'] or 'Без названия'} · <code>{x['chat_id']}</code>" for x in chats) if chats else "Беседы пока не подключены. Добавь бота в группу и выполни !setup.")
+            return await m.answer(body,parse_mode="HTML")
         if not raw.startswith("!"): 
             if m.chat.type!="private":
                 s=chat_settings(db,m.chat.id)
