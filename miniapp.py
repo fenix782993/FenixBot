@@ -875,7 +875,7 @@ async def main():
     # bot.py delegates startup to miniapp.main(), so registering only in bot.main()
     # leaves all chat-manager commands and callback buttons without handlers.
     from telegram_store import register as register_telegram_store
-    register_telegram_store(core.dp, tg, db)
+    register_telegram_store(core.dp, tg, db, core.OWNER_IDS)
     # Register narrow command routers before the legacy catch-all text router.
     from iris_modules import register as register_iris_modules
     register_iris_modules(core.dp, tg, db, core.OWNER_IDS)
