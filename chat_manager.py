@@ -183,7 +183,44 @@ def register_chat_manager(dp, bot, db, owner_ids):
         if access and (not int(access.get("enabled",1)) or get_role(db,chat,uid)[0] < int(access.get("min_level",0))):
             return await reply(m,"⛔ Доступ к этой команде ограничен настройками беседы.")
         if cmd=="help":
-            return await reply(m,"<b>FENIX MANAGER · КОМАНДЫ</b>\n\n<b>Участник</b>: !help, !ping, !rules, !admins, !report, !try, !kiss, !obnyat\n<b>Помощник · 20</b>: !stats, !chatinfo, !mute, !unmute, !kick, !warn, !unwarn, !getwarn, !warnhistory, !warnlist, !getnick, !setnick, !removenick, !nicknames, !nonames, !getbynick, !zov, !logs\n<b>Модератор · 40</b>: !ban, !unban, !banlist, !addhelper, !setrole, !removerole, !roles, !silence, !wipe\n<b>Администратор · 60</b>: !addmoder, !addadmin, !filters, !filteradd, !filterdel, !addlink, !whitelistlinks\n<b>Главный администратор · 80</b>: !pin, !unpin, !newrole, !deleterole, !welcome, !setrules\n<b>Владелец · 100</b>: !setup, !settings, !setsettings, !settingsmute, !settingsinvite, !unity, !unites, !addunity, !removeunity, !editunity, !deleteunity\n\n<b>Дополнительные модули:</b> !note add/list/del, !bookmark, !bookmarks, !timer 10m текст, !timers, !timerdel ID, !vote вопрос | вариант 1 | вариант 2, !voteresult ID, !voteclose ID, !access команда уровень|off, !triggeradd фраза => ответ, !triggers, !triggerdel, !purge N, !del, !dice, !duel (ответом на сообщение), !rep, !топреп, !circle create/join/leave/info/list, !giveaway 1h приз, !gstop ID, !antispam on|off|status.\n<b>Stars-магазин:</b> /myid, /giftshop ID, /premiumgift ID, /starsorders.\n\nКоманды принимают префиксы !, точку и /. Время мута: 30s, 15m, 2h, 3d. Для действий над участником ответь на его сообщение или укажи числовой Telegram ID.")
+            text = (
+                "<b>📘 FENIX MANAGER — СПРАВОЧНИК КОМАНД</b>\\n\\n"
+                "<b>👤 Участник</b>\\n"
+                "<code>!help</code> — справочник; <code>!ping</code> — статус; <code>!rules</code> — правила; <code>!admins</code> — руководство.\\n"
+                "<code>!report текст</code> — жалоба; <code>!try</code> — попытка; <code>!kiss</code> — поцеловать; <code>!obnyat</code> — обнять.\\n\\n"
+                "<b>🛡 Помощник · 20</b>\\n"
+                "<code>!stats</code> — статистика; <code>!chatinfo</code> — информация о чате; <code>!logs</code> — журнал.\\n"
+                "<code>!mute 15m причина</code> — мут; <code>!unmute</code> — снять мут; <code>!kick</code> — исключить.\\n"
+                "<code>!warn причина</code> — предупреждение; <code>!unwarn</code> — снять; <code>!getwarn</code> — проверить.\\n"
+                "<code>!warnhistory</code> — история; <code>!warnlist</code> — список.\\n"
+                "<code>!getnick</code>, <code>!setnick ник</code>, <code>!removenick</code>, <code>!nicknames</code>, <code>!nonames</code>, <code>!getbynick ник</code>, <code>!zov</code>.\\n\\n"
+                "<b>🔨 Модератор · 40</b>\\n"
+                "<code>!ban</code> — блокировка; <code>!unban ID</code> — разблокировка; <code>!banlist</code> — список.\\n"
+                "<code>!addhelper ID</code>, <code>!setrole ID роль</code>, <code>!removerole ID</code>, <code>!roles</code>, <code>!silence</code>, <code>!wipe N</code>.\\n\\n"
+                "<b>⚙️ Администратор · 60</b>\\n"
+                "<code>!addmoder ID</code>, <code>!addadmin ID</code> — назначение; <code>!filters</code> — фильтры.\\n"
+                "<code>!filteradd фраза</code>, <code>!filterdel фраза</code>, <code>!addlink URL</code>, <code>!whitelistlinks</code>.\\n\\n"
+                "<b>👑 Главный администратор · 80</b>\\n"
+                "<code>!pin</code>, <code>!unpin</code>, <code>!newrole название уровень</code>, <code>!deleterole название</code>, <code>!welcome текст</code>, <code>!setrules текст</code>.\\n\\n"
+                "<b>🔥 Владелец · 100</b>\\n"
+                "<code>!setup</code>, <code>!settings</code>, <code>!setsettings</code>, <code>!settingsmute</code>, <code>!settingsinvite</code>.\\n"
+                "<code>!unity</code>, <code>!unites</code>, <code>!addunity название</code>, <code>!removeunity</code>, <code>!editunity название</code>, <code>!deleteunity название</code>.\\n\\n"
+                "<b>🧩 Дополнительные модули</b>\\n"
+                "<code>!note add/list/del</code> — заметки; <code>!bookmark</code>/<code>!bookmarks</code> — закладки.\\n"
+                "<code>!timer 10m текст</code>, <code>!timers</code>, <code>!timerdel ID</code> — таймеры.\\n"
+                "<code>!vote вопрос | вариант 1 | вариант 2</code>, <code>!voteresult ID</code>, <code>!voteclose ID</code> — голосования.\\n"
+                "<code>!access команда уровень|off</code> — доступ; <code>!triggeradd фраза => ответ</code>, <code>!triggers</code>, <code>!triggerdel ID</code> — автоответы.\\n"
+                "<code>!purge N</code>, <code>!del</code> — удаление; <code>!dice</code>, <code>!duel</code> — игры.\\n"
+                "<code>!rep</code>, <code>!топреп</code> — репутация; <code>!circle create/join/leave/info/list</code> — круги.\\n"
+                "<code>!giveaway 1h приз</code>, <code>!gstop ID</code> — розыгрыши; <code>!antispam on|off|status</code> — антиспам.\\n\\n"
+                "<b>⭐ Stars-магазин</b>\\n"
+                "<code>/myid</code> — мой ID; <code>/giftshop ID</code> — магазин; <code>/premiumgift ID</code> — Premium-подарок; <code>/starsorders</code> — заказы.\\n\\n"
+                "<b>📌 Общие правила</b>\\n"
+                "Префиксы: <code>!</code>, <code>.</code>, <code>/</code>. Для команды над участником ответь на его сообщение или укажи числовой Telegram ID.\\n"
+                "Время: <code>30s</code> — секунды, <code>15m</code> — минуты, <code>2h</code> — часы, <code>3d</code> — дни."
+            )
+            return await reply(m, text)
+
         if cmd=="start":
             return await reply(m,"<b>FENIX MANAGER подключён</b>\nБеседа: "+(m.chat.title or "без названия")+"\nДля списка возможностей используй !help.")
         if cmd=="ping":
