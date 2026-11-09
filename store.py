@@ -1,4 +1,4 @@
-"""FENIX ONLINE wallet, manual donations and NMZ shop."""
+"""FENIX ONLINE wallet, manual donations and FNZ shop."""
 import json
 import os
 
