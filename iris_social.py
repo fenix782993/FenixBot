@@ -89,12 +89,12 @@ def register(dp,bot,db,owners=()):
                 return await m.answer("Ты вышел из круга.")
             if sub=="list":
                 items=rows(db,f"SELECT c.name,COUNT(m.uid) AS members FROM cm_circles c LEFT JOIN cm_circle_members m ON m.circle_id=c.id WHERE c.chat_id={p} GROUP BY c.id,c.name ORDER BY members DESC LIMIT 30",(chat,))
-                return await m.answer("<b>⭕ КРУГИ БЕСЕДЫ</b>\\n"+("\\n".join(f"• {escape(x['name'])} — {x['members']} участн." for x in items) if items else "Кругов пока нет."),parse_mode="HTML")
+                return await m.answer("<b>⭕ КРУГИ БЕСЕДЫ</b>\n"+("\n".join(f"• {escape(x['name'])} — {x['members']} участн." for x in items) if items else "Кругов пока нет."),parse_mode="HTML")
             if sub=="info":
                 current=one(db,f"SELECT c.id,c.name,c.owner_uid FROM cm_circle_members m JOIN cm_circles c ON c.id=m.circle_id WHERE m.chat_id={p} AND m.uid={p}",(chat,uid))
                 if not current:return await m.answer("Ты пока не состоишь в круге.")
                 members=rows(db,f"SELECT uid FROM cm_circle_members WHERE circle_id={p} ORDER BY joined LIMIT 30",(current["id"],))
-                return await m.answer(f"<b>⭕ {escape(current['name'])}</b>\\nВладелец: <code>{current['owner_uid']}</code>\\nУчастников: {len(members)}\\n"+", ".join(f"<code>{x['uid']}</code>" for x in members),parse_mode="HTML")
+                return await m.answer(f"<b>⭕ {escape(current['name'])}</b>\nВладелец: <code>{current['owner_uid']}</code>\nУчастников: {len(members)}\n"+", ".join(f"<code>{x['uid']}</code>" for x in members),parse_mode="HTML")
             return await m.answer("Неизвестная команда круга. Используй: create/join/leave/info/list.")
         if cmd in ("duel","дуэль"):
             target=m.reply_to_message.from_user.id if m.reply_to_message and m.reply_to_message.from_user else (int(args[0]) if args and args[0].isdigit() else None)
@@ -156,7 +156,7 @@ def register(dp,bot,db,owners=()):
             a=int(first.dice.value);b=int(second.dice.value)
             winner=int(duel["challenger"]) if a>b else int(duel["opponent"]) if b>a else 0
             run_result=execq(db,f"UPDATE cm_duels SET status='finished',winner={p} WHERE id={p}",(winner,did))
-            text_result=f"⚔️ <b>ДУЭЛЬ #{did}</b>\\nПервый бросок: <code>{a}</code>\\nВторой бросок: <code>{b}</code>\\n"
+            text_result=f"⚔️ <b>ДУЭЛЬ #{did}</b>\nПервый бросок: <code>{a}</code>\nВторой бросок: <code>{b}</code>\n"
             text_result+=f"🏆 Победитель: <code>{winner}</code>" if winner else "🤝 Ничья!"
             await c.message.answer(text_result,parse_mode="HTML")
             await c.answer("Дуэль сыграна!")
