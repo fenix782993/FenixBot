@@ -377,10 +377,10 @@ async def import_preloaded_emoji_ids(m: Message):
             items.append({"id": custom_id, "emoji": getattr(sticker, "emoji", None) or "💎"})
     db.set_setting("premium_emoji_pack", json.dumps(items, ensure_ascii=False))
     await m.answer(
-        "💎 <b>ПРОВЕРКА 85 PREMIUM EMOJI ЗАВЕРШЕНА</b>\\n"
-        f"Передано ID: <b>{len(PRELOADED_PREMIUM_EMOJI_IDS)}</b>\\n"
-        f"Подтверждено Telegram: <b>{len(items)}</b>\\n"
-        f"Не найдено: <b>{len(PRELOADED_PREMIUM_EMOJI_IDS)-len(items)}</b>\\n\\n"
+        "💎 <b>ПРОВЕРКА 85 PREMIUM EMOJI ЗАВЕРШЕНА</b>\n"
+        f"Передано ID: <b>{len(PRELOADED_PREMIUM_EMOJI_IDS)}</b>\n"
+        f"Подтверждено Telegram: <b>{len(items)}</b>\n"
+        f"Не найдено: <b>{len(PRELOADED_PREMIUM_EMOJI_IDS)-len(items)}</b>\n\n"
         "Теперь отправь /emojilist. Если Telegram вернул все 85 — они появятся в списке.",
         parse_mode="HTML"
     )
