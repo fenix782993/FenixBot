@@ -871,6 +871,11 @@ async def main():
         raise RuntimeError("BOT_TOKEN не задан")
     db.init()
     shop.init(db)
+    # Register the chat manager on the actual Render entrypoint before polling.
+    # bot.py delegates startup to miniapp.main(), so registering only in bot.main()
+    # leaves all chat-manager commands and callback buttons without handlers.
+    from chat_manager import register_chat_manager
+    register_chat_manager(core.dp, tg, db, core.OWNER_IDS)
     # Load the exact OutlineEmoji custom-emoji pack in the real Render entrypoint.
     # bot.py's standalone main() is not used here; miniapp.main() owns startup.
     try:
