@@ -309,6 +309,43 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 "<code>!removeunity</code> — отключить беседу от объединения.\n"
                 "<code>!editunity НОВОЕ_НАЗВАНИЕ</code> — переименовать объединение.\n"
                 "<code>!deleteunity НАЗВАНИЕ</code> — удалить объединение.\n\n"
+                "<b>ДОПОЛНИТЕЛЬНЫЕ МОДУЛИ FENIX (бывший IRIS)</b>\\n"
+                "<i>Эти команды тоже реально подключены к боту. Можно использовать !, / или точку перед командой.</i>\\n"
+                "<b>Заметки и закладки</b>\\n"
+                "<code>!note add ТЕКСТ</code> — сохранить заметку; ответом на сообщение — заметка для его автора.\\n"
+                "<code>!note list</code> / <code>!notes</code> — список заметок.\\n"
+                "<code>!note del ID</code> — удалить заметку.\\n"
+                "<code>!bookmark</code> — сохранить сообщение (ответом на него).\\n"
+                "<code>!bookmarks</code> — показать закладки.\\n"
+                "<code>!unbookmark ID</code> — удалить закладку.\\n\\n"
+                "<b>Таймеры и голосования</b>\\n"
+                "<code>!timer 10m ТЕКСТ</code> — создать напоминание (от 10 секунд до 30 дней).\\n"
+                "<code>!timers</code> — список активных таймеров.\\n"
+                "<code>!timerdel ID</code> — удалить таймер.\\n"
+                "<code>!vote ВОПРОС | ВАРИАНТ 1 | ВАРИАНТ 2</code> — создать голосование (до 6 вариантов).\\n"
+                "<code>!voteresult ID</code> — результаты голосования.\\n"
+                "<code>!voteclose ID</code> — закрыть голосование.\\n\\n"
+                "<b>Автоматизация и антиспам</b>\\n"
+                "<code>!antispam on|off|status</code> — управление антиспамом (60+).\\n"
+                "<code>!triggeradd ФРАЗА => ОТВЕТ</code> — добавить автоответ (60+).\\n"
+                "<code>!triggerdel ФРАЗА</code> — удалить автоответ (60+).\\n"
+                "<code>!triggers</code> — список автоответов.\\n"
+                "<code>!access КОМАНДА УРОВЕНЬ|off</code> — настроить уровень доступа к команде (80+).\\n\\n"
+                "<b>Социальные команды и развлечения</b>\\n"
+                "<code>!dice</code> / <code>!кости</code> / <code>!кубик</code> — бросить кубик. Можно указать 🎯 🏀 ⚽ 🎳 🎰.\\n"
+                "<code>!coin</code> / <code>!монетка</code> — орёл или решка.\\n"
+                "<code>!duel</code> / <code>!дуэль</code> — вызвать участника на дуэль (ответом на его сообщение).\\n"
+                "<code>!profile</code> / <code>!профиль</code> — профиль участника (ответом или ID).\\n"
+                "<code>!rep</code> / <code>!реп</code> / <code>!reputation</code> — повысить репутацию участника (ответом или ID; действует дневное ограничение).\\n"
+                "<code>!топреп</code> — рейтинг репутации беседы.\\n"
+                "<code>!circle create НАЗВАНИЕ</code> / <code>!круг</code> — создать/управлять кругом; подкоманды join, leave, info, list.\\n"
+                "<code>!clan create НАЗВАНИЕ</code> / <code>!клан</code> — создать/управлять кланом.\\n"
+                "<code>!marry</code> / <code>!брак</code> — предложить отношения (ответом на сообщение).\\n"
+                "<code>!divorce</code> / <code>!развод</code> — завершить отношения.\\n"
+                "<code>!giveaway 1h ПРИЗ</code> / <code>!розыгрыш</code> — создать розыгрыш (40+).\\n"
+                "<code>!gstop ID</code> — завершить розыгрыш досрочно.\\n"
+                "<code>!purge КОЛИЧЕСТВО</code> — массово удалить последние сообщения.\\n"
+                "<code>!del</code> — удалить сообщение (ответом на него).\\n\\n"
                 "<b>НЕАКТИВНЫЕ КОМАНДЫ</b>\n"
                 "<code>!voice</code>, <code>!mafia</code>, <code>!emoji</code>, <code>!enick</code> — зарезервированы, сейчас не выполняют действий.\n\n"
                 "<b>УРОВНИ ДОСТУПА</b>\n"
@@ -724,16 +761,16 @@ def register_chat_manager(dp, bot, db, owner_ids):
         # Telegram supports at most 100 commands per scope. Keep every English
         # Chat Manager command/alias in the group command picker.
         names = [
-            "help","cmds","start","ping","status","test","rules","setup","settings","setsettings",
-            "settingsmute","settingsinvite","welcome","setrules","admins","staff","stats","reg",
-            "getban","online","wipe","newrole","deleterole","delrole","editunity","voice","mafia",
-            "emoji","enick","chatinfo","info","mute","unmute","kick","warn","unwarn","getwarn",
-            "warnhistory","warnlist","ban","unban","banlist","addhelper","helper","addmoder",
-            "moder","addadmin","setrole","role","removerole","rr","roles","filters","filteradd",
-            "filterdel","filteredit","addlink","whitelistlinks","logs","nick","getnick","gnick",
-            "setnick","snick","removenick","rnick","nicknames","nlist","nonames","getbynick",
-            "unity","unites","addunity","removeunity","editunity","deleteunity","pin","unpin",
-            "silence","zov","try","kiss","obnyat","report","chatmanager"
+            "help","start","ping","rules","setup","settings","setsettings","settingsmute","settingsinvite",
+            "welcome","setrules","admins","stats","reg","getban","online","wipe","newrole","deleterole",
+            "editunity","chatinfo","mute","unmute","kick","warn","unwarn","getwarn","warnhistory","warnlist",
+            "ban","unban","banlist","addhelper","addmoder","addadmin","setrole","removerole","roles","filters",
+            "filteradd","filterdel","addlink","whitelistlinks","logs","getnick","setnick","removenick",
+            "nicknames","nonames","getbynick","unity","unites","addunity","removeunity","editunity","deleteunity",
+            "pin","unpin","silence","zov","try","kiss","obnyat","report","chatmanager",
+            "note","notes","bookmark","bookmarks","unbookmark","timer","timers","timerdel","vote","voteresult",
+            "voteclose","access","triggeradd","triggerdel","triggers","antispam","purge","del","dice","duel",
+            "rep","giveaway","gstop","circle","coin","profile","clan","marry","divorce"
         ]
         descriptions = {
             "help":"Полный список команд FENIX","cmds":"Список команд FENIX","start":"Проверить подключение",
@@ -765,7 +802,17 @@ def register_chat_manager(dp, bot, db, owner_ids):
             "deleteunity":"Удалить объединение","pin":"Закрепить сообщение","unpin":"Снять закрепление",
             "silence":"Переключить режим тишины","zov":"Команда вызова","try":"Игровая попытка",
             "kiss":"Виртуальный поцелуй","obnyat":"Виртуальное объятие","report":"Отправить жалобу",
-            "chatmanager":"Панель управления беседами"
+            "chatmanager":"Панель управления беседами",
+            "note":"Заметки участников","notes":"Список заметок","bookmark":"Сохранить сообщение",
+            "bookmarks":"Список закладок","unbookmark":"Удалить закладку","timer":"Создать напоминание",
+            "timers":"Активные таймеры","timerdel":"Удалить таймер","vote":"Создать голосование",
+            "voteresult":"Результаты голосования","voteclose":"Закрыть голосование","access":"Уровни доступа",
+            "triggeradd":"Добавить автоответ","triggerdel":"Удалить автоответ","triggers":"Список автоответов",
+            "antispam":"Настройки антиспама","purge":"Массовое удаление сообщений","del":"Удалить сообщение",
+            "dice":"Бросить кубик","duel":"Вызвать на дуэль","rep":"Репутация участника",
+            "giveaway":"Создать розыгрыш","gstop":"Завершить розыгрыш","circle":"Управление кругами",
+            "coin":"Орёл или решка","profile":"Профиль участника","clan":"Управление кланом",
+            "marry":"Предложить отношения","divorce":"Завершить отношения"
         }
         try:
             commands = [BotCommand(command=name, description=descriptions.get(name, "Команда FENIX Chat Manager")) for name in names]
