@@ -1886,7 +1886,9 @@ async def posttext(m,state:FSMContext):
     if not is_admin(m.from_user.id): return
     if not (m.text or "").strip():
         return await m.answer("Пришли текстовое сообщение.")
-    await state.update_data(text=m.text)
+    # html_text сохраняет форматирование и Premium Custom Emoji как <tg-emoji emoji-id="...">.
+    # Обычный m.text теряет custom_emoji_id и превращает эмодзи в fallback-символ.
+    await state.update_data(text=(m.html_text or html.escape(m.text or "")))
     await state.set_state(S.post_photo_choice)
     await m.answer("🖼 Добавить фотографию?", reply_markup=markup([
         [InlineKeyboardButton(text="✅ Да", callback_data="compose:photo:yes"),
@@ -1939,7 +1941,11 @@ async def postbutton(m,state:FSMContext):
     label=(m.text or "").strip()
     if not label: return await m.answer("Напиши текст кнопки.")
     if len(label)>64: return await m.answer("Текст кнопки должен быть не длиннее 64 символов.")
-    await state.update_data(bt=label)
+    # Для кнопки Telegram не поддерживает entities внутри текста: переносим Premium Emoji
+    # в штатное поле icon_custom_emoji_id, сохраняя его исходный ID.
+    entities = list(m.entities or [])
+    custom = next((e for e in entities if e.type == "custom_emoji" and e.custom_emoji_id), None)
+    await state.update_data(bt=label, button_custom_emoji_id=(str(custom.custom_emoji_id) if custom else None))
     await state.set_state(S.post_url)
     await m.answer("Теперь отправь URL кнопки, начиная с https://")
 
@@ -1980,23 +1986,8 @@ def _post_emoji_items():
     ]
 
 def _decorate_post_html(content):
-    """Распределяет несколько Custom Emoji по абзацам, не меняя текст публикации."""
-    content = str(content or "").strip()
-    items = _post_emoji_items()
-    if not content or not items:
-        return content
-    lines = content.split("\n")
-    candidates = [i for i, line in enumerate(lines) if line.strip()]
-    if not candidates:
-        return content
-    count = min(len(candidates), random.randint(2, 4))
-    chosen = set(random.sample(candidates, count))
-    for index in sorted(chosen, reverse=True):
-        item = random.choice(items)
-        emoji = html.escape(str(item.get("emoji") or "✨"), quote=False)
-        emoji_id = html.escape(str(item["id"]), quote=True)
-        lines[index] = f'<tg-emoji emoji-id="{emoji_id}">{emoji}</tg-emoji> ' + lines[index]
-    return "\n".join(lines)
+    """Не меняет текст и не подменяет Premium Emoji: возвращает HTML Telegram как есть."""
+    return str(content or "").strip()
 
 def _plain_post_fallback(content):
     # If Telegram rejects Premium Custom Emoji, remove the icon entirely.
@@ -2004,7 +1995,8 @@ def _plain_post_fallback(content):
     return re.sub(r'<tg-emoji\s+emoji-id="[^"]+">([^<]+)</tg-emoji>', "", content)
 
 def _build_post_html(raw):
-    author = _decorate_post_html(html.escape((raw or "").strip()))
+    # raw уже является Telegram HTML из Message.html_text; повторное escape сломало бы entities.
+    author = _decorate_post_html(raw)
     return (author + "\n\n" if author else "") + POST_SIGNATURE_HTML
 
 async def _send_post_payload(chat_id, photo, text, keyboard=None):
@@ -2030,7 +2022,14 @@ async def send_composed(chat_id,data):
     """Любая публикация FENIX получает фирменную подпись и аккуратные emoji."""
     keyboard=None
     if data.get("bt") and data.get("bu"):
-        keyboard=markup([[InlineKeyboardButton(text=data["bt"],url=data["bu"])]])
+        button = InlineKeyboardButton(text=data["bt"],url=data["bu"])
+        custom_id = str(data.get("button_custom_emoji_id") or "")
+        if custom_id.isdigit():
+            button = InlineKeyboardButton.model_validate({
+                **button.model_dump(exclude_none=True),
+                "icon_custom_emoji_id": custom_id
+            })
+        keyboard=markup([[button]])
     raw=(data.get("text") or "").strip()
     text=_build_post_html(raw)
     photo=data.get("photo")
@@ -2058,11 +2057,11 @@ async def auto_style_channel_post(message: Message):
     """Оформляет посты, опубликованные администраторами канала не через бота."""
     if not CHANNEL or str(message.chat.id) != str(CHANNEL):
         return
-    current = message.html_text or message.html_caption or message.text or message.caption or ""
+    # Берём HTML-представление Telegram: оно сохраняет tg-emoji и исходные custom_emoji_id.
+    current = message.html_text or message.html_caption or html.escape(message.text or message.caption or "")
     if "FENIX ONLINE" in current and "fenixVPNrobot" in current:
         return
-    decorated = _decorate_post_html(current)
-    final_text = (decorated + "\n\n" if decorated else "") + POST_SIGNATURE_HTML
+    final_text = (current.strip() + "\n\n" if current.strip() else "") + POST_SIGNATURE_HTML
     try:
         if message.text is not None:
             await message.edit_text(final_text, parse_mode="HTML")
