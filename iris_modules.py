@@ -61,7 +61,7 @@ def level(db,chat,uid):
 def register(dp,bot,db,owner_ids=()):
     init(db); router=Router(name="fenix_iris_modules"); owners=set(owner_ids or ())
     commands="note|notes|bookmark|bookmarks|unbookmark|timer|vote|access|triggeradd|triggerdel|triggers|purge|del|report"
-    pattern=re.compile(r"(?i)^(?:[!./](?:"+commands+r")(?:@\\w+)?\\b|ирис(?:ка)?\\s+(?:"+commands+r")\\b)")
+    pattern=re.compile(r"(?i)^(?:[!./](?:"+commands+r")(?:@[a-zA-Z0-9_]+)?(?=$|[^a-zA-Z0-9_])|ирис(?:ка)?[ ]+(?:"+commands+r")(?=$|[^a-zA-Z0-9_]))")
     @router.message(F.text.regexp(pattern))
     async def command(m):
         if m.chat.type=="private":return await m.answer("Эта команда работает в групповой беседе.")
@@ -125,8 +125,8 @@ def register(dp,bot,db,owner_ids=()):
             if not args or not args[0].isdigit():return await m.answer("Формат: !unbookmark ID")
             run(db,f"DELETE FROM cm_bookmarks WHERE id={p} AND chat_id={p} AND uid={p}",(int(args[0]),chat,uid));return await m.answer("Закладка удалена.")
         if cmd=="timer":
-            if len(args)<2 or not re.fullmatch(r"\\d+(s|m|h|d)?",args[0].lower()):return await m.answer("Формат: !timer 10m напоминание")
-            mat=re.fullmatch(r"(\\d+)(s|m|h|d)?",args[0].lower()); secs=int(mat.group(1))*{"s":1,"m":60,"h":3600,"d":86400}[mat.group(2) or "m"]
+            if len(args)<2 or not re.fullmatch(r"[0-9]+(s|m|h|d)?",args[0].lower()):return await m.answer("Формат: !timer 10m напоминание")
+            mat=re.fullmatch(r"([0-9]+)(s|m|h|d)?",args[0].lower()); secs=int(mat.group(1))*{"s":1,"m":60,"h":3600,"d":86400}[mat.group(2) or "m"]
             if not 10<=secs<=2592000:return await m.answer("Срок: от 10 секунд до 30 дней.")
             due=(datetime.now(timezone.utc)+timedelta(seconds=secs)).isoformat();body=arg.split(maxsplit=1)[1]
             run(db,f"INSERT INTO cm_timers(chat_id,uid,body,due_at,status,created) VALUES({','.join([p]*6)})",(chat,uid,body[:1000],due,"pending",stamp(db)))
