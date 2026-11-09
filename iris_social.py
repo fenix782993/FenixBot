@@ -26,7 +26,9 @@ def init(db):
             "CREATE TABLE IF NOT EXISTS iris_rep_log(chat_id BIGINT,giver BIGINT,target BIGINT,created TEXT,PRIMARY KEY(chat_id,giver,target))",
             "CREATE TABLE IF NOT EXISTS cm_giveaways(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,creator BIGINT,prize TEXT,draw_at TEXT,status TEXT DEFAULT 'open',winner BIGINT,created TEXT)",
             "CREATE TABLE IF NOT EXISTS cm_giveaway_entries(giveaway_id BIGINT,uid BIGINT,created TEXT,PRIMARY KEY(giveaway_id,uid))",
-            "CREATE TABLE IF NOT EXISTS cm_duels(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,challenger BIGINT,opponent BIGINT,status TEXT DEFAULT 'pending',created TEXT,winner BIGINT)"]
+            "CREATE TABLE IF NOT EXISTS cm_duels(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,challenger BIGINT,opponent BIGINT,status TEXT DEFAULT 'pending',created TEXT,winner BIGINT)",
+            "CREATE TABLE IF NOT EXISTS cm_circles(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,name TEXT,owner_uid BIGINT,created TEXT,UNIQUE(chat_id,name))",
+            "CREATE TABLE IF NOT EXISTS cm_circle_members(chat_id BIGINT,uid BIGINT,circle_id BIGINT,joined TEXT,PRIMARY KEY(chat_id,uid))"]
             for x in sql:c.execute(x)
         else:
             c.executescript("""
@@ -35,6 +37,8 @@ def init(db):
             CREATE TABLE IF NOT EXISTS cm_giveaways(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,creator INTEGER,prize TEXT,draw_at TEXT,status TEXT DEFAULT 'open',winner INTEGER,created TEXT);
             CREATE TABLE IF NOT EXISTS cm_giveaway_entries(giveaway_id INTEGER,uid INTEGER,created TEXT,PRIMARY KEY(giveaway_id,uid));
             CREATE TABLE IF NOT EXISTS cm_duels(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,challenger INTEGER,opponent INTEGER,status TEXT DEFAULT 'pending',created TEXT,winner INTEGER);
+            CREATE TABLE IF NOT EXISTS cm_circles(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,name TEXT,owner_uid INTEGER,created TEXT,UNIQUE(chat_id,name));
+            CREATE TABLE IF NOT EXISTS cm_circle_members(chat_id INTEGER,uid INTEGER,circle_id INTEGER,joined TEXT,PRIMARY KEY(chat_id,uid));
             """)
 def level(db,chat,uid):
     x=one(db,f"SELECT level FROM cm_roles WHERE chat_id={ph(db)} AND uid={ph(db)}",(chat,uid))
@@ -48,7 +52,7 @@ def register(dp,bot,db,owners=()):
                 p=ph(db)
                 execq(db,f"INSERT INTO cm_roles(chat_id,uid,level,title,by_uid,updated) VALUES({','.join([p]*6)}) ON CONFLICT(chat_id,uid) DO UPDATE SET level=100,title='Владелец',updated=excluded.updated",(chat_id,user_id,100,"Владелец",user_id,db._now()))
         except Exception:pass
-    social_commands="dice|кости|duel|дуэль|rep|reputation|топреп|giveaway|розыгрыш|gstop"
+    social_commands="dice|кости|duel|дуэль|rep|reputation|топреп|giveaway|розыгрыш|gstop|circle|круг"
     rx=re.compile(r"(?i)^(?:[!./](?:"+social_commands+r")(?=$|[^a-zA-Z0-9_])|ирис(?:ка)?[ ]+(?:"+social_commands+r")(?=$|[^a-zA-Z0-9_]))")
     @router.message(F.text.regexp(rx))
     async def social(m):
@@ -60,6 +64,38 @@ def register(dp,bot,db,owners=()):
         if cmd in ("dice","кости"):
             emoji=args[0] if args and args[0] in ("🎲","🎯","🏀","⚽","🎳","🎰") else "🎲"
             await bot.send_dice(chat,emoji=emoji);return
+        if cmd in ("circle","круг"):
+            if not args:return await m.answer("Команды круга: !circle create название | join название | leave | info | list")
+            sub=args[0].lower();name=arg.split(maxsplit=1)[1].strip() if len(args)>1 else ""
+            if sub=="create":
+                if not name:return await m.answer("Укажи название круга.")
+                if len(name)>40:return await m.answer("Название — максимум 40 символов.")
+                try:
+                    if db.use_postgres:
+                        x,_=execq(db,f"INSERT INTO cm_circles(chat_id,name,owner_uid,created) VALUES({p},{p},{p},{p}) RETURNING id",(chat,name,uid,db._now()));cid=int(x["id"])
+                    else:
+                        _,last=execq(db,f"INSERT INTO cm_circles(chat_id,name,owner_uid,created) VALUES({p},{p},{p},{p})",(chat,name,uid,db._now()));cid=int(last)
+                except Exception:return await m.answer("Круг с таким названием уже существует.")
+                execq(db,f"INSERT INTO cm_circle_members(chat_id,uid,circle_id,joined) VALUES({p},{p},{p},{p}) ON CONFLICT(chat_id,uid) DO UPDATE SET circle_id=excluded.circle_id,joined=excluded.joined",(chat,uid,cid,db._now()))
+                return await m.answer(f"⭕ Круг «{escape(name)}» создан. Ты — его владелец.",parse_mode="HTML")
+            if sub=="join":
+                if not name:return await m.answer("Укажи название: !circle join название")
+                circle=one(db,f"SELECT id,name FROM cm_circles WHERE chat_id={p} AND lower(name)=lower({p})",(chat,name))
+                if not circle:return await m.answer("Такого круга нет. Посмотри список: !circle list")
+                execq(db,f"INSERT INTO cm_circle_members(chat_id,uid,circle_id,joined) VALUES({p},{p},{p},{p}) ON CONFLICT(chat_id,uid) DO UPDATE SET circle_id=excluded.circle_id,joined=excluded.joined",(chat,uid,circle["id"],db._now()))
+                return await m.answer(f"Ты вступил в круг «{escape(circle['name'])}».",parse_mode="HTML")
+            if sub=="leave":
+                execq(db,f"DELETE FROM cm_circle_members WHERE chat_id={p} AND uid={p}",(chat,uid))
+                return await m.answer("Ты вышел из круга.")
+            if sub=="list":
+                items=rows(db,f"SELECT c.name,COUNT(m.uid) AS members FROM cm_circles c LEFT JOIN cm_circle_members m ON m.circle_id=c.id WHERE c.chat_id={p} GROUP BY c.id,c.name ORDER BY members DESC LIMIT 30",(chat,))
+                return await m.answer("<b>⭕ КРУГИ БЕСЕДЫ</b>\\n"+("\\n".join(f"• {escape(x['name'])} — {x['members']} участн." for x in items) if items else "Кругов пока нет."),parse_mode="HTML")
+            if sub=="info":
+                current=one(db,f"SELECT c.id,c.name,c.owner_uid FROM cm_circle_members m JOIN cm_circles c ON c.id=m.circle_id WHERE m.chat_id={p} AND m.uid={p}",(chat,uid))
+                if not current:return await m.answer("Ты пока не состоишь в круге.")
+                members=rows(db,f"SELECT uid FROM cm_circle_members WHERE circle_id={p} ORDER BY joined LIMIT 30",(current["id"],))
+                return await m.answer(f"<b>⭕ {escape(current['name'])}</b>\\nВладелец: <code>{current['owner_uid']}</code>\\nУчастников: {len(members)}\\n"+", ".join(f"<code>{x['uid']}</code>" for x in members),parse_mode="HTML")
+            return await m.answer("Неизвестная команда круга. Используй: create/join/leave/info/list.")
         if cmd in ("duel","дуэль"):
             target=m.reply_to_message.from_user.id if m.reply_to_message and m.reply_to_message.from_user else (int(args[0]) if args and args[0].isdigit() else None)
             if not target:return await m.answer("Ответь командой !duel на сообщение участника.")
