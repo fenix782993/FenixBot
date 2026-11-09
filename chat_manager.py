@@ -290,7 +290,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
                     await reply(m, page)
                     page = line
                 else:
-                    page = (page + "\\n" if page else "") + line
+                    page = (page + "\n" if page else "") + line
             if page:
                 await reply(m, page)
             return
