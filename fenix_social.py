@@ -206,7 +206,8 @@ def register(dp,bot,db,owners=()):
                     if entrants:
                         winner=random.choice(entrants)["uid"]
                         execq(db,f"UPDATE cm_giveaways SET status='finished',winner={p} WHERE id={p}",(winner,g["id"]))
-                        await bot.send_message(g["chat_id"],f"🏆 Розыгрыш #{g['id']} завершён!\nПриз: {escape(g['prize'])}\nПобедитель: <code>{winner}</code>",parse_mode="HTML")
+                        winner_label=await user_label(bot,g["chat_id"],winner)
+                        await bot.send_message(g["chat_id"],f"🏆 Розыгрыш #{g['id']} завершён!\\nПриз: {escape(g['prize'])}\\nПобедитель: {winner_label}",parse_mode="HTML")
                     else:
                         execq(db,f"UPDATE cm_giveaways SET status='finished' WHERE id={p}",(g["id"],))
                         await bot.send_message(g["chat_id"],f"Розыгрыш #{g['id']} завершён без участников.")
