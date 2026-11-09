@@ -597,7 +597,7 @@ async def start(m:Message,state:FSMContext):
         payload=args[1] if len(args)>1 else ''
         if u and payload == "fenix_gifts":
             return await m.answer(
-                "🎁 <b>FENIX · МАГАЗИН TELEGRAM</b>\\nВыбери, что хочешь купить:",
+                "🎁 <b>FENIX · МАГАЗИН TELEGRAM</b>\nВыбери, что хочешь купить:",
                 parse_mode="HTML",
                 reply_markup=markup([
                     [InlineKeyboardButton(text="🎁 Купить Telegram-подарок", callback_data="tgs:catalog")],
@@ -610,7 +610,7 @@ async def start(m:Message,state:FSMContext):
                   for rub in STARS_RUB_PRESETS]
             rows.append([InlineKeyboardButton(text="✏️ Ввести свою сумму",callback_data="stars_custom")])
             rows.append([InlineKeyboardButton(text="⬅️ Главное меню",callback_data="back_home")])
-            return await m.answer("⭐ <b>Пополнение Telegram Stars</b>\\nМинимум 100 ₽ · 1 ₽ = 2 FNZ.\\nВыбери сумму — Telegram откроет защищённый счёт на оплату.",parse_mode="HTML",reply_markup=markup(rows))
+            return await m.answer("⭐ <b>Пополнение Telegram Stars</b>\nМинимум 100 ₽ · 1 ₽ = 2 FNZ.\nВыбери сумму — Telegram откроет защищённый счёт на оплату.",parse_mode="HTML",reply_markup=markup(rows))
         if u and payload.startswith('buy_'):
             code=payload[4:]
             item=next((dict(x) for x in shop.PRODUCTS if x['code']==code),None)
@@ -1856,10 +1856,10 @@ def split_message(text,limit=4000):
     return chunks
 
 POST_FOOTER_HTML = (
-    "━━━━━━━━━━━━━━━━━━\\n<b>🔥 FENIX ONLINE</b>\\n"
-    "<i>Твой проект. Твои возможности.</i>\\n\\n"
-    "🛡 <b>VPN:</b> @fenixVPNrobot\\n"
-    "⭐ <b>Stars:</b> @Fenix_stars_bot\\n"
+    "━━━━━━━━━━━━━━━━━━\n<b>🔥 FENIX ONLINE</b>\n"
+    "<i>Твой проект. Твои возможности.</i>\n\n"
+    "🛡 <b>VPN:</b> @fenixVPNrobot\n"
+    "⭐ <b>Stars:</b> @Fenix_stars_bot\n"
     '💬 <b>Форум:</b> <a href="http://forum.wh35740.web1.maze-tech.ru/index.php">Открыть форум</a>'
 )
 POST_SIGNATURE_HTML = f"<blockquote>{POST_FOOTER_HTML}</blockquote>"
@@ -1877,7 +1877,7 @@ def _decorate_post_html(content):
     items = _post_emoji_items()
     if not content or not items:
         return content
-    lines = content.split("\\n")
+    lines = content.split("\n")
     candidates = [i for i, line in enumerate(lines) if line.strip()]
     if not candidates:
         return content
@@ -1888,14 +1888,14 @@ def _decorate_post_html(content):
         emoji = html.escape(str(item.get("emoji") or "✨"), quote=False)
         emoji_id = html.escape(str(item["id"]), quote=True)
         lines[index] = f'<tg-emoji emoji-id="{emoji_id}">{emoji}</tg-emoji> ' + lines[index]
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 def _plain_post_fallback(content):
     return re.sub(r'<tg-emoji\s+emoji-id="[^"]+">([^<]+)</tg-emoji>', r'\1', content)
 
 def _build_post_html(raw):
     author = _decorate_post_html(html.escape((raw or "").strip()))
-    return (author + "\\n\\n" if author else "") + POST_SIGNATURE_HTML
+    return (author + "\n\n" if author else "") + POST_SIGNATURE_HTML
 
 async def _send_post_payload(chat_id, photo, text, keyboard=None):
     """Try Premium Custom Emoji first; if Telegram disallows them, publish readable fallback."""
@@ -1933,7 +1933,7 @@ async def send_composed(chat_id,data):
     for i,chunk in enumerate(chunks):
         body=_decorate_post_html(html.escape(chunk))
         if i==len(chunks)-1:
-            body += "\\n\\n" + POST_SIGNATURE_HTML
+            body += "\n\n" + POST_SIGNATURE_HTML
         try:
             await bot.send_message(chat_id, body, parse_mode="HTML",
                 reply_markup=keyboard if i==len(chunks)-1 else None)
@@ -1952,7 +1952,7 @@ async def auto_style_channel_post(message: Message):
     if "FENIX ONLINE" in current and "fenixVPNrobot" in current:
         return
     decorated = _decorate_post_html(current)
-    final_text = (decorated + "\\n\\n" if decorated else "") + POST_SIGNATURE_HTML
+    final_text = (decorated + "\n\n" if decorated else "") + POST_SIGNATURE_HTML
     try:
         if message.text is not None:
             await message.edit_text(final_text, parse_mode="HTML")
@@ -2072,6 +2072,8 @@ async def main():
             logging.info("Loaded combined Premium Emoji pool: %s IDs", len(unique))
         else:
             logging.warning("No custom emoji IDs loaded from OutlineEmoji / TONEmoji")
+    except Exception:
+        logging.exception("Failed to import Premium Emoji packs; bot will continue with standard emoji")
     logging.info("Assets directory: %s | found: %s", ASSETS_DIR, sorted(p.name for p in ASSETS_DIR.glob("*") if p.is_file()))
     runner = await start_health_server()
     try:
