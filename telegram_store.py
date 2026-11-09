@@ -250,7 +250,7 @@ def register(dp, bot, db, owner_ids=()):
             return await m.answer(str(exc))
         except Exception:
             log.exception("Recipient validation failed")
-            return await m.answer("Не удалось проверить получателя в Telegram. Попробуй позже.")
+            return await m.answer("Не удалось найти получателя. Если вводишь @username, пользователь должен хотя бы один раз запустить @FenixMediarobot через /start. Либо отправь его числовой Telegram ID.")
         await state.clear()
         try: await send_catalog(m.chat.id,m.from_user.id,recipient_id)
         except Exception:
@@ -314,7 +314,7 @@ def register(dp, bot, db, owner_ids=()):
         if not (raw.isdigit() and int(raw)>0) and not (raw.startswith("@") and len(raw)>2):
             return await m.answer("Введи числовой Telegram ID или @username.")
         try:
-            recipient_chat=await ensure_recipient(raw)
+            recipient_chat=await ensure_recipient(raw,db)
             recipient_id=int(recipient_chat["id"])
         except ValueError as exc:
             return await m.answer(str(exc))
@@ -363,7 +363,7 @@ def register(dp, bot, db, owner_ids=()):
             if data.get("admin_note"): payload["text"]=data["admin_note"]
             await api("sendGift",payload)
             await state.clear()
-            await c.message.answer(f"✅ Подарок отправлен пользователю <code>{data['admin_recipient']}</code>.\nСписано: {cost} ⭐. Остаток до операции: {balance} ⭐.",parse_mode="HTML")
+            await c.message.answer(f"✅ Подарок отправлен получателю.\nСписано: {cost} ⭐. Остаток до операции: {balance} ⭐.",parse_mode="HTML")
             await c.answer("Отправлено")
         except Exception as e:
             log.exception("Admin gift send failed")
@@ -410,7 +410,7 @@ def register(dp, bot, db, owner_ids=()):
                         conn.execute("UPDATE tg_store_promos SET uses_left=MAX(uses_left-1,0) WHERE code=? AND uses_left>0",(order["promo_code"],))
                         conn.execute("INSERT OR IGNORE INTO tg_store_promo_uses(code,uid,order_id,created) VALUES(?,?,?,?)",(order["promo_code"],m.from_user.id,order["id"],datetime.now(timezone.utc).isoformat()))
                 run(db,f"DELETE FROM tg_store_active_promos WHERE uid={p}",(m.from_user.id,))
-            await m.answer(f"✅ Подарок отправлен пользователю <code>{order['recipient_uid']}</code>. Оплата: {order['stars']} ⭐ (комиссия до скидки {MARKUP_STARS} ⭐).",parse_mode="HTML")
+            await m.answer(f"✅ Подарок отправлен получателю. Оплата: {order['stars']} ⭐ (комиссия до скидки {MARKUP_STARS} ⭐).",parse_mode="HTML")
         except Exception as e:
             log.exception("Paid gift delivery failed")
             run(db,f"UPDATE tg_store_orders SET status='delivery_failed',error={p} WHERE id={p}",(str(e)[:1000],order["id"]))
