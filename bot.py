@@ -286,7 +286,9 @@ def menu(uid):
     label=db.setting("home_label","📢 Новости FENIX ONLINE")
     url=db.setting("home_url",CHANNEL_URL)
     store_url=os.getenv("WEBAPP_URL","https://fenixbot-vyqo.onrender.com").rstrip("/")+"/store"
+    wheel_url=os.getenv("WEBAPP_URL","https://fenixbot-vyqo.onrender.com").rstrip("/")+"/wheel"
     rows=[[InlineKeyboardButton(text="🛍 Донат и товары",url=store_url)],
+          [InlineKeyboardButton(text="🎡 Колесо фортуны · 50 ₽",url=wheel_url)],
           [InlineKeyboardButton(text="⭐ Пополнить Stars",callback_data="donate_stars"),
            InlineKeyboardButton(text="💳 Ручное пополнение",callback_data="manual_donation")],
           [InlineKeyboardButton(text=db.setting("cab_label","👤 Личный кабинет"),callback_data="cab"),
@@ -314,7 +316,7 @@ async def cmd_id(m): await m.answer(f"Твой Telegram ID: {m.from_user.id}")
 
 PREMIUM_BUTTON_CATALOG = [
     # Главное меню — ключевые кнопки, показанные в Telegram-примере
-    '👤 Личный кабинет', '🔗 Моя реферальная ссылка', '📊 Статистика', '🏆 Рейтинг',
+    '🎡 Колесо фортуны · 50 ₽', '👤 Личный кабинет', '🔗 Моя реферальная ссылка', '📊 Статистика', '🏆 Рейтинг',
     '🤝 Стать медиапартнёром', '🎬 Кабинет медиапартнёра',
     '⚙️ Панель владельца', '📢 Новости FENIX ONLINE',
     # Остальные разделы и действия бота
