@@ -337,7 +337,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 "<code>!duel</code> / <code>!дуэль</code> — вызвать участника на дуэль (ответом на его сообщение).\n"
                 "<code>!profile</code> / <code>!профиль</code> — профиль участника (ответом или ID).\n"
                 "<code>!rep</code> / <code>!реп</code> / <code>!reputation</code> — повысить репутацию участника (ответом или ID; действует дневное ограничение).\n"
-                "<code>!топреп</code> — рейтинг репутации беседы.\n"
+                "<code>!топреп</code> / <code>!toprep</code> — рейтинг репутации беседы.\n"
                 "<code>!circle create НАЗВАНИЕ</code> / <code>!круг</code> — создать/управлять кругом; подкоманды join, leave, info, list.\n"
                 "<code>!clan create НАЗВАНИЕ</code> / <code>!клан</code> — создать/управлять кланом.\n"
                 "<code>!marry</code> / <code>!брак</code> — предложить отношения (ответом на сообщение).\n"
@@ -812,7 +812,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
             "dice":"Бросить кубик","duel":"Вызвать на дуэль","rep":"Репутация участника",
             "giveaway":"Создать розыгрыш","gstop":"Завершить розыгрыш","circle":"Управление кругами",
             "coin":"Орёл или решка","profile":"Профиль участника","clan":"Управление кланом",
-            "marry":"Предложить отношения","divorce":"Завершить отношения"
+            "marry":"Предложить отношения","divorce":"Завершить отношения","toprep":"Топ репутации"
         }
         try:
             commands = [BotCommand(command=name, description=descriptions.get(name, "Команда FENIX Chat Manager")) for name in names]
