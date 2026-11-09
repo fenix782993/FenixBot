@@ -7,7 +7,7 @@ from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 log = logging.getLogger("fenix.commands_article")
-TITLE = "FENIX ONLINE — единая инструкция по боту и FENIX MANAGER"
+TITLE = "FENIX ONLINE — ПОЛНАЯ ИНСТРУКЦИЯ И СПРАВОЧНИК КОМАНД"
 AUTHOR = "FENIX ONLINE"
 
 SECTIONS = [
@@ -168,27 +168,14 @@ def nodes():
 async def ensure_article(db):
     existing = (db.setting("fenix_commands_article_url", "") or "").strip()
     saved_token = (db.setting("fenix_commands_article_token", "") or "").strip()
-    saved_path = (db.setting("fenix_commands_article_path", "") or "").strip()
-    version = "fenix-online-unified-guide-2026-11-09-v14"
+    version = "fenix-online-new-telegraph-guide-2026-11-09-v15"
     if existing and db.setting("fenix_commands_article_version", "") == version:
         return existing
 
     timeout = aiohttp.ClientTimeout(total=45)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         token = saved_token
-        page = None
-        if token and saved_path:
-            async with session.post("https://api.telegra.ph/editPage", data={
-                "access_token": token,
-                "path": saved_path,
-                "title": TITLE,
-                "author_name": AUTHOR,
-                "content": json.dumps(nodes(), ensure_ascii=False),
-                "return_content": "false"
-            }) as response:
-                page = await response.json(content_type=None)
-
-        if not page or not page.get("ok"):
+        if not token:
             async with session.post("https://api.telegra.ph/createAccount", data={
                 "short_name": "FENIXONLINE",
                 "author_name": AUTHOR,
@@ -197,6 +184,27 @@ async def ensure_article(db):
                 account = await response.json(content_type=None)
             if not account.get("ok"):
                 raise RuntimeError("Telegraph createAccount: " + str(account.get("error")))
+            token = account["result"]["access_token"]
+
+        # Always create a NEW page on a version change. Do not edit/reuse the legacy article URL.
+        async with session.post("https://api.telegra.ph/createPage", data={
+            "access_token": token,
+            "title": TITLE,
+            "author_name": AUTHOR,
+            "content": json.dumps(nodes(), ensure_ascii=False),
+            "return_content": "false"
+        }) as response:
+            page = await response.json(content_type=None)
+
+        if not page.get("ok"):
+            async with session.post("https://api.telegra.ph/createAccount", data={
+                "short_name": "FENIXONLINE",
+                "author_name": AUTHOR,
+                "author_url": "https://t.me/FenixMediarobot"
+            }) as response:
+                account = await response.json(content_type=None)
+            if not account.get("ok"):
+                raise RuntimeError("Telegraph createAccount retry: " + str(account.get("error")))
             token = account["result"]["access_token"]
             async with session.post("https://api.telegra.ph/createPage", data={
                 "access_token": token,
@@ -208,14 +216,14 @@ async def ensure_article(db):
                 page = await response.json(content_type=None)
 
         if not page or not page.get("ok"):
-            raise RuntimeError("Telegraph publish/edit failed: " + str(page.get("error") if page else "empty response"))
+            raise RuntimeError("Telegraph createPage failed: " + str(page.get("error") if page else "empty response"))
 
         url = page["result"]["url"]
         db.set_setting("fenix_commands_article_url", url)
         db.set_setting("fenix_commands_article_path", page["result"]["path"])
         db.set_setting("fenix_commands_article_token", token)
         db.set_setting("fenix_commands_article_version", version)
-        log.info("FENIX unified guide published/updated: %s", url)
+        log.info("FENIX NEW unified Telegraph guide created: %s", url)
         return url
 
 def register(dp, db):
