@@ -1956,9 +1956,20 @@ async def auto_style_channel_post(message: Message):
     try:
         if message.text is not None:
             await message.edit_text(final_text, parse_mode="HTML")
-        elif message.caption is not None:
+        else:
             await message.edit_caption(caption=final_text, parse_mode="HTML")
     except Exception as exc:
+        if "<tg-emoji " in final_text:
+            try:
+                fallback = _plain_post_fallback(final_text)
+                if message.text is not None:
+                    await message.edit_text(fallback, parse_mode="HTML")
+                else:
+                    await message.edit_caption(caption=fallback, parse_mode="HTML")
+                logging.warning("Channel post %s styled with standard emoji fallback", message.message_id)
+                return
+            except Exception:
+                logging.exception("Не удалось применить fallback для channel post %s", message.message_id)
         logging.exception("Не удалось автоматически оформить channel post %s: %s", message.message_id, exc)
 
 async def _broadcast_worker(data, initiator):
