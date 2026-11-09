@@ -308,16 +308,16 @@ def menu(uid):
     label=db.setting("home_label","📢 Новости FENIX ONLINE")
     url=db.setting("home_url",CHANNEL_URL)
     wheel_url=os.getenv("WEBAPP_URL","https://fenixbot-vyqo.onrender.com").rstrip("/")+"/wheel"
-    rows=[[InlineKeyboardButton(text="🎁 Telegram-подарки",callback_data="tgs:catalog")],
-          [InlineKeyboardButton(text="🎡 Колесо фортуны · 50 ₽",url=wheel_url)],
-          [InlineKeyboardButton(text="⭐ Пополнить Stars",callback_data="donate_stars"),
-           InlineKeyboardButton(text="💳 Ручное пополнение",callback_data="manual_donation")],
-          [InlineKeyboardButton(text="🪪 FENIX ID",callback_data="fenixid:show")],
+    rows=[[InlineKeyboardButton(text=db.setting("gifts_label","🎁 Telegram-подарки"),callback_data="tgs:catalog")],
+          [InlineKeyboardButton(text=db.setting("wheel_label","🎡 Колесо фортуны · 50 ₽"),url=wheel_url)],
+          [InlineKeyboardButton(text=db.setting("stars_label","⭐ Пополнить Stars"),callback_data="donate_stars"),
+           InlineKeyboardButton(text=db.setting("manual_label","💳 Ручное пополнение"),callback_data="manual_donation")],
+          [InlineKeyboardButton(text=db.setting("fenixid_label","🪪 FENIX ID"),callback_data="fenixid:show")],
           [InlineKeyboardButton(text=db.setting("cab_label","👤 Личный кабинет"),callback_data="cab"),
            InlineKeyboardButton(text=db.setting("ref_label","🔗 Моя реферальная ссылка"),callback_data="ref")],
           [InlineKeyboardButton(text=db.setting("stats_label","📊 Статистика"),callback_data="stats"),
            InlineKeyboardButton(text=db.setting("top_label","🏆 Рейтинг"),callback_data="top")],
-          [InlineKeyboardButton(text=("🎬 Кабинет медиапартнёра" if (media_status=="approved") else db.setting("media_label","🤝 Стать медиапартнёром")),callback_data=("media_cabinet" if (media_status=="approved") else "media"))]]
+          [InlineKeyboardButton(text=(db.setting("media_cabinet_label","🎬 Кабинет медиапартнёра") if (media_status=="approved") else db.setting("media_label","🤝 Стать медиапартнёром")),callback_data=("media_cabinet" if (media_status=="approved") else "media"))]]
     if url: rows.append([InlineKeyboardButton(text=label,url=url)])
     if is_admin(uid): rows.append([InlineKeyboardButton(text=db.setting("owner_label","⚙️ Панель владельца"),callback_data="owner")])
     return markup(rows)
@@ -2013,35 +2013,83 @@ async def staff_setup(c):
     ]))
     await c.answer()
 
-CUSTOM_LABELS={"cab":("cab_label","👤 Личный кабинет"),"ref":("ref_label","🔗 Реферальная ссылка"),"stats":("stats_label","📊 Статистика"),"top":("top_label","🏆 Рейтинг"),"media":("media_label","🤝 Стать медиапартнёром"),"owner":("owner_label","⚙️ Панель владельца"),"home":("home_label","📢 Новости FENIX ONLINE")}
+CUSTOM_LABELS={
+    "gifts":("gifts_label","🎁 Telegram-подарки","tgs:catalog"),
+    "wheel":("wheel_label","🎡 Колесо фортуны · 50 ₽","wheel"),
+    "stars":("stars_label","⭐ Пополнить Stars","donate_stars"),
+    "manual":("manual_label","💳 Ручное пополнение","manual_donation"),
+    "fenixid":("fenixid_label","🪪 FENIX ID","fenixid:show"),
+    "cab":("cab_label","👤 Личный кабинет","cab"),
+    "ref":("ref_label","🔗 Моя реферальная ссылка","ref"),
+    "stats":("stats_label","📊 Статистика","stats"),
+    "top":("top_label","🏆 Рейтинг","top"),
+    "media":("media_label","🤝 Стать медиапартнёром","media"),
+    "media_cabinet":("media_cabinet_label","🎬 Кабинет медиапартнёра","media_cabinet"),
+    "home":("home_label","📢 Новости FENIX ONLINE","home"),
+    "owner":("owner_label","⚙️ Панель владельца","owner"),
+}
 @dp.callback_query(F.data == "customize")
 async def customize(c):
     if not is_owner(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
-    rows=[[InlineKeyboardButton(text=label,callback_data=f'custom_pick:{key}')] for key,(_,label) in CUSTOM_LABELS.items()]
-    await edit_panel(c.message,'🎨 <b>КАСТОМИЗАЦИЯ КНОПОК</b>\n\nВыбери кнопку, название которой хочешь изменить:',parse_mode='HTML',reply_markup=markup(rows))
+    rows=[[InlineKeyboardButton(text=db.setting(setting,default),callback_data=f'custom_pick:{key}')]
+          for key,(setting,default,callback) in CUSTOM_LABELS.items()]
+    rows.append([InlineKeyboardButton(text="⬅️ В панель владельца",callback_data="owner")])
+    await edit_panel(c.message,'🎨 <b>РЕДАКТОР КНОПОК</b>\n\nВыбери кнопку. Затем одним сообщением отправь Premium Emoji и новое название.',parse_mode='HTML',reply_markup=markup(rows))
     await c.answer()
 
 @dp.callback_query(F.data.startswith('custom_pick:'))
 async def custom_pick(c,state:FSMContext):
     if not is_owner(c.from_user.id): return await c.answer('Нет доступа',show_alert=True)
-    key=c.data.split(':')[1]
+    key=c.data.split(':',1)[1]
     if key not in CUSTOM_LABELS: return await c.answer('Неизвестная кнопка',show_alert=True)
-    setting,default=CUSTOM_LABELS[key]
+    setting,default,callback=CUSTOM_LABELS[key]
+    await state.clear()
     await state.update_data(custom_key=key)
     await state.set_state(S.customize_label)
-    await edit_panel(c.message,f'✏️ Текущее название: {db.setting(setting,default)}\n\nОтправь новое название (до 64 символов, можно с эмодзи).')
+    await edit_panel(c.message,
+        f'🎨 <b>РЕДАКТИРОВАНИЕ КНОПКИ</b>\n\n'
+        f'Сейчас: <b>{html.escape(db.setting(setting,default))}</b>\n\n'
+        'Отправь одним сообщением свой Premium Emoji, затем название кнопки.\n'
+        'Например: [Premium Emoji] Магазин\n\n'
+        'Эмодзи будет значком кнопки, а текст — её новым названием.',
+        parse_mode='HTML')
     await c.answer()
 
 @dp.message(S.customize_label)
 async def custom_label_save(m,state:FSMContext):
     if not is_owner(m.from_user.id): return
-    label=(m.text or '').strip()
-    if not label or len(label)>64: return await m.answer('Название должно содержать 1–64 символа.')
-    data=await state.get_data(); key=data['custom_key']
-    db.set_setting(CUSTOM_LABELS[key][0],label)
+    raw=(m.text or '').strip()
+    if not raw: return await m.answer('Пришли Premium Emoji и название кнопки одним сообщением.')
+    entities=list(m.entities or [])
+    custom=next((e for e in entities if e.type=="custom_emoji" and getattr(e,"custom_emoji_id",None)),None)
+    if not custom:
+        return await m.answer('❗ В сообщении не найден Premium Custom Emoji. Отправь именно Premium Emoji из своей панели эмодзи, затем название.')
+    # Telegram entity offsets are UTF-16 code units; remove the emoji from the label
+    # because Bot API buttons use icon_custom_emoji_id as a separate native icon field.
+    encoded=raw.encode("utf-16-le")
+    start=custom.offset*2
+    end=(custom.offset+custom.length)*2
+    label=(encoded[:start]+encoded[end:]).decode("utf-16-le").strip()
+    if not label or len(label)>64:
+        return await m.answer('Название после эмодзи должно содержать 1–64 символа.')
+    data=await state.get_data(); key=data.get('custom_key')
+    if key not in CUSTOM_LABELS:
+        await state.clear()
+        return await m.answer('Сеанс редактирования устарел. Открой редактор кнопок ещё раз.')
+    setting,default,callback=CUSTOM_LABELS[key]
+    db.set_setting(setting,label)
+    mapping=_json_setting("button_custom_emoji_map",{})
+    if not isinstance(mapping,dict): mapping={}
+    mapping[callback]=str(custom.custom_emoji_id)
+    mapping[label]=str(custom.custom_emoji_id)
+    _save_button_emoji_map(mapping)
     await state.clear()
-    await m.answer('✅ Название сохранено. Открой /start, чтобы увидеть обновлённое меню.')
-
+    await m.answer(
+        f'✅ <b>КНОПКА ОБНОВЛЕНА</b>\n\n'
+        f'Значок: <tg-emoji emoji-id="{custom.custom_emoji_id}">💎</tg-emoji>\n'
+        f'Название: <b>{html.escape(label)}</b>\n\n'
+        'Изменения применятся при следующем открытии меню через /start.',
+        parse_mode='HTML')
 @dp.message(Command("setlabel"))
 async def setlabel(m):
     if not is_owner(m.from_user.id): return await m.answer("Только владелец может менять названия кнопок.")
