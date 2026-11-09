@@ -431,7 +431,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
         if chats:
             body += "\\n".join(f"• {x['title'] or 'Без названия'} — <code>{x['chat_id']}</code>" for x in chats)
         else:
-            body += "Беседы пока не подключены. Добавь бота в группу, выдай права администратора и выполни !setup."
+            body += "Пока нет подключённых групп. Добавь FENIX в беседу и назначь администратором — после этого группа появится в панели автоматически."
         body += "\\n\\nКоманды: !settings · !setup · !welcome · !setrules · !roles · !admins · !logs"
         keyboard=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Обновить",callback_data="chat_manager_admin")],
@@ -456,7 +456,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
             return await m.answer("⛔ Доступ только владельцу FENIX.")
         chats=rows(db,"SELECT chat_id,title,updated FROM cm_settings ORDER BY updated DESC LIMIT 50")
         if not chats:
-            return await m.answer("Пока нет подключённых бесед. Добавь бота в группу, выдай права администратора и выполни !setup.")
+            return await m.answer("Пока нет подключённых групп. Добавь FENIX в беседу и назначь администратором — после этого группа появится в панели автоматически.")
         text="<b>FENIX · ПОДКЛЮЧЁННЫЕ БЕСЕДЫ</b>\\n\\n"+"\\n".join(f"• {x['title'] or 'Без названия'} · <code>{x['chat_id']}</code>" for x in chats)
         await m.answer(text,parse_mode="HTML")
     @router.my_chat_member()
