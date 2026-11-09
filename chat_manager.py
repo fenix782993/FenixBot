@@ -324,8 +324,8 @@ def register_chat_manager(dp, bot, db, owner_ids):
             return await reply(m,"Роли указанного уровня удалены у участников.")
         if cmd in ("voice","mafia","emoji","enick"):
             return await reply(m,"Эта функция пока не активирована в Chat Manager. Голосовая генерация, полноценная игра «Мафия» и изменение Telegram-эмодзи статуса/ника требуют отдельных модулей и разрешений Telegram.")
-        if cmd in ("filters","filteradd","filterdel","addlink","whitelistlinks","silence","pin","unpin","logs","zov"):
-            required=60 if cmd in ("filters","filteradd","filterdel","addlink","whitelistlinks") else 40
+        if cmd in ("filters","filteradd","filterdel","filteredit","addlink","whitelistlinks","silence","pin","unpin","logs","zov"):
+            required=60 if cmd in ("filters","filteradd","filterdel","filteredit","addlink","whitelistlinks") else (80 if cmd in ("pin","unpin") else (20 if cmd in ("logs","zov") else 40))
             if not can(db,chat,uid,required) and uid not in owner_ids: return await reply(m,"⛔ Недостаточно прав.")
             p=ph(db)
             if cmd=="filteradd":
@@ -400,6 +400,10 @@ def register_chat_manager(dp, bot, db, owner_ids):
             u=one(db,f"SELECT u.name,u.id FROM cm_unity_chats c JOIN cm_unities u ON u.id=c.unity_id WHERE c.chat_id={p}",(chat,))
             if cmd=="deleteunity" and args:
                 q(db,f"DELETE FROM cm_unities WHERE name={p}",(" ".join(args),)); return await reply(m,"Объединение удалено.")
+            if cmd=="editunity":
+                if not u or not argtext: return await reply(m,"Формат: !editunity новое название")
+                q(db,f"UPDATE cm_unities SET name={p} WHERE id={p}",(argtext.strip(),u["id"]))
+                return await reply(m,"Название объединения изменено.")
             return await reply(m,f"Текущее объединение: {u['name']}" if u else "Эта беседа не подключена к объединению.")
     @router.callback_query(F.data=="chat_manager_admin")
     async def chat_manager_admin(c):
