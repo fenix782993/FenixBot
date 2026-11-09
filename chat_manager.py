@@ -426,7 +426,22 @@ def register_chat_manager(dp, bot, db, owner_ids):
         else:
             body += "Беседы пока не подключены. Добавь бота в группу, выдай права администратора и выполни !setup."
         body += "\\n\\nКоманды: !settings · !setup · !welcome · !setrules · !roles · !admins · !logs"
-        await c.message.edit_text(body,parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Обновить",callback_data="chat_manager_admin")],[InlineKeyboardButton(text="Назад",callback_data="owner")]]))
+        keyboard=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Обновить",callback_data="chat_manager_admin")],
+            [InlineKeyboardButton(text="Назад",callback_data="owner")]
+        ])
+        # Owner panel may be a photo/media message, or a message without text.
+        # Edit the correct field; if Telegram has nothing editable, send a new screen.
+        try:
+            if c.message.text is not None:
+                await c.message.edit_text(body,parse_mode="HTML",reply_markup=keyboard)
+            elif c.message.caption is not None:
+                await c.message.edit_caption(caption=body,parse_mode="HTML",reply_markup=keyboard)
+            else:
+                await c.message.answer(body,parse_mode="HTML",reply_markup=keyboard,disable_web_page_preview=True)
+        except Exception:
+            log.exception("Failed to display Chat Manager admin screen")
+            await c.message.answer(body,parse_mode="HTML",reply_markup=keyboard,disable_web_page_preview=True)
         await c.answer()
     @router.message(Command("chatmanager"))
     async def global_chat_manager(m: Message):
