@@ -5,7 +5,7 @@ from aiogram import Router, F
 from aiogram.filters import BaseFilter
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-log=logging.getLogger("fenix.iris_social")
+log=logging.getLogger("fenix.social")
 def ph(db):return "%s" if db.use_postgres else "?"
 def rows(db,sql,args=()):
     with db.con() as c:return [dict(x) for x in c.execute(sql,args).fetchall()]
@@ -50,7 +50,7 @@ def level(db,chat,uid):
     x=one(db,f"SELECT level FROM cm_roles WHERE chat_id={ph(db)} AND uid={ph(db)}",(chat,uid))
     return int(x["level"]) if x else 0
 def register(dp,bot,db,owners=()):
-    init(db);router=Router(name="fenix_iris_social");owners=set(owners or ())
+    init(db);router=Router(name="fenix_social");owners=set(owners or ())
     async def ensure_creator(chat_id,user_id):
         try:
             member=await bot.get_chat_member(chat_id,user_id)
@@ -59,11 +59,11 @@ def register(dp,bot,db,owners=()):
                 execq(db,f"INSERT INTO cm_roles(chat_id,uid,level,title,by_uid,updated) VALUES({','.join([p]*6)}) ON CONFLICT(chat_id,uid) DO UPDATE SET level=100,title='Владелец',updated=excluded.updated",(chat_id,user_id,100,"Владелец",user_id,db._now()))
         except Exception:pass
     social_commands="dice|кости|duel|дуэль|rep|reputation|топреп|giveaway|розыгрыш|gstop|circle|круг"
-    rx=re.compile(r"(?i)^(?:[!./](?:"+social_commands+r")(?=$|[^a-zA-Z0-9_])|ирис(?:ка)?[ ]+(?:"+social_commands+r")(?=$|[^a-zA-Z0-9_]))")
+    rx=re.compile(r"(?i)^(?:[!./](?:"+social_commands+r")(?=$|[^a-zA-Z0-9_])"+social_commands+r")(?=$|[^a-zA-Z0-9_]))")
     @router.message(F.text.regexp(rx))
     async def social(m):
         if m.chat.type=="private":return
-        raw=m.text.strip();command_text=raw.split(maxsplit=1)[1] if raw.lower().startswith(("ирис ","ириска ")) else raw[1:];parts=command_text.split(maxsplit=1);cmd=parts[0].lower();arg=parts[1] if len(parts)>1 else "";args=arg.split()
+        raw=m.text.strip();command_text=raw[1:];parts=command_text.split(maxsplit=1);cmd=parts[0].lower();arg=parts[1] if len(parts)>1 else "";args=arg.split()
         chat,uid,p=m.chat.id,m.from_user.id,ph(db)
         await ensure_creator(chat,uid)
         lv=level(db,chat,uid);owner=uid in owners or db.is_admin(uid)
