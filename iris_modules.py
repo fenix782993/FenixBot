@@ -5,7 +5,7 @@ from aiogram import Router, F
 from aiogram.filters import BaseFilter
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-log=logging.getLogger("fenix.iris_modules")
+log=logging.getLogger("fenix.modules")
 def ph(db): return "%s" if db.use_postgres else "?"
 class CursorResult:
     def __init__(self, row=None, rowcount=0, lastrowid=None):
@@ -63,7 +63,7 @@ def level(db,chat,uid):
         return int(x["level"]) if x else 0
     except Exception:return 0
 def register(dp,bot,db,owner_ids=()):
-    init(db); router=Router(name="fenix_iris_modules"); owners=set(owner_ids or ())
+    init(db); router=Router(name="fenix_modules"); owners=set(owner_ids or ())
     commands="note|notes|bookmark|bookmarks|unbookmark|timer|timers|timerdel|vote|voteresult|voteclose|access|triggeradd|triggerdel|triggers|purge|del|report|antispam"
     async def ensure_creator(chat_id, user_id):
         try:
@@ -72,12 +72,12 @@ def register(dp,bot,db,owner_ids=()):
                 p=ph(db);stamp_value=stamp(db)
                 run(db,f"INSERT INTO cm_roles(chat_id,uid,level,title,by_uid,updated) VALUES({','.join([p]*6)}) ON CONFLICT(chat_id,uid) DO UPDATE SET level=100,title='Владелец',updated=excluded.updated",(chat_id,user_id,100,"Владелец",user_id,stamp_value))
         except Exception:pass
-    pattern=re.compile(r"(?i)^(?:[!./](?:"+commands+r")(?:@[a-zA-Z0-9_]+)?(?=$|[^a-zA-Z0-9_])|ирис(?:ка)?[ ]+(?:"+commands+r")(?=$|[^a-zA-Z0-9_]))")
+    pattern=re.compile(r"(?i)^(?:[!./](?:"+commands+r")(?:@[a-zA-Z0-9_]+)?(?=$|[^a-zA-Z0-9_])"+commands+r")(?=$|[^a-zA-Z0-9_]))")
     @router.message(F.text.regexp(pattern))
     async def command(m):
         if m.chat.type=="private":return await m.answer("Эта команда работает в групповой беседе.")
         raw=m.text.strip()
-        text=raw.split(maxsplit=1)[1] if raw.lower().startswith(("ирис ","ириска ")) else raw[1:]
+        text=raw[1:]
         parts=text.split(maxsplit=1); cmd=parts[0].lower().split("@")[0]; arg=parts[1] if len(parts)>1 else ""; args=arg.split()
         chat,uid,p=m.chat.id,m.from_user.id,ph(db)
         await ensure_creator(chat,uid)
@@ -226,7 +226,7 @@ def register(dp,bot,db,owner_ids=()):
     class SpamFilter(BaseFilter):
         async def __call__(self,m):
             if not m.text or m.chat.type=="private" or not m.from_user or m.from_user.is_bot:return False
-            if m.text.startswith(("!","/", ".")) or m.text.lower().startswith(("ирис ","ириска ")):return False
+            if m.text.startswith(("!","/", ".")):return False
             if level(db,m.chat.id,m.from_user.id)>=40:return False
             p=ph(db);cfg=one(db,f"SELECT enabled,threshold,window_sec,mute_sec FROM cm_antispam WHERE chat_id={p}",(m.chat.id,)) or {"enabled":1,"threshold":8,"window_sec":10,"mute_sec":30}
             if not int(cfg["enabled"]):return False
