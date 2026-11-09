@@ -179,9 +179,9 @@ def markup(rows):
                     updates = {}
                     if custom_id and str(custom_id).isdigit():
                         updates["icon_custom_emoji_id"] = str(custom_id)
-                        clean_text = _strip_leading_button_emoji(original_text)
-                        if clean_text and clean_text != original_text:
-                            updates["text"] = clean_text
+                        # Keep the normal emoji in the label as a visible fallback.
+                        # Telegram renders icon_custom_emoji_id only when the bot owner
+                        # has Premium (or the bot has eligible Fragment usernames).
                     if style in {"primary", "success", "danger"}:
                         updates["style"] = style
                     if updates:
@@ -1928,6 +1928,8 @@ async def start_health_server():
 
 async def main():
     db.init()
+    from chat_manager import register_chat_manager
+    register_chat_manager(dp, bot, db, OWNER_IDS)
     # Import the owner's OutlineEmoji custom-emoji pack automatically on startup.
     try:
         sticker_set = await bot.get_sticker_set("OutlineEmoji")
