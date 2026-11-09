@@ -63,7 +63,9 @@ def premium_affection_emoji(db, kind):
                 continue
             emoji_id = str(item.get("id") or "")
             fallback = str(item.get("emoji") or "")
-            if emoji_id.isdigit() and fallback == wanted:
+            normalized_fallback = fallback.replace("\ufe0f", "").replace("\ufe0e", "").strip()
+            normalized_wanted = wanted.replace("\ufe0f", "").replace("\ufe0e", "").strip()
+            if emoji_id.isdigit() and normalized_fallback == normalized_wanted:
                 return f'<tg-emoji emoji-id="{emoji_id}">{html.escape(fallback)}</tg-emoji>'
     return ""
 def init_schema(db):
