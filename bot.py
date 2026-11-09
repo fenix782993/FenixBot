@@ -2216,7 +2216,7 @@ async def main():
         pack_items = []
         if not _load_emoji_pack():
             for pack_name in ("OutlineEmoji", "TONEmoji"):
-            try:
+                try:
                     sticker_set = await bot.get_sticker_set(pack_name)
                     pack_items.extend(
                         {"id": str(sticker.custom_emoji_id), "emoji": getattr(sticker, "emoji", None) or "💎", "pack": pack_name}
@@ -2229,6 +2229,8 @@ async def main():
             unique = {item["id"]: item for item in pack_items}
             db.set_setting("premium_emoji_pack", json.dumps(list(unique.values()), ensure_ascii=False))
             logging.info("Loaded combined Premium Emoji pool: %s IDs", len(unique))
+        elif _load_emoji_pack():
+            logging.info("Preserved owner-imported Premium Emoji pack: %s IDs", len(_load_emoji_pack()))
         else:
             logging.warning("No custom emoji IDs loaded from OutlineEmoji / TONEmoji")
     except Exception:
