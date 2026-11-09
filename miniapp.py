@@ -915,6 +915,15 @@ async def main():
         if unique:
             db.set_setting("premium_emoji_pack", json.dumps(list(unique.values()), ensure_ascii=False))
             log.info("FENIX Premium Emoji: total unique Custom Emoji IDs loaded: %s", len(unique))
+            affection = {"💋", "😘", "💗", "💖", "❤️", "💛", "💕", "🫂", "🤗", "💞"}
+            available = sorted({
+                str(item.get("emoji") or "").replace("\ufe0f", "").replace("\ufe0e", "")
+                for item in unique.values()
+                if str(item.get("emoji") or "").replace("\ufe0f", "").replace("\ufe0e", "") in {
+                    value.replace("\ufe0f", "").replace("\ufe0e", "") for value in affection
+                }
+            })
+            log.info("FENIX Premium Emoji: affection icons available: %s", " ".join(available) if available else "NONE")
         else:
             log.warning("FENIX Premium Emoji: no Custom Emoji IDs loaded from configured packs")
     except Exception:
