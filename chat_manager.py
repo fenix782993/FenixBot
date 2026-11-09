@@ -82,7 +82,7 @@ def init_schema(db):
             c.execute("""CREATE TABLE IF NOT EXISTS cm_unities(id BIGSERIAL PRIMARY KEY,name TEXT UNIQUE,owner_chat BIGINT,created_by BIGINT,created TEXT)""")
             c.execute("""CREATE TABLE IF NOT EXISTS cm_unity_chats(chat_id BIGINT PRIMARY KEY,unity_id BIGINT,added_by BIGINT,created TEXT)""")
             c.execute("""CREATE TABLE IF NOT EXISTS cm_access(chat_id BIGINT,command TEXT,min_level INTEGER DEFAULT 0,enabled INTEGER DEFAULT 1,updated TEXT,PRIMARY KEY(chat_id,command))""")
-            c.execute("""CREATE TABLE IF NOT EXISTS cm_triggers(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,event TEXT,priority INTEGER DEFAULT 0,action TEXT,reason TEXT,created_by BIGINT,created TEXT)""")
+            c.execute("""CREATE TABLE IF NOT EXISTS cm_triggers(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,phrase TEXT,response TEXT,created_by BIGINT,created TEXT,UNIQUE(chat_id,phrase))""")
         else:
             c.executescript("""
             CREATE TABLE IF NOT EXISTS cm_roles(chat_id INTEGER,uid INTEGER,level INTEGER,title TEXT,by_uid INTEGER,updated TEXT,PRIMARY KEY(chat_id,uid));
@@ -95,7 +95,7 @@ def init_schema(db):
             CREATE TABLE IF NOT EXISTS cm_unities(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,owner_chat INTEGER,created_by INTEGER,created TEXT);
             CREATE TABLE IF NOT EXISTS cm_unity_chats(chat_id INTEGER PRIMARY KEY,unity_id INTEGER,added_by INTEGER,created TEXT);
             CREATE TABLE IF NOT EXISTS cm_access(chat_id INTEGER,command TEXT,min_level INTEGER DEFAULT 0,enabled INTEGER DEFAULT 1,updated TEXT,PRIMARY KEY(chat_id,command));
-            CREATE TABLE IF NOT EXISTS cm_triggers(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,event TEXT,priority INTEGER DEFAULT 0,action TEXT,reason TEXT,created_by INTEGER,created TEXT);
+            CREATE TABLE IF NOT EXISTS cm_triggers(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,phrase TEXT,response TEXT,created_by INTEGER,created TEXT,UNIQUE(chat_id,phrase));
             """)
 def get_role(db, chat_id, uid):
     r=one(db,f"SELECT level,title FROM cm_roles WHERE chat_id={ph(db)} AND uid={ph(db)}",(chat_id,uid))
@@ -199,23 +199,6 @@ def register_chat_manager(dp, bot, db, owner_ids):
                     if not any(x["url"].lower() in raw.lower() for x in allowed):
                         try: await m.delete()
                         except Exception: pass
-                antispam_key=f"cm_antispam:{m.chat.id}"
-                if str(db.setting(antispam_key,"off") or "off").lower()=="on":
-                    last_key=f"cm_last_message:{m.chat.id}:{m.from_user.id}"
-                    current=datetime.now(timezone.utc)
-                    previous=db.setting(last_key,"")
-                    db.set_setting(last_key,current.isoformat())
-                    try:
-                        if previous and (current-datetime.fromisoformat(previous)).total_seconds()<0.8 and len(raw)>3:
-                            await m.delete()
-                            return
-                    except Exception: pass
-                triggers=rows(db,f"SELECT event,action FROM cm_triggers WHERE chat_id={ph(db)} ORDER BY priority DESC,id DESC",(m.chat.id,))
-                for trigger in triggers:
-                    phrase=str(trigger.get("event") or "").strip()
-                    if phrase and phrase.casefold() in raw.casefold():
-                        await m.reply(str(trigger.get("action") or "")[:4000])
-                        break
             return
         if raw.lower().startswith(("ирис ","ириска ")):
             command_text=raw.split(maxsplit=1)[1]
