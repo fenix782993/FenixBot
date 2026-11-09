@@ -199,6 +199,23 @@ def register_chat_manager(dp, bot, db, owner_ids):
                     if not any(x["url"].lower() in raw.lower() for x in allowed):
                         try: await m.delete()
                         except Exception: pass
+                antispam_key=f"cm_antispam:{m.chat.id}"
+                if str(db.setting(antispam_key,"off") or "off").lower()=="on":
+                    last_key=f"cm_last_message:{m.chat.id}:{m.from_user.id}"
+                    current=datetime.now(timezone.utc)
+                    previous=db.setting(last_key,"")
+                    db.set_setting(last_key,current.isoformat())
+                    try:
+                        if previous and (current-datetime.fromisoformat(previous)).total_seconds()<0.8 and len(raw)>3:
+                            await m.delete()
+                            return
+                    except Exception: pass
+                triggers=rows(db,f"SELECT event,action FROM cm_triggers WHERE chat_id={ph(db)} ORDER BY priority DESC,id DESC",(m.chat.id,))
+                for trigger in triggers:
+                    phrase=str(trigger.get("event") or "").strip()
+                    if phrase and phrase.casefold() in raw.casefold():
+                        await m.reply(str(trigger.get("action") or "")[:4000])
+                        break
             return
         if raw.lower().startswith(("ирис ","ириска ")):
             command_text=raw.split(maxsplit=1)[1]
