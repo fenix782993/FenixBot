@@ -1,0 +1,362 @@
+import re
+import json
+import logging
+from datetime import datetime, timedelta, timezone
+from aiogram import Router, F
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import Command
+
+log = logging.getLogger("fenix.chat_manager")
+ROLE_LEVELS = {
+    "owner": 100, "владелец": 100,
+    "главный администратор": 80, "главный_администратор": 80, "главный": 80,
+    "администратор": 60, "admin": 60,
+    "модератор": 40, "moder": 40,
+    "помощник": 20, "helper": 20,
+}
+ROLE_NAMES = {100:"Владелец",80:"Главный администратор",60:"Администратор",40:"Модератор",20:"Помощник"}
+ALIASES = {
+ "help":"help","cmds":"help","команды":"help","помощь":"help",
+ "start":"start","начать":"start","ping":"ping","пинг":"ping","status":"ping","статус":"ping","test":"ping","тест":"ping",
+ "rules":"rules","правила":"rules","setup":"setup","settings":"settings","setsettings":"setsettings",
+ "settingsmute":"settingsmute","settingsinvite":"settingsinvite","welcome":"welcome","setrules":"setrules",
+ "admins":"admins","staff":"admins","админы":"admins","chatinfo":"chatinfo","info":"chatinfo","инфо":"chatinfo","чатинфо":"chatinfo",
+ "mute":"mute","мут":"mute","unmute":"unmute","унмут":"unmute","kick":"kick","кик":"kick","исключить":"kick",
+ "warn":"warn","варн":"warn","пред":"warn","unwarn":"unwarn","унварн":"unwarn","getwarn":"getwarn","предупреждения":"getwarn",
+ "warnhistory":"warnhistory","историяварнов":"warnhistory","warnlist":"warnlist","преды":"warnlist",
+ "ban":"ban","блок":"ban","unban":"unban","унблок":"unban","banlist":"banlist",
+ "addhelper":"addhelper","helper":"addhelper","addmoder":"addmoder","moder":"addmoder","addadmin":"addadmin",
+ "setrole":"setrole","role":"setrole","removerole":"removerole","rr":"removerole","roles":"roles","роли":"roles",
+ "filters":"filters","фильтры":"filters","filteradd":"filteradd","filterdel":"filterdel","filteredit":"filteredit",
+ "addlink":"addlink","whitelistlinks":"whitelistlinks","logs":"logs","логи":"logs",
+ "nick":"nick","getnick":"nick","gnick":"nick","ник":"nick","setnick":"setnick","snick":"setnick",
+ "removenick":"removenick","rnick":"removenick","nicknames":"nicknames","nlist":"nicknames",
+ "nonames":"nonames","безников":"nonames","getbynick":"getbynick","понику":"getbynick",
+ "unity":"unity","unites":"unites","addunity":"addunity","removeunity":"removeunity","editunity":"editunity","deleteunity":"deleteunity",
+ "pin":"pin","закрепить":"pin","unpin":"unpin","открепить":"unpin","silence":"silence","тишина":"silence","zov":"zov","вызов":"zov","зов":"zov",
+ "try":"try","попытка":"try","kiss":"kiss","поцелуй":"kiss","поцеловать":"kiss","obnyat":"hug","обнять":"hug","report":"report","репорт":"report",
+}
+def ph(db): return "%s" if db.use_postgres else "?"
+def now(db): return db._now()
+def q(db, sql, args=()):
+    with db.con() as c: return c.execute(sql,args)
+def rows(db, sql, args=()):
+    with db.con() as c: return [dict(x) for x in c.execute(sql,args).fetchall()]
+def one(db, sql, args=()):
+    with db.con() as c:
+        x=c.execute(sql,args).fetchone()
+        return dict(x) if x else None
+def init_schema(db):
+    with db.con() as c:
+        if db.use_postgres:
+            c.execute("""CREATE TABLE IF NOT EXISTS cm_roles(chat_id BIGINT,uid BIGINT,level INTEGER,title TEXT,by_uid BIGINT,updated TEXT,PRIMARY KEY(chat_id,uid))""")
+            c.execute("""CREATE TABLE IF NOT EXISTS cm_settings(chat_id BIGINT PRIMARY KEY,title TEXT,welcome TEXT,rules TEXT,mute_mode TEXT DEFAULT 'on',invite_mode TEXT DEFAULT 'on',silence INTEGER DEFAULT 0,created TEXT,updated TEXT)""")
+            c.execute("""CREATE TABLE IF NOT EXISTS cm_warns(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,uid BIGINT,by_uid BIGINT,reason TEXT,created TEXT,active INTEGER DEFAULT 1)""")
+            c.execute("""CREATE TABLE IF NOT EXISTS cm_logs(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,actor BIGINT,action TEXT,target BIGINT,details TEXT,created TEXT)""")
+            c.execute("""CREATE TABLE IF NOT EXISTS cm_filters(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,phrase TEXT,created_by BIGINT,created TEXT,UNIQUE(chat_id,phrase))""")
+            c.execute("""CREATE TABLE IF NOT EXISTS cm_links(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,url TEXT,created_by BIGINT,created TEXT,UNIQUE(chat_id,url))""")
+            c.execute("""CREATE TABLE IF NOT EXISTS cm_nicks(chat_id BIGINT,uid BIGINT,nick TEXT,by_uid BIGINT,updated TEXT,PRIMARY KEY(chat_id,uid))""")
+            c.execute("""CREATE TABLE IF NOT EXISTS cm_unities(id BIGSERIAL PRIMARY KEY,name TEXT UNIQUE,owner_chat BIGINT,created_by BIGINT,created TEXT)""")
+            c.execute("""CREATE TABLE IF NOT EXISTS cm_unity_chats(chat_id BIGINT PRIMARY KEY,unity_id BIGINT,added_by BIGINT,created TEXT)""")
+        else:
+            c.executescript("""
+            CREATE TABLE IF NOT EXISTS cm_roles(chat_id INTEGER,uid INTEGER,level INTEGER,title TEXT,by_uid INTEGER,updated TEXT,PRIMARY KEY(chat_id,uid));
+            CREATE TABLE IF NOT EXISTS cm_settings(chat_id INTEGER PRIMARY KEY,title TEXT,welcome TEXT,rules TEXT,mute_mode TEXT DEFAULT 'on',invite_mode TEXT DEFAULT 'on',silence INTEGER DEFAULT 0,created TEXT,updated TEXT);
+            CREATE TABLE IF NOT EXISTS cm_warns(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,uid INTEGER,by_uid INTEGER,reason TEXT,created TEXT,active INTEGER DEFAULT 1);
+            CREATE TABLE IF NOT EXISTS cm_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,actor INTEGER,action TEXT,target INTEGER,details TEXT,created TEXT);
+            CREATE TABLE IF NOT EXISTS cm_filters(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,phrase TEXT,created_by INTEGER,created TEXT,UNIQUE(chat_id,phrase));
+            CREATE TABLE IF NOT EXISTS cm_links(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,url TEXT,created_by INTEGER,created TEXT,UNIQUE(chat_id,url));
+            CREATE TABLE IF NOT EXISTS cm_nicks(chat_id INTEGER,uid INTEGER,nick TEXT,by_uid INTEGER,updated TEXT,PRIMARY KEY(chat_id,uid));
+            CREATE TABLE IF NOT EXISTS cm_unities(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,owner_chat INTEGER,created_by INTEGER,created TEXT);
+            CREATE TABLE IF NOT EXISTS cm_unity_chats(chat_id INTEGER PRIMARY KEY,unity_id INTEGER,added_by INTEGER,created TEXT);
+            """)
+def get_role(db, chat_id, uid):
+    r=one(db,f"SELECT level,title FROM cm_roles WHERE chat_id={ph(db)} AND uid={ph(db)}",(chat_id,uid))
+    return (int(r["level"]),r["title"]) if r else (0,"Участник")
+def log_action(db, chat, actor, action, target=None, details=""):
+    q(db,f"INSERT INTO cm_logs(chat_id,actor,action,target,details,created) VALUES({','.join([ph(db)]*6)})",(chat,actor,action,target,details,now(db)))
+def can(db, chat, uid, level):
+    return get_role(db,chat,uid)[0] >= level
+def parse_target(m, args):
+    if m.reply_to_message and m.reply_to_message.from_user: return m.reply_to_message.from_user.id, args
+    if not args: return None,args
+    token=args[0]
+    if token.lstrip("-").isdigit(): return int(token),args[1:]
+    hit=re.search(r"(?:user\?id=|t\.me/)(\d{5,})",token)
+    if hit: return int(hit.group(1)),args[1:]
+    if token.startswith("@"):
+        return None,args
+    return None,args
+def chat_settings(db, chat):
+    p=ph(db)
+    x=one(db,f"SELECT * FROM cm_settings WHERE chat_id={p}",(chat,))
+    if not x:
+        title=""
+        q(db,f"INSERT INTO cm_settings(chat_id,title,created,updated) VALUES({p},{p},{p},{p})",(chat,title,now(db),now(db)))
+        x=one(db,f"SELECT * FROM cm_settings WHERE chat_id={p}",(chat,))
+    return x
+def duration(text):
+    m=re.fullmatch(r"(\d+)(s|m|h|d)?",text.lower())
+    if not m: return 3600
+    n=int(m.group(1)); unit=m.group(2) or "m"
+    return n*{"s":1,"m":60,"h":3600,"d":86400}[unit]
+def register_chat_manager(dp, bot, db, owner_ids):
+    init_schema(db)
+    router=Router(name="fenix_chat_manager")
+    owner_ids=set(owner_ids or ())
+    async def ensure_creator(m):
+        if m.chat.type=="private": return
+        try:
+            cm=await bot.get_chat_member(m.chat.id,m.from_user.id)
+            if cm.status=="creator":
+                p=ph(db); q(db,f"INSERT INTO cm_roles(chat_id,uid,level,title,by_uid,updated) VALUES({','.join([p]*6)}) ON CONFLICT(chat_id,uid) DO UPDATE SET level=100,title='Владелец',updated=excluded.updated",(m.chat.id,m.from_user.id,100,"Владелец",m.from_user.id,now(db)))
+        except Exception: pass
+    async def reply(m,text,markup=None):
+        await m.reply(text,reply_markup=markup,parse_mode="HTML",disable_web_page_preview=True)
+    async def target_name(chat,uid):
+        try:
+            x=await bot.get_chat_member(chat,uid); u=x.user
+            return f"{u.full_name} (<code>{uid}</code>)"
+        except Exception: return f"<code>{uid}</code>"
+    async def do_mute(m, uid, seconds, reason):
+        until=datetime.now(timezone.utc)+timedelta(seconds=seconds)
+        from aiogram.types import ChatPermissions
+        await bot.restrict_chat_member(m.chat.id,uid,ChatPermissions(can_send_messages=False,can_send_audios=False,can_send_documents=False,can_send_photos=False,can_send_videos=False,can_send_video_notes=False,can_send_voice_notes=False,can_send_polls=False,can_send_other_messages=False,can_add_web_page_previews=False),until_date=until)
+        log_action(db,m.chat.id,m.from_user.id,"mute",uid,f"{seconds}s; {reason}")
+    @router.message(F.new_chat_members)
+    async def joined(m:Message):
+        s=chat_settings(db,m.chat.id)
+        for u in m.new_chat_members:
+            if u.is_bot: continue
+            if s.get("welcome"): await m.answer(s["welcome"].replace("{name}",u.full_name).replace("{id}",str(u.id)))
+    @router.message(F.text)
+    async def command_handler(m:Message):
+        raw=(m.text or "").strip()
+        if not raw.startswith("!"): 
+            if m.chat.type!="private":
+                s=chat_settings(db,m.chat.id)
+                if s.get("silence") and not can(db,m.chat.id,m.from_user.id,40):
+                    try: await m.delete()
+                    except Exception: pass
+                    return
+                filters=rows(db,f"SELECT phrase FROM cm_filters WHERE chat_id={ph(db)}",(m.chat.id,))
+                low=raw.casefold()
+                if any(x["phrase"].casefold() in low for x in filters):
+                    try: await m.delete()
+                    except Exception: pass
+                elif re.search(r"https?://|t\.me/",raw,re.I) and not can(db,m.chat.id,m.from_user.id,40):
+                    allowed=rows(db,f"SELECT url FROM cm_links WHERE chat_id={ph(db)}",(m.chat.id,))
+                    if not any(x["url"].lower() in raw.lower() for x in allowed):
+                        try: await m.delete()
+                        except Exception: pass
+            return
+        parts=raw[1:].split(maxsplit=1); name=parts[0].lower().split("@")[0]; argtext=parts[1] if len(parts)>1 else ""
+        cmd=ALIASES.get(name)
+        if not cmd: return
+        if m.chat.type=="private":
+            if cmd in ("help","ping"): 
+                return await reply(m,"<b>FENIX CHAT MANAGER</b>\nКоманды управления работают внутри привязанной группы. Добавь бота в беседу и выдай права администратора.")
+            return
+        await ensure_creator(m)
+        chat=m.chat.id; uid=m.from_user.id; args=argtext.split()
+        if cmd=="help":
+            return await reply(m,"<b>FENIX CHAT MANAGER · КОМАНДЫ</b>\n\n<b>Участник</b>: !help, !ping, !rules, !admins, !report, !try, !kiss, !obnyat\n<b>Помощник · 20</b>: !stats, !chatinfo, !mute, !unmute, !kick, !warn, !unwarn, !getwarn, !warnhistory, !warnlist, !getnick, !setnick, !removenick, !nicknames, !nonames, !getbynick, !zov, !logs\n<b>Модератор · 40</b>: !ban, !unban, !banlist, !addhelper, !setrole, !removerole, !roles, !silence, !wipe\n<b>Администратор · 60</b>: !addmoder, !addadmin, !filters, !filteradd, !filterdel, !addlink, !whitelistlinks\n<b>Главный администратор · 80</b>: !pin, !unpin, !newrole, !deleterole, !welcome, !setrules\n<b>Владелец · 100</b>: !setup, !settings, !setsettings, !settingsmute, !settingsinvite, !unity, !unites, !addunity, !removeunity, !editunity, !deleteunity\n\nВремя мута: 30s, 15m, 2h, 3d. Для действий над участником ответь на его сообщение или укажи числовой Telegram ID.")
+        if cmd=="ping": return await reply(m,"<b>FENIX CHAT MANAGER</b>\nСтатус: работает\nБеседа: активна")
+        if cmd=="rules":
+            s=chat_settings(db,chat); return await reply(m,s.get("rules") or "Правила беседы ещё не настроены.")
+        if cmd=="setup":
+            if not can(db,chat,uid,100) and uid not in owner_ids: return await reply(m,"⛔ Команда доступна владельцу беседы.")
+            s=chat_settings(db,chat)
+            return await reply(m,"<b>БЫСТРАЯ НАСТРОЙКА БЕСЕДЫ</b>\n\n1. Назначь бота администратором с правами удаления сообщений, блокировок и приглашений.\n2. Добавь администраторов командами !addadmin / !addmoder.\n3. Установи приветствие: !welcome текст\n4. Установи правила: !setrules текст\n5. Проверь настройки: !settings\n\nТекущий режим тишины: "+("включён" if s.get("silence") else "выключен"))
+        if cmd in ("settings","settingsmute","settingsinvite"):
+            if not can(db,chat,uid,100) and uid not in owner_ids: return await reply(m,"⛔ Только владелец беседы.")
+            s=chat_settings(db,chat)
+            return await reply(m,f"<b>НАСТРОЙКИ БЕСЕДЫ</b>\nПриветствие: {'установлено' if s.get('welcome') else 'не задано'}\nПравила: {'установлены' if s.get('rules') else 'не заданы'}\nОграничения: {s.get('mute_mode','on')}\nПриглашения: {s.get('invite_mode','on')}\nТишина: {'включена' if s.get('silence') else 'выключена'}\n\n!welcome текст\n!setrules текст\n!setsettings mute on|off\n!setsettings invite on|off\n!settingsmute — показать режим ограничений\n!settingsinvite — показать режим приглашений")
+        if cmd=="setsettings":
+            if not can(db,chat,uid,100) and uid not in owner_ids: return await reply(m,"⛔ Только владелец беседы.")
+            a=args[0].lower() if args else ""; v=args[1].lower() if len(args)>1 else ""
+            if a not in ("mute","invite") or v not in ("on","off"): return await reply(m,"Формат: !setsettings mute on|off или !setsettings invite on|off")
+            col="mute_mode" if a=="mute" else "invite_mode"; p=ph(db)
+            q(db,f"UPDATE cm_settings SET {col}={p},updated={p} WHERE chat_id={p}",(v,now(db),chat))
+            log_action(db,chat,uid,"settings",None,f"{a}={v}"); return await reply(m,"✅ Настройка сохранена.")
+        if cmd in ("welcome","setrules"):
+            if not can(db,chat,uid,80) and uid not in owner_ids: return await reply(m,"⛔ Требуется уровень 80.")
+            s=chat_settings(db,chat); col="welcome" if cmd=="welcome" else "rules"
+            p=ph(db); q(db,f"UPDATE cm_settings SET {col}={p},updated={p} WHERE chat_id={p}",(argtext,now(db),chat))
+            log_action(db,chat,uid,cmd,None,argtext[:500]); return await reply(m,"✅ Текст сохранён." if argtext else "Текст очищен.")
+        if cmd=="chatinfo":
+            s=chat_settings(db,chat)
+            return await reply(m,f"<b>ИНФОРМАЦИЯ О БЕСЕДЕ</b>\nНазвание: {m.chat.title}\nID: <code>{chat}</code>\nТип: {m.chat.type}\nУчастники: {getattr(m.chat,'member_count','неизвестно')}\nРоли: {len(rows(db,f'SELECT uid FROM cm_roles WHERE chat_id={ph(db)}',(chat,)))}")
+        if cmd=="admins":
+            rr=rows(db,f"SELECT uid,level,title FROM cm_roles WHERE chat_id={ph(db)} AND level>0 ORDER BY level DESC",(chat,))
+            if not rr: return await reply(m,"Состав руководства пока не настроен. Владелец может назначить роли.")
+            return await reply(m,"<b>РУКОВОДСТВО БЕСЕДЫ</b>\n"+"\n".join(f"• {x['title']} — <code>{x['uid']}</code> · {x['level']}" for x in rr))
+        if cmd=="roles":
+            return await reply(m,"<b>ИЕРАРХИЯ FENIX</b>\nВладелец — 100\nГлавный администратор — 80\nАдминистратор — 60\nМодератор — 40\nПомощник — 20")
+        if cmd in ("addhelper","addmoder","addadmin","setrole","removerole"):
+            required={"addhelper":40,"addmoder":60,"addadmin":80,"setrole":80,"removerole":80}[cmd]
+            if not can(db,chat,uid,required) and uid not in owner_ids: return await reply(m,f"⛔ Недостаточно прав. Требуется уровень {required}.")
+            target,rest=parse_target(m,args)
+            if not target: return await reply(m,"Укажи числовой Telegram ID или ответь на сообщение участника.")
+            if cmd=="removerole":
+                q(db,f"DELETE FROM cm_roles WHERE chat_id={ph(db)} AND uid={ph(db)}",(chat,target)); log_action(db,chat,uid,"role_remove",target); return await reply(m,"Роль снята.")
+            level={"addhelper":20,"addmoder":40,"addadmin":60}.get(cmd)
+            title={"addhelper":"Помощник","addmoder":"Модератор","addadmin":"Администратор"}.get(cmd)
+            if cmd=="setrole":
+                if len(rest)<1: return await reply(m,"Формат: !setrole ID роль (20/40/60/80)")
+                try: level=int(rest[0])
+                except: level=ROLE_LEVELS.get(rest[0].lower(),0)
+                if level not in ROLE_NAMES: return await reply(m,"Допустимые уровни: 20, 40, 60, 80.")
+                title=ROLE_NAMES[level]
+            p=ph(db); q(db,f"INSERT INTO cm_roles(chat_id,uid,level,title,by_uid,updated) VALUES({','.join([p]*6)}) ON CONFLICT(chat_id,uid) DO UPDATE SET level=excluded.level,title=excluded.title,by_uid=excluded.by_uid,updated=excluded.updated",(chat,target,level,title,uid,now(db)))
+            log_action(db,chat,uid,"role_set",target,title); return await reply(m,f"✅ Назначена роль <b>{title}</b> · уровень {level}.")
+        if cmd in ("mute","unmute","kick","warn","unwarn","getwarn","warnhistory","getnick","setnick","removenick","nicknames","nonames","getbynick","ban","unban","banlist"):
+            levels={"mute":20,"unmute":20,"kick":20,"warn":20,"unwarn":20,"getwarn":20,"warnhistory":20,"getnick":20,"setnick":20,"removenick":20,"nicknames":20,"nonames":20,"getbynick":20,"ban":40,"unban":40,"banlist":40}
+            if not can(db,chat,uid,levels[cmd]) and uid not in owner_ids: return await reply(m,"⛔ Недостаточно прав для этой команды.")
+            target,rest=parse_target(m,args)
+            if cmd in ("nicknames","nonames","banlist","warnlist") and not target: rest=args
+            if cmd=="nicknames":
+                rr=rows(db,f"SELECT uid,nick FROM cm_nicks WHERE chat_id={ph(db)} ORDER BY nick",(chat,))
+                return await reply(m,"<b>НИКНЕЙМЫ</b>\n"+("\n".join(f"{x['nick']} — <code>{x['uid']}</code>" for x in rr) if rr else "Список пуст."))
+            if cmd=="nonames":
+                rr=rows(db,f"SELECT uid FROM cm_roles WHERE chat_id={ph(db)} AND level=0",(chat,))
+                return await reply(m,"Участники без назначенной роли/ника: "+str(len(rr))+" (Telegram не предоставляет полный список участников боту).")
+            if cmd=="banlist":
+                rr=rows(db,f"SELECT uid,reason,created FROM cm_warns WHERE chat_id={ph(db)} AND active=2 ORDER BY id DESC LIMIT 30",(chat,))
+                return await reply(m,"<b>БЛОКИРОВКИ</b>\n"+("\n".join(f"{x['uid']} · {x['reason']}" for x in rr) if rr else "Список пуст."))
+            if cmd=="getbynick":
+                if not rest: return await reply(m,"Формат: !getbynick ник")
+                x=one(db,f"SELECT uid,nick FROM cm_nicks WHERE chat_id={ph(db)} AND lower(nick)=lower({ph(db)})",(chat," ".join(rest)))
+                return await reply(m,f"Найден: <code>{x['uid']}</code> — {x['nick']}" if x else "Ник не найден.")
+            if not target and cmd not in ("warnlist",): return await reply(m,"Укажи ID или ответь на сообщение участника.")
+            if cmd=="warn":
+                reason=" ".join(rest) or "Причина не указана"; p=ph(db)
+                q(db,f"INSERT INTO cm_warns(chat_id,uid,by_uid,reason,created,active) VALUES({','.join([p]*6)})",(chat,target,uid,reason,now(db),1)); log_action(db,chat,uid,"warn",target,reason)
+                count=one(db,f"SELECT COUNT(*) AS n FROM cm_warns WHERE chat_id={p} AND uid={p} AND active=1",(chat,target))["n"]
+                return await reply(m,f"⚠️ Предупреждение выдано. Активных: {count}/3.")
+            if cmd in ("getwarn","warnhistory"):
+                rr=rows(db,f"SELECT id,reason,created,active FROM cm_warns WHERE chat_id={ph(db)} AND uid={ph(db)} ORDER BY id DESC LIMIT 20",(chat,target))
+                return await reply(m,"<b>ИСТОРИЯ ПРЕДУПРЕЖДЕНИЙ</b>\n"+("\n".join(f"#{x['id']} · {x['reason']} · {'активно' if x['active']==1 else 'снято'}" for x in rr) if rr else "Предупреждений нет."))
+            if cmd=="unwarn":
+                x=one(db,f"SELECT id FROM cm_warns WHERE chat_id={ph(db)} AND uid={ph(db)} AND active=1 ORDER BY id DESC LIMIT 1",(chat,target))
+                if x: q(db,f"UPDATE cm_warns SET active=0 WHERE id={ph(db)}",(x["id"],))
+                log_action(db,chat,uid,"unwarn",target); return await reply(m,"Последнее активное предупреждение снято." if x else "Активных предупреждений нет.")
+            if cmd=="warnlist":
+                rr=rows(db,f"SELECT uid,COUNT(*) AS n FROM cm_warns WHERE chat_id={ph(db)} AND active=1 GROUP BY uid ORDER BY n DESC LIMIT 30")
+                return await reply(m,"<b>АКТИВНЫЕ ПРЕДУПРЕЖДЕНИЯ</b>\n"+("\n".join(f"{x['uid']} — {x['n']}" for x in rr) if rr else "Список пуст."))
+            if cmd=="mute":
+                secs=duration(rest[0]) if rest and re.fullmatch(r"\d+(s|m|h|d)?",rest[0].lower()) else 3600
+                reason=" ".join(rest[1:] if rest and re.fullmatch(r"\d+(s|m|h|d)?",rest[0].lower()) else rest) or "Причина не указана"
+                try: await do_mute(m,target,secs,reason)
+                except Exception as e: return await reply(m,"Не удалось выдать мут. Проверь права бота и статус участника.")
+                return await reply(m,f"🔇 Участник ограничен на {secs} сек. Причина: {reason}")
+            if cmd=="unmute":
+                from aiogram.types import ChatPermissions
+                try: await bot.restrict_chat_member(chat,target,ChatPermissions(can_send_messages=True,can_send_audios=True,can_send_documents=True,can_send_photos=True,can_send_videos=True,can_send_video_notes=True,can_send_voice_notes=True,can_send_polls=True,can_send_other_messages=True,can_add_web_page_previews=True))
+                except Exception: return await reply(m,"Не удалось снять ограничение. Проверь права бота.")
+                log_action(db,chat,uid,"unmute",target); return await reply(m,"Ограничение снято.")
+            if cmd=="kick":
+                reason=" ".join(rest) or "Без причины"
+                try: await bot.ban_chat_member(chat,target); await bot.unban_chat_member(chat,target,only_if_banned=True)
+                except Exception: return await reply(m,"Не удалось исключить участника. Проверь права бота.")
+                log_action(db,chat,uid,"kick",target,reason); return await reply(m,"Участник исключён.")
+            if cmd=="ban":
+                days=int(rest[0]) if rest and rest[0].isdigit() else 0
+                reason=" ".join(rest[1:] if rest and rest[0].isdigit() else rest) or "Без причины"
+                try: await bot.ban_chat_member(chat,target,until_date=datetime.now(timezone.utc)+timedelta(days=days) if days else None)
+                except Exception: return await reply(m,"Не удалось заблокировать участника. Проверь права бота.")
+                p=ph(db); q(db,f"INSERT INTO cm_warns(chat_id,uid,by_uid,reason,created,active) VALUES({','.join([p]*6)})",(chat,target,uid,reason,now(db),2)); log_action(db,chat,uid,"ban",target,reason); return await reply(m,"Участник заблокирован.")
+            if cmd=="unban":
+                try: await bot.unban_chat_member(chat,target,only_if_banned=True)
+                except Exception: return await reply(m,"Не удалось снять блокировку.")
+                log_action(db,chat,uid,"unban",target); return await reply(m,"Блокировка снята.")
+            if cmd=="getnick":
+                x=one(db,f"SELECT nick FROM cm_nicks WHERE chat_id={ph(db)} AND uid={ph(db)}",(chat,target))
+                return await reply(m,f"Ник: {x['nick']}" if x else "Ник не установлен.")
+            if cmd=="setnick":
+                if not rest: return await reply(m,"Формат: !setnick ID ник")
+                nick=" ".join(rest); p=ph(db)
+                if db.use_postgres: q(db,f"INSERT INTO cm_nicks(chat_id,uid,nick,by_uid,updated) VALUES({','.join([p]*5)}) ON CONFLICT(chat_id,uid) DO UPDATE SET nick=excluded.nick,by_uid=excluded.by_uid,updated=excluded.updated",(chat,target,nick,uid,now(db)))
+                else: q(db,f"INSERT INTO cm_nicks(chat_id,uid,nick,by_uid,updated) VALUES({','.join([p]*5)}) ON CONFLICT(chat_id,uid) DO UPDATE SET nick=excluded.nick,by_uid=excluded.by_uid,updated=excluded.updated",(chat,target,nick,uid,now(db)))
+                log_action(db,chat,uid,"nickname_set",target,nick); return await reply(m,"Ник сохранён в системе FENIX. Telegram-имя пользователя не меняется.")
+            if cmd=="removenick":
+                q(db,f"DELETE FROM cm_nicks WHERE chat_id={ph(db)} AND uid={ph(db)}",(chat,target)); log_action(db,chat,uid,"nickname_remove",target); return await reply(m,"Ник удалён.")
+        if cmd in ("filters","filteradd","filterdel","addlink","whitelistlinks","silence","pin","unpin","logs","zov"):
+            required=60 if cmd in ("filters","filteradd","filterdel","addlink","whitelistlinks") else 40
+            if not can(db,chat,uid,required) and uid not in owner_ids: return await reply(m,"⛔ Недостаточно прав.")
+            p=ph(db)
+            if cmd=="filteradd":
+                if not argtext: return await reply(m,"Формат: !filteradd слово или фраза")
+                try: q(db,f"INSERT INTO cm_filters(chat_id,phrase,created_by,created) VALUES({','.join([p]*4)})",(chat,argtext,uid,now(db)))
+                except Exception: pass
+                log_action(db,chat,uid,"filter_add",None,argtext); return await reply(m,"Фильтр добавлен.")
+            if cmd=="filterdel":
+                if not argtext: return await reply(m,"Формат: !filterdel слово")
+                q(db,f"DELETE FROM cm_filters WHERE chat_id={p} AND lower(phrase)=lower({p})",(chat,argtext)); return await reply(m,"Фильтр удалён.")
+            if cmd in ("filters","filteredit"):
+                rr=rows(db,f"SELECT phrase FROM cm_filters WHERE chat_id={p} ORDER BY phrase",(chat,))
+                return await reply(m,"<b>ФИЛЬТРЫ</b>\n"+("\n".join("• "+x["phrase"] for x in rr) if rr else "Фильтры не добавлены."))
+            if cmd=="addlink":
+                if not re.match(r"https?://",argtext): return await reply(m,"Укажи ссылку с https://")
+                try: q(db,f"INSERT INTO cm_links(chat_id,url,created_by,created) VALUES({','.join([p]*4)})",(chat,argtext,uid,now(db)))
+                except Exception: pass
+                return await reply(m,"Ссылка добавлена в белый список.")
+            if cmd=="whitelistlinks":
+                rr=rows(db,f"SELECT url FROM cm_links WHERE chat_id={p}",(chat,))
+                return await reply(m,"<b>РАЗРЕШЁННЫЕ ССЫЛКИ</b>\n"+("\n".join(x["url"] for x in rr) if rr else "Список пуст."))
+            if cmd=="silence":
+                s=chat_settings(db,chat); val=0 if s.get("silence") else 1
+                q(db,f"UPDATE cm_settings SET silence={p},updated={p} WHERE chat_id={p}",(val,now(db),chat)); log_action(db,chat,uid,"silence",None,str(val))
+                return await reply(m,"Режим тишины "+("включён" if val else "выключен")+".")
+            if cmd=="pin":
+                if not m.reply_to_message: return await reply(m,"Ответь командой !pin на сообщение.")
+                try: await bot.pin_chat_message(chat,m.reply_to_message.message_id); return await reply(m,"Сообщение закреплено.")
+                except Exception: return await reply(m,"Боту нужно право закреплять сообщения.")
+            if cmd=="unpin":
+                try: await bot.unpin_chat_message(chat); return await reply(m,"Закрепление снято.")
+                except Exception: return await reply(m,"Не удалось открепить сообщение.")
+            if cmd=="logs":
+                rr=rows(db,f"SELECT action,target,details,created FROM cm_logs WHERE chat_id={p} ORDER BY id DESC LIMIT 15",(chat,))
+                return await reply(m,"<b>ЖУРНАЛ ДЕЙСТВИЙ</b>\n"+("\n".join(f"{x['created']} · {x['action']} · {x['target'] or ''} · {x['details']}" for x in rr) if rr else "Записей пока нет."))
+            if cmd=="zov":
+                return await reply(m,"Упоминание всех участников Telegram API не позволяет надёжно получить полный список участников. Используй объявление в беседе с текстом команды.")
+        if cmd=="report":
+            if not argtext: return await reply(m,"Формат: !report текст обращения")
+            admins=rows(db,f"SELECT uid FROM cm_roles WHERE chat_id={ph(db)} AND level>=40",(chat,))
+            for a in admins:
+                try: await bot.send_message(a["uid"],f"🚨 Репорт из {m.chat.title}\nОт: {m.from_user.full_name} ({uid})\n{argtext}")
+                except Exception: pass
+            return await reply(m,"Обращение передано руководству беседы.")
+        if cmd=="try": return await reply(m,f"🎲 {m.from_user.full_name}, удача сегодня на твоей стороне!" if uid%2 else f"🎲 {m.from_user.full_name}, попробуй ещё раз!")
+        if cmd in ("kiss","hug"):
+            target,rest=parse_target(m,args)
+            if not target and m.reply_to_message and m.reply_to_message.from_user: target=m.reply_to_message.from_user.id
+            if not target: return await reply(m,"Ответь на сообщение участника или укажи его Telegram ID.")
+            verb="поцеловал(а)" if cmd=="kiss" else "обнял(а)"
+            return await reply(m,f"{m.from_user.full_name} {verb} {await target_name(chat,target)} 💛")
+        if cmd in ("unity","unites","addunity","removeunity","editunity","deleteunity"):
+            if not can(db,chat,uid,100) and uid not in owner_ids: return await reply(m,"⛔ Только владелец беседы.")
+            p=ph(db)
+            if cmd=="addunity":
+                if not argtext: return await reply(m,"Формат: !addunity название объединения")
+                name=argtext.strip()
+                try:
+                    if db.use_postgres: q(db,f"INSERT INTO cm_unities(name,owner_chat,created_by,created) VALUES({','.join([p]*4)}) ON CONFLICT(name) DO NOTHING",(name,chat,uid,now(db)))
+                    else: q(db,f"INSERT OR IGNORE INTO cm_unities(name,owner_chat,created_by,created) VALUES({','.join([p]*4)})",(name,chat,uid,now(db)))
+                except Exception: pass
+                u=one(db,f"SELECT id FROM cm_unities WHERE name={p}",(name,))
+                if u:
+                    if db.use_postgres: q(db,f"INSERT INTO cm_unity_chats(chat_id,unity_id,added_by,created) VALUES({','.join([p]*4)}) ON CONFLICT(chat_id) DO UPDATE SET unity_id=excluded.unity_id",(chat,u["id"],uid,now(db)))
+                    else: q(db,f"INSERT INTO cm_unity_chats(chat_id,unity_id,added_by,created) VALUES({','.join([p]*4)}) ON CONFLICT(chat_id) DO UPDATE SET unity_id=excluded.unity_id",(chat,u["id"],uid,now(db)))
+                return await reply(m,"Беседа подключена к объединению.")
+            if cmd=="removeunity":
+                q(db,f"DELETE FROM cm_unity_chats WHERE chat_id={p}",(chat,)); return await reply(m,"Беседа отключена от объединения.")
+            if cmd=="unites":
+                rr=rows(db,"SELECT name,id FROM cm_unities ORDER BY name")
+                return await reply(m,"<b>ОБЪЕДИНЕНИЯ</b>\n"+("\n".join(f"{x['name']} · #{x['id']}" for x in rr) if rr else "Объединений нет."))
+            u=one(db,f"SELECT u.name,u.id FROM cm_unity_chats c JOIN cm_unities u ON u.id=c.unity_id WHERE c.chat_id={p}",(chat,))
+            if cmd=="deleteunity" and args:
+                q(db,f"DELETE FROM cm_unities WHERE name={p}",(" ".join(args),)); return await reply(m,"Объединение удалено.")
+            return await reply(m,f"Текущее объединение: {u['name']}" if u else "Эта беседа не подключена к объединению.")
+    dp.include_router(router)
+    log.info("FENIX Chat Manager router registered")
