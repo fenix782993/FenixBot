@@ -64,7 +64,7 @@ def level(db,chat,uid):
     except Exception:return 0
 def register(dp,bot,db,owner_ids=()):
     init(db); router=Router(name="fenix_iris_modules"); owners=set(owner_ids or ())
-    commands="note|notes|bookmark|bookmarks|unbookmark|timer|vote|access|triggeradd|triggerdel|triggers|purge|del|report|antispam"
+    commands="note|notes|bookmark|bookmarks|unbookmark|timer|timers|timerdel|vote|voteresult|voteclose|access|triggeradd|triggerdel|triggers|purge|del|report|antispam"
     async def ensure_creator(chat_id, user_id):
         try:
             member=await bot.get_chat_member(chat_id,user_id)
@@ -152,6 +152,16 @@ def register(dp,bot,db,owner_ids=()):
             due=(datetime.now(timezone.utc)+timedelta(seconds=secs)).isoformat();body=arg.split(maxsplit=1)[1]
             run(db,f"INSERT INTO cm_timers(chat_id,uid,body,due_at,status,created) VALUES({','.join([p]*6)})",(chat,uid,body[:1000],due,"pending",stamp(db)))
             return await m.answer("⏰ Напоминание сохранено.")
+        if cmd=="timers":
+            rr=rows(db,f"SELECT id,body,due_at FROM cm_timers WHERE chat_id={p} AND uid={p} AND status='pending' ORDER BY due_at LIMIT 20",(chat,uid))
+            return await m.answer("<b>МОИ НАПОМИНАНИЯ</b>\\n"+("\\n".join(f"#{x['id']} · {escape(x['body'])} · {x['due_at']}" for x in rr) if rr else "Активных напоминаний нет."),parse_mode="HTML")
+        if cmd=="timerdel":
+            if not args or not args[0].isdigit():return await m.answer("Формат: !timerdel ID")
+            if lv<40 and not owner:
+                run(db,f"DELETE FROM cm_timers WHERE id={p} AND chat_id={p} AND uid={p} AND status='pending'",(int(args[0]),chat,uid))
+            else:
+                run(db,f"DELETE FROM cm_timers WHERE id={p} AND chat_id={p} AND status='pending'",(int(args[0]),chat))
+            return await m.answer("Напоминание отменено, если оно было активным.")
         if cmd=="vote":
             vals=[x.strip() for x in arg.split("|") if x.strip()]
             if len(vals)<3 or len(vals)>7:return await m.answer("Формат: !vote Вопрос | Вариант 1 | Вариант 2 (до 6 вариантов)")
@@ -167,6 +177,21 @@ def register(dp,bot,db,owner_ids=()):
                     cur=run(db,f"INSERT INTO cm_vote_options(vote_id,label) VALUES({p},{p})",(vid,label));oid=int(cur.lastrowid)
                 kb.append([InlineKeyboardButton(text=label[:50],callback_data=f"fenixvote:{vid}:{oid}")])
             return await m.answer("<b>🗳 "+escape(vals[0])+"</b>",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+        if cmd=="voteclose":
+            if not args or not args[0].isdigit():return await m.answer("Формат: !voteclose ID")
+            vote=one(db,f"SELECT creator FROM cm_votes WHERE id={p} AND chat_id={p}",(int(args[0]),chat))
+            if not vote:return await m.answer("Голосование не найдено.")
+            if int(vote["creator"])!=uid and lv<40 and not owner:return await m.answer("Закрыть голосование может автор или модератор.")
+            run(db,f"UPDATE cm_votes SET status='closed' WHERE id={p}",(int(args[0]),))
+            return await m.answer("Голосование закрыто.")
+        if cmd=="voteresult":
+            if not args or not args[0].isdigit():return await m.answer("Формат: !voteresult ID")
+            vid=int(args[0]);vote=one(db,f"SELECT question,status FROM cm_votes WHERE id={p} AND chat_id={p}",(vid,chat))
+            if not vote:return await m.answer("Голосование не найдено.")
+            result=rows(db,f"SELECT o.label,COUNT(b.uid) AS total FROM cm_vote_options o LEFT JOIN cm_vote_ballots b ON b.option_id=o.id WHERE o.vote_id={p} GROUP BY o.id,o.label ORDER BY total DESC,o.id",(vid,))
+            total=sum(int(x["total"]) for x in result)
+            body="<b>"+escape(vote["question"])+"</b>\\nСтатус: "+escape(vote["status"])+" · голосов: "+str(total)+"\\n"+"\\n".join(f"{escape(x['label'])}: {x['total']} ({round(int(x['total'])*100/total) if total else 0}%)" for x in result)
+            return await m.answer(body,parse_mode="HTML")
         if cmd=="del":
             if not m.reply_to_message:return await m.answer("Ответь !del на сообщение.")
             try:await bot.delete_message(chat,m.reply_to_message.message_id);return await m.answer("Удалено.")
