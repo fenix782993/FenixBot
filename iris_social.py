@@ -30,16 +30,22 @@ def init(db):
             "CREATE TABLE IF NOT EXISTS cm_circles(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,name TEXT,owner_uid BIGINT,created TEXT,UNIQUE(chat_id,name))",
             "CREATE TABLE IF NOT EXISTS cm_circle_members(chat_id BIGINT,uid BIGINT,circle_id BIGINT,joined TEXT,PRIMARY KEY(chat_id,uid))"]
             for x in sql:c.execute(x)
+            c.execute("ALTER TABLE cm_duels ADD COLUMN IF NOT EXISTS challenger_name TEXT")
+            c.execute("ALTER TABLE cm_duels ADD COLUMN IF NOT EXISTS opponent_name TEXT")
         else:
             c.executescript("""
             CREATE TABLE IF NOT EXISTS iris_rep(chat_id INTEGER,uid INTEGER,score INTEGER DEFAULT 0,PRIMARY KEY(chat_id,uid));
             CREATE TABLE IF NOT EXISTS iris_rep_log(chat_id INTEGER,giver INTEGER,target INTEGER,created TEXT,PRIMARY KEY(chat_id,giver,target));
             CREATE TABLE IF NOT EXISTS cm_giveaways(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,creator INTEGER,prize TEXT,draw_at TEXT,status TEXT DEFAULT 'open',winner INTEGER,created TEXT);
             CREATE TABLE IF NOT EXISTS cm_giveaway_entries(giveaway_id INTEGER,uid INTEGER,created TEXT,PRIMARY KEY(giveaway_id,uid));
-            CREATE TABLE IF NOT EXISTS cm_duels(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,challenger INTEGER,opponent INTEGER,status TEXT DEFAULT 'pending',created TEXT,winner INTEGER);
+            CREATE TABLE IF NOT EXISTS cm_duels(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,challenger INTEGER,opponent INTEGER,status TEXT DEFAULT 'pending',created TEXT,winner INTEGER,challenger_name TEXT,opponent_name TEXT);
             CREATE TABLE IF NOT EXISTS cm_circles(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,name TEXT,owner_uid INTEGER,created TEXT,UNIQUE(chat_id,name));
             CREATE TABLE IF NOT EXISTS cm_circle_members(chat_id INTEGER,uid INTEGER,circle_id INTEGER,joined TEXT,PRIMARY KEY(chat_id,uid));
             """)
+            try:c.execute("ALTER TABLE cm_duels ADD COLUMN challenger_name TEXT")
+            except Exception:pass
+            try:c.execute("ALTER TABLE cm_duels ADD COLUMN opponent_name TEXT")
+            except Exception:pass
 def level(db,chat,uid):
     x=one(db,f"SELECT level FROM cm_roles WHERE chat_id={ph(db)} AND uid={ph(db)}",(chat,uid))
     return int(x["level"]) if x else 0
@@ -97,15 +103,25 @@ def register(dp,bot,db,owners=()):
                 return await m.answer(f"<b>⭕ {escape(current['name'])}</b>\nВладелец: <code>{current['owner_uid']}</code>\nУчастников: {len(members)}\n"+", ".join(f"<code>{x['uid']}</code>" for x in members),parse_mode="HTML")
             return await m.answer("Неизвестная команда круга. Используй: create/join/leave/info/list.")
         if cmd in ("duel","дуэль"):
-            target=m.reply_to_message.from_user.id if m.reply_to_message and m.reply_to_message.from_user else (int(args[0]) if args and args[0].isdigit() else None)
+            replied=m.reply_to_message.from_user if m.reply_to_message and m.reply_to_message.from_user else None
+            target=replied.id if replied else (int(args[0]) if args and args[0].isdigit() else None)
             if not target:return await m.answer("Ответь командой !duel на сообщение участника.")
             if target==uid:return await m.answer("Нельзя вызвать на дуэль самого себя.")
-            if db.use_postgres:
-                x,_=execq(db,f"INSERT INTO cm_duels(chat_id,challenger,opponent,status,created) VALUES({p},{p},{p},'pending',{p}) RETURNING id",(chat,uid,target,db._now()));did=int(x["id"])
+            challenger_name=escape(m.from_user.full_name or m.from_user.first_name or "Игрок")
+            if replied:
+                opponent_name=escape(replied.full_name or replied.first_name or "Игрок")
             else:
-                _,last=execq(db,f"INSERT INTO cm_duels(chat_id,challenger,opponent,status,created) VALUES({p},{p},{p},'pending',{p})",(chat,uid,target,db._now()));did=int(last)
+                try:
+                    target_chat=await bot.get_chat(target)
+                    opponent_name=escape(target_chat.full_name or target_chat.first_name or target_chat.username or "Игрок")
+                except Exception:
+                    opponent_name="Игрок"
+            if db.use_postgres:
+                x,_=execq(db,f"INSERT INTO cm_duels(chat_id,challenger,opponent,status,created,challenger_name,opponent_name) VALUES({p},{p},{p},'pending',{p},{p},{p}) RETURNING id",(chat,uid,target,db._now(),challenger_name,opponent_name));did=int(x["id"])
+            else:
+                _,last=execq(db,f"INSERT INTO cm_duels(chat_id,challenger,opponent,status,created,challenger_name,opponent_name) VALUES({p},{p},{p},'pending',{p},{p},{p})",(chat,uid,target,db._now(),challenger_name,opponent_name));did=int(last)
             kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⚔️ Принять дуэль",callback_data=f"fenduel:{did}")]])
-            return await m.answer(f"⚔️ Участник <code>{uid}</code> вызывает <code>{target}</code> на дуэль в кости!",parse_mode="HTML",reply_markup=kb)
+            return await m.answer(f"⚔️ <b>{challenger_name}</b> вызывает на дуэль <b>{opponent_name}</b>!",parse_mode="HTML",reply_markup=kb)
         if cmd in ("rep","reputation"):
             target=m.reply_to_message.from_user.id if m.reply_to_message and m.reply_to_message.from_user else (int(args[0]) if args and args[0].isdigit() else None)
             if not target:return await m.answer("Ответь !rep на сообщение или укажи Telegram ID.")
@@ -156,8 +172,10 @@ def register(dp,bot,db,owners=()):
             a=int(first.dice.value);b=int(second.dice.value)
             winner=int(duel["challenger"]) if a>b else int(duel["opponent"]) if b>a else 0
             run_result=execq(db,f"UPDATE cm_duels SET status='finished',winner={p} WHERE id={p}",(winner,did))
-            text_result=f"⚔️ <b>ДУЭЛЬ #{did}</b>\nПервый бросок: <code>{a}</code>\nВторой бросок: <code>{b}</code>\n"
-            text_result+=f"🏆 Победитель: <code>{winner}</code>" if winner else "🤝 Ничья!"
+            challenger_name=escape(duel.get("challenger_name") or "Игрок 1")
+            opponent_name=escape(duel.get("opponent_name") or "Игрок 2")
+            text_result=f"⚔️ <b>ДУЭЛЬ #{did}</b>\n{challenger_name}: <b>{a}</b>\n{opponent_name}: <b>{b}</b>\n"
+            text_result+=f"🏆 Победитель: <b>{challenger_name if winner==int(duel['challenger']) else opponent_name}</b>" if winner else "🤝 Ничья!"
             await c.message.answer(text_result,parse_mode="HTML")
             await c.answer("Дуэль сыграна!")
         except Exception:log.exception("duel failed");await c.answer("Не удалось провести дуэль.",show_alert=True)
