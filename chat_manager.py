@@ -309,7 +309,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 "<code>!removeunity</code> — отключить беседу от объединения.\n"
                 "<code>!editunity НОВОЕ_НАЗВАНИЕ</code> — переименовать объединение.\n"
                 "<code>!deleteunity НАЗВАНИЕ</code> — удалить объединение.\n\n"
-                "<b>ДОПОЛНИТЕЛЬНЫЕ МОДУЛИ FENIX (бывший IRIS)</b>\n"
+                "<b>ДОПОЛНИТЕЛЬНЫЕ МОДУЛИ FENIX</b>\n"
                 "<i>Эти команды тоже реально подключены к боту. Можно использовать !, / или точку перед командой.</i>\n"
                 "<b>Заметки и закладки</b>\n"
                 "<code>!note add ТЕКСТ</code> — сохранить заметку; ответом на сообщение — заметка для его автора.\n"
@@ -770,7 +770,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
             "pin","unpin","silence","zov","try","kiss","obnyat","report","chatmanager",
             "note","notes","bookmark","bookmarks","unbookmark","timer","timers","timerdel","vote","voteresult",
             "voteclose","access","triggeradd","triggerdel","triggers","antispam","purge","del","dice","duel",
-            "rep","giveaway","gstop","circle","coin","profile","clan","marry","divorce"
+            "rep","reputation","toprep","giveaway","gstop","circle","coin","profile","clan","marry","divorce"
         ]
         descriptions = {
             "help":"Полный список команд FENIX","cmds":"Список команд FENIX","start":"Проверить подключение",
