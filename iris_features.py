@@ -78,7 +78,9 @@ def register(dp,bot,db):
         "notes":"ЗАМЕТКИ, ЗАКЛАДКИ И ТАЙМЕРЫ\n!note add текст — сохранить заметку; ответ на участника прикрепляет её к нему.\n!note list — показать заметки; !note del ID — удалить заметку.\n!notes — показать твои заметки.\n!bookmark — сохранить сообщение (ответом); !bookmarks — список; !unbookmark ID — удалить.\n!timer 10m текст — создать напоминание (10 секунд–30 дней); !timers — список; !timerdel ID — отменить.",
         "community":"СООБЩЕСТВО\n!clan create название — создать клан; !clan join название — вступить; !clan leave — выйти; !clan info — сводка крупнейшего клана.\n!circle create/join/leave/info/list — управление кругами беседы.\n!giveaway 1h приз — создать розыгрыш; участники нажимают кнопку.\n!gstop ID — отменить розыгрыш.",
         "help":"СПРАВОЧНИК\n!help — полный список команд и объяснения.\n/fenix — открыть это меню.\nМодерация: !mute, !warn, !ban, !kick, !report.\nПрофиль: !profile, !stats, !rep, !топреп.\nРазвлечения: !dice, !coin, !try, !kiss, !obnyat, !duel.\nЗаметки: !note, !notes, !bookmark, !bookmarks.\nСообщество: !clan, !circle, !giveaway."}
-        article=(db.setting("fenix_commands_article_url","") or "").strip()\n        buttons=([[InlineKeyboardButton(text="📖 Полный справочник FENIX",url=article)]] if section=="help" and article else [])+[[InlineKeyboardButton(text="← В меню",callback_data="fenix:back")]]\n        await c.message.edit_text("<b>"+texts.get(section,texts["help"])+"</b>",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+        article=(db.setting("fenix_commands_article_url","") or "").strip()
+        buttons=([[InlineKeyboardButton(text="📖 Полный справочник FENIX",url=article)]] if section=="help" and article else [])+[[InlineKeyboardButton(text="← В меню",callback_data="fenix:back")]]
+        await c.message.edit_text("<b>"+texts.get(section,texts["help"])+"</b>",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
         await c.answer()
     @router.callback_query(F.data=="fenix:back")
     async def fenix_back(c):
