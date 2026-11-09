@@ -58,7 +58,7 @@ def register(dp,bot,db,owners=()):
                 p=ph(db)
                 execq(db,f"INSERT INTO cm_roles(chat_id,uid,level,title,by_uid,updated) VALUES({','.join([p]*6)}) ON CONFLICT(chat_id,uid) DO UPDATE SET level=100,title='Владелец',updated=excluded.updated",(chat_id,user_id,100,"Владелец",user_id,db._now()))
         except Exception:pass
-    social_commands="dice|кости|duel|дуэль|rep|reputation|топреп|giveaway|розыгрыш|gstop|circle|круг"
+    social_commands="dice|кости|duel|дуэль|rep|reputation|топреп|toprep|giveaway|розыгрыш|gstop|circle|круг"
     rx=re.compile(r"(?i)^[!./](?:"+social_commands+r")(?=$|[^a-zA-Z0-9_])")
     @router.message(F.text.regexp(rx))
     async def social(m):
@@ -135,7 +135,7 @@ def register(dp,bot,db,owners=()):
             else:execq(db,f"INSERT INTO iris_rep(chat_id,uid,score) VALUES({p},{p},1) ON CONFLICT(chat_id,uid) DO UPDATE SET score=score+1",(chat,target))
             x=one(db,f"SELECT score FROM iris_rep WHERE chat_id={p} AND uid={p}",(chat,target))
             return await m.answer(f"⭐ Репутация <code>{target}</code>: {x['score']}",parse_mode="HTML")
-        if cmd=="топреп":
+        if cmd in ("топреп","toprep"):
             rr=rows(db,f"SELECT uid,score FROM iris_rep WHERE chat_id={p} ORDER BY score DESC LIMIT 10",(chat,))
             return await m.answer("<b>⭐ ТОП РЕПУТАЦИИ</b>\n"+("\n".join(f"{i+1}. <code>{x['uid']}</code> — {x['score']}" for i,x in enumerate(rr)) if rr else "Пока нет оценок."),parse_mode="HTML")
         if cmd in ("giveaway","розыгрыш"):
