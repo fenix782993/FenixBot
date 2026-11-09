@@ -1,6 +1,7 @@
 import re
 import json
 import logging
+import html
 from datetime import datetime, timedelta, timezone
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
@@ -80,6 +81,8 @@ def init_schema(db):
             c.execute("""CREATE TABLE IF NOT EXISTS cm_nicks(chat_id BIGINT,uid BIGINT,nick TEXT,by_uid BIGINT,updated TEXT,PRIMARY KEY(chat_id,uid))""")
             c.execute("""CREATE TABLE IF NOT EXISTS cm_unities(id BIGSERIAL PRIMARY KEY,name TEXT UNIQUE,owner_chat BIGINT,created_by BIGINT,created TEXT)""")
             c.execute("""CREATE TABLE IF NOT EXISTS cm_unity_chats(chat_id BIGINT PRIMARY KEY,unity_id BIGINT,added_by BIGINT,created TEXT)""")
+            c.execute("""CREATE TABLE IF NOT EXISTS cm_access(chat_id BIGINT,command TEXT,min_level INTEGER DEFAULT 0,enabled INTEGER DEFAULT 1,updated TEXT,PRIMARY KEY(chat_id,command))""")
+            c.execute("""CREATE TABLE IF NOT EXISTS cm_triggers(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,event TEXT,priority INTEGER DEFAULT 0,action TEXT,reason TEXT,created_by BIGINT,created TEXT)""")
         else:
             c.executescript("""
             CREATE TABLE IF NOT EXISTS cm_roles(chat_id INTEGER,uid INTEGER,level INTEGER,title TEXT,by_uid INTEGER,updated TEXT,PRIMARY KEY(chat_id,uid));
@@ -91,6 +94,8 @@ def init_schema(db):
             CREATE TABLE IF NOT EXISTS cm_nicks(chat_id INTEGER,uid INTEGER,nick TEXT,by_uid INTEGER,updated TEXT,PRIMARY KEY(chat_id,uid));
             CREATE TABLE IF NOT EXISTS cm_unities(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,owner_chat INTEGER,created_by INTEGER,created TEXT);
             CREATE TABLE IF NOT EXISTS cm_unity_chats(chat_id INTEGER PRIMARY KEY,unity_id INTEGER,added_by INTEGER,created TEXT);
+            CREATE TABLE IF NOT EXISTS cm_access(chat_id INTEGER,command TEXT,min_level INTEGER DEFAULT 0,enabled INTEGER DEFAULT 1,updated TEXT,PRIMARY KEY(chat_id,command));
+            CREATE TABLE IF NOT EXISTS cm_triggers(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,event TEXT,priority INTEGER DEFAULT 0,action TEXT,reason TEXT,created_by INTEGER,created TEXT);
             """)
 def get_role(db, chat_id, uid):
     r=one(db,f"SELECT level,title FROM cm_roles WHERE chat_id={ph(db)} AND uid={ph(db)}",(chat_id,uid))
@@ -199,6 +204,18 @@ def register_chat_manager(dp, bot, db, owner_ids):
             command_text=raw.split(maxsplit=1)[1]
         else:
             command_text=raw[1:]
+        promote = re.match(r"^(?:\+модер|\+админ|повысить)\s*(?:(\d)\s+)?(.+)$", command_text, re.I)
+        demote = re.match(r"^(?:понизить)\s+(.+)$", command_text, re.I)
+        if promote:
+            rank = int(promote.group(1) or 1)
+            mapped = {1:20, 2:40, 3:60, 4:80, 5:100}.get(rank)
+            if mapped is None: return await reply(m,"Ранг должен быть от 1 до 5.")
+            command_text = f"setrole {promote.group(2)} {mapped}"
+        elif demote:
+            target_id = demote.group(1).strip()
+            current_level = get_role(db,m.chat.id,int(target_id))[0] if target_id.isdigit() else 0
+            lower = max(0,current_level-20)
+            command_text = f"setrole {target_id} {lower}"
         parts=command_text.split(maxsplit=1); name=parts[0].lower().split("@")[0] if parts else ""; argtext=parts[1] if len(parts)>1 else ""
         cmd=ALIASES.get(name)
         if not cmd: return
@@ -285,8 +302,10 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 if len(rest)<1: return await reply(m,"Формат: !setrole ID роль (20/40/60/80)")
                 try: level=int(rest[0])
                 except: level=ROLE_LEVELS.get(rest[0].lower(),0)
-                if level not in ROLE_NAMES: return await reply(m,"Допустимые уровни: 20, 40, 60, 80.")
-                title=ROLE_NAMES[level]
+                if level not in (0,20,40,60,80,100): return await reply(m,"Допустимые ранги: 0, 1, 2, 3, 4, 5 (или уровни 20, 40, 60, 80, 100).")
+                title=ROLE_NAMES.get(level,"Участник")
+                if level==100 and uid not in owner_ids and get_role(db,chat,uid)[0] < 100:
+                    return await reply(m,"⛔ Назначить владельца может только текущий владелец беседы.")
             p=ph(db); q(db,f"INSERT INTO cm_roles(chat_id,uid,level,title,by_uid,updated) VALUES({','.join([p]*6)}) ON CONFLICT(chat_id,uid) DO UPDATE SET level=excluded.level,title=excluded.title,by_uid=excluded.by_uid,updated=excluded.updated",(chat,target,level,title,uid,now(db)))
             log_action(db,chat,uid,"role_set",target,title); return await reply(m,f"✅ Назначена роль <b>{title}</b> · уровень {level}.")
         if cmd in ("mute","unmute","kick","warn","unwarn","getwarn","warnhistory","warnlist","getnick","setnick","removenick","nicknames","nonames","getbynick","ban","unban","banlist","getban"):
