@@ -53,7 +53,49 @@ def register(dp, bot, db, owner_ids=()):
 
     @router.message(Command("stars"))
     async def stars_menu(m):
-        await m.answer("<b>⭐ FENIX · TELEGRAM STARS</b>\\nПодарки Telegram: <code>/giftshop TELEGRAM_ID</code>\\nПодарить Premium: <code>/premiumgift TELEGRAM_ID</code>\\nУзнать свой ID: <code>/myid</code>\\nИстория покупок: <code>/starsorders</code>",parse_mode="HTML")
+        kb=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🎁 Купить Telegram-подарок",callback_data="tgs:catalog")],
+            [InlineKeyboardButton(text="⭐ Купить Telegram Premium",callback_data="tgs:premium_catalog")],
+            [InlineKeyboardButton(text="🆔 Мой Telegram ID",callback_data="tgs:showid")],
+        ])
+        await m.answer("<b>⭐ FENIX · МАГАЗИН TELEGRAM</b>\\nВыбери покупку. Подарок можно отправить себе кнопкой ниже или другому человеку командой /giftshop TELEGRAM_ID. Premium — /premiumgift TELEGRAM_ID.",parse_mode="HTML",reply_markup=kb)
+
+    async def show_gifts(chat_id,buyer_id,recipient_id):
+        gifts=(await api("getAvailableGifts")).get("gifts",[])
+        gifts=[g for g in gifts if int(g.get("star_count",0))>0]
+        if not gifts:
+            return await bot.send_message(chat_id,"Telegram сейчас не вернул доступных подарков.")
+        buttons=[]
+        for gift in gifts[:40]:
+            emoji=(gift.get("sticker") or {}).get("emoji") or "🎁"; stars=int(gift["star_count"])
+            label=f"{emoji} Купить · {stars} ⭐"; token=secrets.token_urlsafe(6).replace("-","").replace("_","")[:8]
+            run(db,f"INSERT INTO tg_store_items(token,owner_uid,recipient_uid,gift_id,title,stars,created) VALUES({','.join([ph(db)]*7)})",
+                (token,buyer_id,recipient_id,str(gift["id"]),label,stars,datetime.now(timezone.utc).isoformat()))
+            buttons.append([InlineKeyboardButton(text=label[:60],callback_data=f"tgs:g:{token}")])
+        buttons.append([InlineKeyboardButton(text="⭐ Telegram Premium",callback_data=f"tgs:p:3:{recipient_id}")])
+        await bot.send_message(chat_id,"<b>FENIX · TELEGRAM GIFTS</b>\\nВыбери подарок. После нажатия «Купить» Telegram откроет счёт в Stars; подарок будет отправлен только после успешной оплаты.",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+    @router.callback_query(F.data=="tgs:catalog")
+    async def open_gift_catalog(c):
+        try:
+            await show_gifts(c.from_user.id,c.from_user.id,c.from_user.id)
+            await c.answer()
+        except Exception as e:
+            log.exception("Gift catalog error")
+            await c.answer("Не удалось загрузить подарки Telegram.",show_alert=True)
+
+    @router.callback_query(F.data=="tgs:premium_catalog")
+    async def open_premium_catalog(c):
+        kb=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="3 месяца · 1000 ⭐",callback_data=f"tgs:p:3:{c.from_user.id}")],
+            [InlineKeyboardButton(text="6 месяцев · 1500 ⭐",callback_data=f"tgs:p:6:{c.from_user.id}")],
+            [InlineKeyboardButton(text="12 месяцев · 2500 ⭐",callback_data=f"tgs:p:12:{c.from_user.id}")]])
+        await c.message.answer("<b>Выбери срок Telegram Premium для себя</b>",parse_mode="HTML",reply_markup=kb)
+        await c.answer()
+
+    @router.callback_query(F.data=="tgs:showid")
+    async def show_own_id(c):
+        await c.answer(f"Твой Telegram ID: {c.from_user.id}",show_alert=True)
 
     @router.message(Command("myid"))
     async def myid(m):
@@ -72,36 +114,25 @@ def register(dp, bot, db, owner_ids=()):
     @router.message(Command("giftshop"))
     async def giftshop(m):
         args=(m.text or "").split()
-        if len(args)<2 or not args[1].isdigit():
-            return await m.answer("🎁 <b>Магазин подарков FENIX</b>\nИспользование: <code>/giftshop TELEGRAM_ID</code>",parse_mode="HTML")
-        recipient=int(args[1])
-        try: gifts=(await api("getAvailableGifts")).get("gifts",[])
+        if len(args)>1 and args[1].isdigit():
+            recipient=int(args[1])
+        else:
+            recipient=m.from_user.id
+        try:
+            await show_gifts(m.chat.id,m.from_user.id,recipient)
         except Exception as e:
             log.exception("Gift catalog error")
-            return await m.answer(f"Не удалось получить каталог Telegram: {str(e)[:200]}")
-        gifts=[g for g in gifts if int(g.get("star_count",0))>0]
-        if not gifts: return await m.answer("Telegram сейчас не вернул доступных подарков.")
-        buttons=[]
-        for gift in gifts[:40]:
-            emoji=(gift.get("sticker") or {}).get("emoji") or "🎁"; stars=int(gift["star_count"])
-            label=f"{emoji} Подарок · {stars} ⭐"; token=secrets.token_urlsafe(6).replace("-","").replace("_","")[:8]
-            run(db,f"INSERT INTO tg_store_items(token,owner_uid,recipient_uid,gift_id,title,stars,created) VALUES({','.join([ph(db)]*7)})",
-                (token,m.from_user.id,recipient,str(gift["id"]),label,stars,datetime.now(timezone.utc).isoformat()))
-            buttons.append([InlineKeyboardButton(text=label[:60],callback_data=f"tgs:g:{token}")])
-        buttons.append([InlineKeyboardButton(text="⭐ Telegram Premium",callback_data=f"tgs:p:3:{recipient}")])
-        await m.answer("<b>FENIX · TELEGRAM GIFTS</b>\nКаталог получен напрямую из Telegram. Выбери подарок — после оплаты бот отправит его получателю.",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+            await m.answer(f"Не удалось получить каталог Telegram: {str(e)[:200]}")
 
     @router.message(Command("premiumgift"))
     async def premiumgift(m):
         args=(m.text or "").split()
-        if len(args)<2 or not args[1].isdigit():
-            return await m.answer("Использование: <code>/premiumgift TELEGRAM_ID</code>",parse_mode="HTML")
-        uid=int(args[1])
+        recipient=int(args[1]) if len(args)>1 and args[1].isdigit() else m.from_user.id
         kb=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="3 месяца · 1000 ⭐",callback_data=f"tgs:p:3:{uid}")],
-            [InlineKeyboardButton(text="6 месяцев · 1500 ⭐",callback_data=f"tgs:p:6:{uid}")],
-            [InlineKeyboardButton(text="12 месяцев · 2500 ⭐",callback_data=f"tgs:p:12:{uid}")]])
-        await m.answer("<b>Подарить Telegram Premium</b>\nВыбери срок подписки:",parse_mode="HTML",reply_markup=kb)
+            [InlineKeyboardButton(text="3 месяца · 1000 ⭐",callback_data=f"tgs:p:3:{recipient}")],
+            [InlineKeyboardButton(text="6 месяцев · 1500 ⭐",callback_data=f"tgs:p:6:{recipient}")],
+            [InlineKeyboardButton(text="12 месяцев · 2500 ⭐",callback_data=f"tgs:p:12:{recipient}")]])
+        await m.answer("<b>Выбери срок Telegram Premium</b>",parse_mode="HTML",reply_markup=kb)
 
     @router.callback_query(F.data.startswith("tgs:g:"))
     async def choose_gift(c):
