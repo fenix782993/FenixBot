@@ -54,10 +54,19 @@ async def bot_star_balance():
     result=await api("getMyStarBalance")
     return int(result.get("amount",0)) if isinstance(result,dict) else int(result or 0)
 
-async def ensure_recipient(user_id):
-    """Fail before payment if Telegram cannot resolve the recipient for this bot."""
+async def ensure_recipient(user_ref):
+    """Resolve a numeric Telegram ID or public @username before taking payment."""
+    raw=str(user_ref or "").strip()
+    if raw.startswith("@"):
+        if not raw[1:] or not raw[1:].replace("_","").isalnum():
+            raise ValueError("Укажи корректный публичный @username Telegram.")
+        chat_id=raw
+    else:
+        if not raw.isdigit() or int(raw)<=0:
+            raise ValueError("Укажи числовой Telegram ID или публичный @username.")
+        chat_id=int(raw)
     try:
-        chat=await api("getChat",{"chat_id":int(user_id)})
+        chat=await api("getChat",{"chat_id":chat_id})
     except Exception as exc:
         message=str(exc).lower()
         if "user not found" in message or "chat not found" in message:
@@ -180,11 +189,11 @@ def register(dp, bot, db, owner_ids=()):
     @router.message(GiftFlow.recipient)
     async def recipient_input(m,state: FSMContext):
         raw=(m.text or "").strip()
-        if not raw.isdigit() or int(raw)<=0:
-            return await m.answer("Нужен числовой Telegram ID. Для подарка себе нажми кнопку «Себе».")
-        recipient_id=int(raw)
+        if not (raw.isdigit() and int(raw)>0) and not (raw.startswith("@") and len(raw)>2):
+            return await m.answer("Введи числовой Telegram ID или @username. Для подарка себе нажми кнопку «Себе».")
         try:
-            await ensure_recipient(recipient_id)
+            recipient_chat=await ensure_recipient(raw)
+            recipient_id=int(recipient_chat["id"])
         except ValueError as exc:
             return await m.answer(str(exc))
         except Exception:
@@ -242,7 +251,7 @@ def register(dp, bot, db, owner_ids=()):
             return await c.answer("Нет доступа.",show_alert=True)
         await state.clear()
         await state.set_state(GiftFlow.admin_recipient)
-        await c.message.answer("🎁 <b>АДМИН · ПОДАРИТЬ ПОДАРОК</b>\nОтправь числовой Telegram ID получателя.",parse_mode="HTML")
+        await c.message.answer("🎁 <b>АДМИН · ПОДАРИТЬ ПОДАРОК</b>\nОтправь числовой Telegram ID или @username.",parse_mode="HTML")
         await c.answer()
 
     @router.message(GiftFlow.admin_recipient)
@@ -250,15 +259,17 @@ def register(dp, bot, db, owner_ids=()):
         if m.from_user.id not in owner_ids and not db.is_admin(m.from_user.id):
             await state.clear(); return
         raw=(m.text or "").strip()
-        if not raw.isdigit() or int(raw)<=0: return await m.answer("Введи числовой Telegram ID.")
+        if not (raw.isdigit() and int(raw)>0) and not (raw.startswith("@") and len(raw)>2):
+            return await m.answer("Введи числовой Telegram ID или @username.")
         try:
-            await ensure_recipient(int(raw))
+            recipient_chat=await ensure_recipient(raw)
+            recipient_id=int(recipient_chat["id"])
         except ValueError as exc:
             return await m.answer(str(exc))
         except Exception:
             log.exception("Admin recipient validation failed")
             return await m.answer("Не удалось проверить получателя в Telegram. Попробуй позже.")
-        await state.update_data(admin_recipient=int(raw))
+        await state.update_data(admin_recipient=recipient_id)
         await state.set_state(GiftFlow.admin_note)
         await m.answer("Надпись к подарку? Отправь текст или напиши «-» без надписи.")
 
