@@ -11,6 +11,7 @@ from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 log=logging.getLogger("fenix.features")
+from fenix_display import user_label
 
 def ph(db): return "%s" if db.use_postgres else "?"
 def run(db,sql,args=()):
@@ -219,7 +220,9 @@ def register(dp,bot,db):
             a,b=sorted((uid,who))
             kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💍 Принять",callback_data=f"fenix_relationship:yes:{chat}:{a}:{b}"),InlineKeyboardButton(text="Отклонить",callback_data=f"fenix_relationship:no:{chat}:{a}:{b}")]])
             run(db,f"INSERT INTO iris_pairs(chat_id,a,b,status,created) VALUES({p},{p},{p},'pending',{p}) ON CONFLICT(chat_id,a,b) DO UPDATE SET status='pending',created=excluded.created",(chat,a,b,stamp()))
-            return await m.answer(f"💍 {m.from_user.full_name} предлагает создать пару с участником <code>{who}</code>.",parse_mode="HTML",reply_markup=kb)
+            sender_label=await user_label(bot,chat,uid,m.from_user)
+            target_label=await user_label(bot,chat,who)
+            return await m.answer(f"💍 {sender_label} предлагает создать пару с {target_label}.",parse_mode="HTML",reply_markup=kb)
         if cmd in ("divorce","развод"):
             who=await target(m,args)
             if not who: return await m.answer("Ответь командой !divorce на сообщение партнёра.")
@@ -260,7 +263,8 @@ def register(dp,bot,db):
                 run(db,f"UPDATE iris_giveaways SET status='finished' WHERE id={p} AND status='active'",(gid,))
                 users=rows(db,f"SELECT uid FROM iris_giveaway_users WHERE gid={p}",(gid,))
                 winner=random.choice(users) if users else None
-                await bot.send_message(chat,f"🏆 Розыгрыш «{prize}» завершён. Победитель: <code>{winner['uid']}</code>" if winner else f"Розыгрыш «{prize}» завершён без участников.",parse_mode="HTML")
+                winner_label=await user_label(bot,chat,winner["uid"]) if winner else ""
+                await bot.send_message(chat,f"🏆 Розыгрыш «{prize}» завершён. Победитель: {winner_label}" if winner else f"Розыгрыш «{prize}» завершён без участников.",parse_mode="HTML")
             asyncio.create_task(finish())
             return
     @router.callback_query(F.data.startswith("fenix_relationship:"))
@@ -271,6 +275,9 @@ def register(dp,bot,db):
         run(db,f"UPDATE iris_pairs SET status={p} WHERE chat_id={p} AND a={p} AND b={p} AND status='pending'",("married" if action=="yes" else "declined",chat,a,b))
         await c.answer("Согласие сохранено" if action=="yes" else "Предложение отклонено")
         await c.message.edit_reply_markup(reply_markup=None)
-        if action=="yes": await c.message.answer("💍 Поздравляем! Пара создана.")
+        if action=="yes":
+            left=await user_label(bot,chat,a)
+            right=await user_label(bot,chat,b)
+            await c.message.answer(f"💍 Поздравляем! {left} и {right} теперь пара.",parse_mode="HTML")
     dp.include_router(router)
     log.info("FENIX social features registered")
