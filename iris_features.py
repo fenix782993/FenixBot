@@ -116,13 +116,13 @@ def register(dp,bot,db):
                 if "=>" not in arg: return await m.answer("Формат: !triggeradd фраза => ответ")
                 phrase,response=[x.strip() for x in arg.split("=>",1)]
                 if not phrase or not response: return await m.answer("Нужны фраза и ответ.")
-                run(db,f"INSERT INTO cm_triggers(chat_id,phrase,response,created_by,created) VALUES({p},{p},{p},{p},{p},{p})",(chat,phrase,response,uid,stamp()))
+                run(db,f"INSERT INTO cm_triggers(chat_id,phrase,response,created_by,created) VALUES({p},{p},{p},{p},{p})",(chat,phrase,response,uid,stamp()))
                 return await m.answer("Автоответ добавлен.")
             if cmd=="triggerdel":
                 run(db,f"DELETE FROM cm_triggers WHERE chat_id={p} AND lower(phrase)=lower({p})",(chat,arg.strip()))
                 return await m.answer("Автоответ удалён, если существовал.")
             items=rows(db,f"SELECT id,phrase,response FROM cm_triggers WHERE chat_id={p} ORDER BY id DESC LIMIT 20",(chat,))
-            return await m.answer("<b>АВТООТВЕТЫ</b>\n"+("\n".join(f"#{x['id']} · {x['phrase']} → {x['response']}}" for x in items) or "Список пуст."),parse_mode="HTML")
+            return await m.answer("<b>АВТООТВЕТЫ</b>\n"+("\n".join(f"#{x['id']} · {x['phrase']} → {x['response']}" for x in items) or "Список пуст."),parse_mode="HTML")
         if cmd in ("antispam","антиспам"):
             if not db.is_admin(uid): return await m.answer("⛔ Только администратор FENIX.")
             key=f"cm_antispam:{chat}"; state=str(db.setting(key,"off") or "off").lower()
