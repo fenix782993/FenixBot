@@ -66,7 +66,6 @@ def register(dp,bot,db,owners=()):
             if old and old["created"][:10]==day:return await m.answer("Ты уже оценивал этого участника сегодня.")
             if db.use_postgres:execq(db,f"INSERT INTO iris_rep_log(chat_id,giver,target,created) VALUES({p},{p},{p},{p}) ON CONFLICT(chat_id,giver,target) DO UPDATE SET created=excluded.created",(chat,uid,target,db._now()))
             else:execq(db,f"INSERT INTO iris_rep_log(chat_id,giver,target,created) VALUES({p},{p},{p},{p}) ON CONFLICT(chat_id,giver,target) DO UPDATE SET created=excluded.created",(chat,uid,target,db._now()))
-            except Exception:return await m.answer("Ты уже оценивал этого участника сегодня.")
             if db.use_postgres:execq(db,f"INSERT INTO iris_rep(chat_id,uid,score) VALUES({p},{p},1) ON CONFLICT(chat_id,uid) DO UPDATE SET score=iris_rep.score+1",(chat,target))
             else:execq(db,f"INSERT INTO iris_rep(chat_id,uid,score) VALUES({p},{p},1) ON CONFLICT(chat_id,uid) DO UPDATE SET score=score+1",(chat,target))
             x=one(db,f"SELECT score FROM iris_rep WHERE chat_id={p} AND uid={p}",(chat,target))
