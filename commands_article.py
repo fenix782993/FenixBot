@@ -159,7 +159,11 @@ def register(dp,db):
     async def commands(m):
         url=(db.setting("fenix_commands_article_url","") or "").strip()
         if not url:
-            return await m.answer("Справочник команд ещё публикуется. Попробуй через минуту.")
+            try:
+                url=await ensure_article(db)
+            except Exception:
+                log.exception("On-demand FENIX command article publishing failed")
+                return await m.answer("Не удалось опубликовать справочник. Попробуй позже.")
         kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📖 Открыть полный справочник FENIX MANAGER",url=url)]])
         await m.answer("<b>FENIX MANAGER · СПРАВОЧНИК КОМАНД</b>\nВсе команды, уровни доступа, настройки, модерация, развлечения и Telegram Stars собраны в одной статье.",parse_mode="HTML",reply_markup=kb)
     dp.include_router(router)
