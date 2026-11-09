@@ -551,14 +551,16 @@ async def audio_track_delete(req):
 
 # FENIX Wheel: 100 FNZ equals the requested 50 RUB at the current 1 RUB = 2 FNZ rate.
 WHEEL_ITEMS = [p for p in shop.PRODUCTS if p.get("code") not in ("vehicle_plate",)]
-_wheel_items_weight = 15.0 / max(1, len(WHEEL_ITEMS))
+_wheel_items_weight = 35.0 / max(1, len(WHEEL_ITEMS))
 WHEEL_WEIGHTS = []
-# Interleave low-probability prize sectors between empty sectors around the wheel.
-for _i in range(max(12, len(WHEEL_ITEMS))):
-    WHEEL_WEIGHTS.append(("nothing", 5.0))
-    if _i in (0, 4, 8):
+# Prizes now occupy 70% of the wheel; empty sectors are only 30%.
+# Interleave every prize group so gifts appear all around the circumference.
+for _i in range(max(7, len(WHEEL_ITEMS))):
+    if _i < 6:
+        WHEEL_WEIGHTS.append(("nothing", 5.0))
+    if _i in (0, 2, 4, 6):
         WHEEL_WEIGHTS.append(("fnz500", 5.0))
-    if _i in (0, 6):
+    if _i in (1, 3, 5):
         WHEEL_WEIGHTS.append(("cash", 5.0))
     if _i < len(WHEEL_ITEMS):
         WHEEL_WEIGHTS.append((WHEEL_ITEMS[_i]["code"], _wheel_items_weight))
@@ -578,7 +580,7 @@ async def wheel_home(req):
              "weight":round(weight,3)}
             for code,weight in WHEEL_WEIGHTS
         ],
-        "probabilities":{"nothing":60,"fnz500":15,"cash":10,"shop_items_total":15},"special_images":{"nothing":"/assets/prize-empty.svg","fnz500":"/assets/prize-fnz.svg","cash":"/assets/prize-cash.svg"}
+        "probabilities":{"nothing":30,"fnz500":20,"cash":15,"shop_items_total":35},"special_images":{"nothing":"/assets/prize-empty.svg","fnz500":"/assets/prize-fnz.svg","cash":"/assets/prize-cash.svg"}
     })
 
 async def wheel_spin(req):
