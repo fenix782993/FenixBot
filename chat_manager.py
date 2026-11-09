@@ -203,7 +203,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
         if access and (not int(access.get("enabled",1)) or get_role(db,chat,uid)[0] < int(access.get("min_level",0))):
             return await reply(m,"⛔ Доступ к этой команде ограничен настройками беседы.")
         if cmd=="help":
-            pages = [
+            text = (
                 "<b>📘 FENIX MANAGER · СПРАВОЧНИК 1/3</b>\n"
                 "<b>👤 ОБЩИЕ КОМАНДЫ</b>\n"
                 "<code>!start</code> — проверить подключение менеджера к этой беседе и получить короткую подсказку.\n"
@@ -283,8 +283,15 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 "Если команда работает с человеком, можно ответить на его сообщение или указать числовой Telegram ID. Для <code>!setnick</code> сначала указывается ID, затем игровой ник.\n"
                 "Примеры сроков для мута: <code>30s</code> — 30 секунд; <code>15m</code> — 15 минут; <code>2h</code> — 2 часа; <code>3d</code> — 3 дня.\n"
                 "Команды доступны только в группах/супергруппах, где бот добавлен и имеет необходимые права. Уровни: помощник 20, модератор 40, администратор 60, главный администратор 80, владелец 100."
-            ]
-            for page in pages:
+            )
+            page = ""
+            for line in text.splitlines():
+                if page and len(page) + len(line) + 1 > 3500:
+                    await reply(m, page)
+                    page = line
+                else:
+                    page = (page + "\\n" if page else "") + line
+            if page:
                 await reply(m, page)
             return
 
