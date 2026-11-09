@@ -101,7 +101,11 @@ def register(dp,bot,db,owners=()):
                 current=one(db,f"SELECT c.id,c.name,c.owner_uid FROM cm_circle_members m JOIN cm_circles c ON c.id=m.circle_id WHERE m.chat_id={p} AND m.uid={p}",(chat,uid))
                 if not current:return await m.answer("Ты пока не состоишь в круге.")
                 members=rows(db,f"SELECT uid FROM cm_circle_members WHERE circle_id={p} ORDER BY joined LIMIT 30",(current["id"],))
-                return await m.answer(f"<b>⭕ {escape(current['name'])}</b>\nВладелец: <code>{current['owner_uid']}</code>\nУчастников: {len(members)}\n"+", ".join(f"<code>{x['uid']}</code>" for x in members),parse_mode="HTML")
+                member_labels=[]
+                for item in members:
+                    member_labels.append(await user_label(bot,chat,item['uid']))
+                owner_label=await user_label(bot,chat,current['owner_uid'])
+                return await m.answer(f"<b>⭕ {escape(current['name'])}</b>\\nВладелец: {owner_label}\\nУчастников: {len(members)}\\n"+", ".join(member_labels),parse_mode="HTML")
             return await m.answer("Неизвестная команда круга. Используй: create/join/leave/info/list.")
         if cmd in ("duel","дуэль"):
             replied=m.reply_to_message.from_user if m.reply_to_message and m.reply_to_message.from_user else None
@@ -134,7 +138,10 @@ def register(dp,bot,db,owners=()):
             return await m.answer(f"⭐ Репутация {await user_label(bot,chat,target)}: {x['score']}",parse_mode="HTML")
         if cmd in ("топреп","toprep"):
             rr=rows(db,f"SELECT uid,score FROM iris_rep WHERE chat_id={p} ORDER BY score DESC LIMIT 10",(chat,))
-            return await m.answer("<b>⭐ ТОП РЕПУТАЦИИ</b>\n"+("\n".join(f"{i+1}. <code>{x['uid']}</code> — {x['score']}" for i,x in enumerate(rr)) if rr else "Пока нет оценок."),parse_mode="HTML")
+            ranking=[]
+            for i,item in enumerate(rr):
+                ranking.append(f"{i+1}. {await user_label(bot,chat,item['uid'])} — {item['score']}")
+            return await m.answer("<b>⭐ ТОП РЕПУТАЦИИ</b>\\n"+("\\n".join(ranking) if ranking else "Пока нет оценок."),parse_mode="HTML")
         if cmd in ("giveaway","розыгрыш"):
             if lv<40 and not owner:return await m.answer("⛔ Создавать розыгрыши может модератор (уровень 40) и выше.")
             mat=re.match(r"^(\d+)(m|h|d)?\s+(.+)$",arg,re.I)
