@@ -559,7 +559,7 @@ async def start(m:Message,state:FSMContext):
                   for rub in STARS_RUB_PRESETS]
             rows.append([InlineKeyboardButton(text="✏️ Ввести свою сумму",callback_data="stars_custom")])
             rows.append([InlineKeyboardButton(text="⬅️ Главное меню",callback_data="back_home")])
-            return await m.answer("⭐ <b>Пополнение Telegram Stars</b>\\nМинимум 100 ₽ · 1 ₽ = 2 NMZ.\\nВыбери сумму — Telegram откроет защищённый счёт на оплату.",parse_mode="HTML",reply_markup=markup(rows))
+            return await m.answer("⭐ <b>Пополнение Telegram Stars</b>\\nМинимум 100 ₽ · 1 ₽ = 2 FNZ.\\nВыбери сумму — Telegram откроет защищённый счёт на оплату.",parse_mode="HTML",reply_markup=markup(rows))
         if u and payload.startswith('buy_'):
             code=payload[4:]
             item=next((dict(x) for x in shop.PRODUCTS if x['code']==code),None)
@@ -572,7 +572,7 @@ async def start(m:Message,state:FSMContext):
                 return await m.answer('Этот товар пока недоступен для покупки.')
             kb=markup([[InlineKeyboardButton(text='✅ Подтвердить покупку',callback_data='buy_confirm:'+code)],
                        [InlineKeyboardButton(text='❌ Отмена',callback_data='buy_cancel')]])
-            return await m.answer('🛒 Подтверждение покупки\n\nТовар: '+item['name']+'\nЦена: '+str(item['price'])+' NMZ\nИгровой ник: '+u['nick']+'\n\nПодтверди списание с баланса.',reply_markup=kb)
+            return await m.answer('🛒 Подтверждение покупки\n\nТовар: '+item['name']+'\nЦена: '+str(item['price'])+' FNZ\nИгровой ник: '+u['nick']+'\n\nПодтверди списание с баланса.',reply_markup=kb)
         if u:
             return await answer_visual(
                 m, "welcome", welcome_caption(),
@@ -593,7 +593,7 @@ async def start(m:Message,state:FSMContext):
         logging.exception("Ошибка /start")
         await m.answer("Не удалось открыть бота. Попробуй ещё раз позже.")
 
-# Telegram Stars top-up. 100 RUB is priced at 105 Stars; NMZ are credited
+# Telegram Stars top-up. 100 RUB is priced at 105 Stars; FNZ are credited
 # only after Telegram confirms successful_payment (not on pre-checkout).
 STARS_RUB_PRESETS = (100, 300, 500, 1000, 2500, 5000)
 
@@ -611,10 +611,10 @@ async def buy_confirm(c):
         except Exception: pass
     if not item or item.get('price') is None: return await c.answer('Товар недоступен.',show_alert=True)
     price=int(item['price'])
-    if shop.balance(db,c.from_user.id)<price: return await c.answer('Недостаточно NMZ. Пополни баланс.',show_alert=True)
+    if shop.balance(db,c.from_user.id)<price: return await c.answer('Недостаточно FNZ. Пополни баланс.',show_alert=True)
     oid=shop.create_order(db,c.from_user.id,user['nick'],code,item['name'],price,'')
     if not oid: return await c.answer('Не удалось оформить заказ.',show_alert=True)
-    msg='Покупка #'+str(oid)+' завершена: '+item['name']+' · '+str(price)+' NMZ. Товар добавлен в инвентарь. Запроси выдачу в игре.'
+    msg='Покупка #'+str(oid)+' завершена: '+item['name']+' · '+str(price)+' FNZ. Товар добавлен в инвентарь. Запроси выдачу в игре.'
     db.add_notification(c.from_user.id,'Покупка завершена',msg)
     await c.message.edit_text('✅ '+msg,reply_markup=markup([[InlineKeyboardButton(text='📦 Мои заказы',callback_data='shop_orders')]]))
     await c.answer('Заказ оформлен')
@@ -633,7 +633,7 @@ async def shop_orders(c):
     rows=shop.list_orders(db,uid=c.from_user.id,limit=20)
     labels={'purchased':'В инвентаре · запроси выдачу в игре','pending_delivery':'Ожидает выдачи','processing':'В обработке','delivered':'Выдан'}
     body='📦 МОИ ЗАКАЗЫ\n\n' if rows else 'У тебя пока нет заказов.'
-    body += '\n'.join('#'+str(x['id'])+' · '+x['product_name']+' · '+str(x['price_fnz'])+' NMZ · '+labels.get(x['status'],x['status']) for x in rows)
+    body += '\n'.join('#'+str(x['id'])+' · '+x['product_name']+' · '+str(x['price_fnz'])+' FNZ · '+labels.get(x['status'],x['status']) for x in rows)
     await c.message.answer(body,reply_markup=markup([[InlineKeyboardButton(text='⬅️ Главное меню',callback_data='back_home')]]))
     await c.answer()
 @dp.callback_query(F.data == "manual_donation")
@@ -663,7 +663,7 @@ async def manual_donation_proof(m,state:FSMContext):
     user=db.user(uid) or {}
     text_admin=(f"💳 <b>Новая заявка на ручное пополнение #{did}</b>\n"
       f"Игрок: {html.escape(user.get('nick','—'))}\nTelegram ID: <code>{uid}</code>\n"
-      f"Сумма: <b>{rub} ₽</b>\nК начислению: <b>{nmz} NMZ</b>\nПодтверждение: {html.escape(proof)}\n\n"
+      f"Сумма: <b>{rub} ₽</b>\nК начислению: <b>{nmz} FNZ</b>\nПодтверждение: {html.escape(proof)}\n\n"
       "Сверь поступление в банке. Только после проверки нажимай «Одобрить».")
     kb=markup([[InlineKeyboardButton(text="✅ Одобрить",callback_data=f"donation_paid:{did}"),
                InlineKeyboardButton(text="❌ Отклонить",callback_data=f"donation_rejected:{did}")]])
@@ -673,7 +673,7 @@ async def manual_donation_proof(m,state:FSMContext):
         except Exception: logging.exception("manual donation owner notification failed")
     await state.clear()
     if sent:
-        await m.answer(f"Заявка #{did} отправлена владельцу. {nmz} NMZ будут начислены только после его личного одобрения.")
+        await m.answer(f"Заявка #{did} отправлена владельцу. {nmz} FNZ будут начислены только после его личного одобрения.")
     else:
         shop.reject_donation(db,did,uid,"Не удалось уведомить владельца")
         await m.answer("Не удалось отправить заявку владельцу. Попробуй позже или напиши в поддержку.")
@@ -686,7 +686,7 @@ async def donate_stars_menu(c):
           for rub in STARS_RUB_PRESETS]
     rows.append([InlineKeyboardButton(text="✏️ Ввести свою сумму", callback_data="stars_custom")])
     rows.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data="back_home")])
-    await c.message.answer("⭐ <b>Пополнение Telegram Stars</b>\nМинимум 100 ₽. Курс начисления: 1 ₽ = 2 NMZ.\nОплата проходит через Telegram.",parse_mode="HTML",reply_markup=markup(rows))
+    await c.message.answer("⭐ <b>Пополнение Telegram Stars</b>\nМинимум 100 ₽. Курс начисления: 1 ₽ = 2 FNZ.\nОплата проходит через Telegram.",parse_mode="HTML",reply_markup=markup(rows))
     await c.answer()
 
 @dp.callback_query(F.data=="stars_custom")
@@ -708,10 +708,10 @@ async def stars_custom_amount(m,state:FSMContext):
     if abs(rub-rub_int)>0.001:
         return await m.answer("Для оплаты Stars введи целое число рублей.")
     stars=int(rub_int*1.05); nmz=rub_int*2
-    await bot.send_invoice(chat_id=m.from_user.id,title=f"FENIX ONLINE — {nmz} NMZ",
-        description=f"Пополнение игрового баланса на {nmz} NMZ. Оплата {rub_int} RUB в Telegram Stars.",
+    await bot.send_invoice(chat_id=m.from_user.id,title=f"FENIX ONLINE — {nmz} FNZ",
+        description=f"Пополнение игрового баланса на {nmz} FNZ. Оплата {rub_int} RUB в Telegram Stars.",
         payload=f"fenix_nmz:{m.from_user.id}:{rub_int}:{stars}",provider_token="",currency="XTR",
-        prices=[LabeledPrice(label=f"{nmz} NMZ",amount=stars)])
+        prices=[LabeledPrice(label=f"{nmz} FNZ",amount=stars)])
     await state.clear()
 
 @dp.callback_query(F.data.startswith("stars_rub:"))
@@ -725,12 +725,12 @@ async def stars_invoice(c):
     nmz=rub*2
     await bot.send_invoice(
         chat_id=c.from_user.id,
-        title=f"FENIX ONLINE — {nmz} NMZ",
-        description=f"Пополнение игрового баланса на {nmz} NMZ. Оплата {rub} RUB в Telegram Stars.",
+        title=f"FENIX ONLINE — {nmz} FNZ",
+        description=f"Пополнение игрового баланса на {nmz} FNZ. Оплата {rub} RUB в Telegram Stars.",
         payload=f"fenix_nmz:{c.from_user.id}:{rub}:{stars}",
         provider_token="",
         currency="XTR",
-        prices=[LabeledPrice(label=f"{nmz} NMZ", amount=stars)],
+        prices=[LabeledPrice(label=f"{nmz} FNZ", amount=stars)],
     )
     await c.answer("Счёт Telegram Stars отправлен.")
 
@@ -762,8 +762,8 @@ async def stars_success(m):
         did=shop.new_donation(db,m.from_user.id,rub,nmz,"telegram_stars",charge_key)
         if not shop.mark_paid(db,did,m.from_user.id,"Telegram Stars successful_payment"):
             raise RuntimeError("could not credit confirmed Stars payment")
-        db.add_notification(m.from_user.id,"Пополнение Stars",f"Оплата {stars} Stars подтверждена. Начислено {nmz} NMZ.")
-        await m.answer(f"✅ Оплата подтверждена Telegram. На баланс начислено <b>{nmz} NMZ</b>.",parse_mode="HTML")
+        db.add_notification(m.from_user.id,"Пополнение Stars",f"Оплата {stars} Stars подтверждена. Начислено {nmz} FNZ.")
+        await m.answer(f"✅ Оплата подтверждена Telegram. На баланс начислено <b>{nmz} FNZ</b>.",parse_mode="HTML")
     except Exception:
         logging.exception("Telegram Stars payment processing failed")
         await m.answer("Платёж получен, но автоматическое зачисление не завершилось. Обратись к владельцу с чеком Telegram.")
@@ -775,7 +775,7 @@ async def donation_paid(c):
     item=db._one(f"SELECT * FROM donations WHERE id={db._ph()}",(did,))
     if not item or item["status"]!="pending": return await c.answer("Заявка уже обработана.",show_alert=True)
     if not shop.mark_paid(db,did,c.from_user.id,"Одобрено владельцем"): return await c.answer("Не удалось одобрить.",show_alert=True)
-    msg="Пополнение #"+str(did)+" одобрено. Начислено "+str(int(item["fnz_amount"]))+" NMZ."
+    msg="Пополнение #"+str(did)+" одобрено. Начислено "+str(int(item["fnz_amount"]))+" FNZ."
     db.add_notification(int(item["uid"]),"Статус пополнения",msg)
     try: await bot.send_message(int(item["uid"]),msg)
     except Exception: logging.exception("notify player failed")
@@ -1697,11 +1697,11 @@ async def owner_revenue(c):
     text=("💰 <b>ФИНАНСЫ</b>\n\n"
           f"Подтверждённые пополнения: <b>{int(paid.get('n') or 0)}</b>\n"
           f"Получено по заявкам: <b>{float(paid.get('rub') or 0):.2f} ₽</b>\n"
-          f"Начислено игрокам: <b>{int(paid.get('nmz') or 0)} NMZ</b>\n\n"
+          f"Начислено игрокам: <b>{int(paid.get('nmz') or 0)} FNZ</b>\n\n"
           f"Ожидают решения: <b>{int(pending.get('n') or 0)}</b>\n"
-          f"Ожидаемая сумма: <b>{float(pending.get('rub') or 0):.2f} ₽</b> / {int(pending.get('nmz') or 0)} NMZ\n\n"
-          f"Оплачено заказов магазина: <b>{int(sales.get('n') or 0)}</b> на {int(sales.get('nmz') or 0)} NMZ\n"
-          f"Отмечено выданными: <b>{int(delivered.get('n') or 0)}</b> на {int(delivered.get('nmz') or 0)} NMZ")
+          f"Ожидаемая сумма: <b>{float(pending.get('rub') or 0):.2f} ₽</b> / {int(pending.get('nmz') or 0)} FNZ\n\n"
+          f"Оплачено заказов магазина: <b>{int(sales.get('n') or 0)}</b> на {int(sales.get('nmz') or 0)} FNZ\n"
+          f"Отмечено выданными: <b>{int(delivered.get('n') or 0)}</b> на {int(delivered.get('nmz') or 0)} FNZ")
     await edit_panel(c.message,text,reply_markup=markup([[InlineKeyboardButton(text="⬅️ В панель владельца",callback_data="owner")]]),parse_mode="HTML")
     await c.answer()
 
