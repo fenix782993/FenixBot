@@ -441,7 +441,8 @@ async def list_pack_emojis(m: Message):
     # a custom_emoji MessageEntity with the corresponding custom_emoji_id.
     lines = ["💎 PREMIUM CUSTOM EMOJI ИЗ ПАКА", "━━━━━━━━━━━━━━━━━━"]
     entities = []
-    utf16_offset = 0
+    # Сначала учитываем обе строки заголовка и переводы строк.
+    utf16_offset = sum(len(line.encode("utf-16-le")) // 2 for line in lines) + len(lines)
     for i, item in enumerate(items, 1):
         custom_id = str(item.get("id") or "")
         marker = "X"
