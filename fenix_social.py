@@ -105,7 +105,7 @@ def register(dp,bot,db,owners=()):
                 for item in members:
                     member_labels.append(await user_label(bot,chat,item['uid']))
                 owner_label=await user_label(bot,chat,current['owner_uid'])
-                return await m.answer(f"<b>⭕ {escape(current['name'])}</b>\\nВладелец: {owner_label}\\nУчастников: {len(members)}\\n"+", ".join(member_labels),parse_mode="HTML")
+                return await m.answer(f"<b>⭕ {escape(current['name'])}</b>\nВладелец: {owner_label}\nУчастников: {len(members)}\n"+", ".join(member_labels),parse_mode="HTML")
             return await m.answer("Неизвестная команда круга. Используй: create/join/leave/info/list.")
         if cmd in ("duel","дуэль"):
             replied=m.reply_to_message.from_user if m.reply_to_message and m.reply_to_message.from_user else None
@@ -141,7 +141,7 @@ def register(dp,bot,db,owners=()):
             ranking=[]
             for i,item in enumerate(rr):
                 ranking.append(f"{i+1}. {await user_label(bot,chat,item['uid'])} — {item['score']}")
-            return await m.answer("<b>⭐ ТОП РЕПУТАЦИИ</b>\\n"+("\\n".join(ranking) if ranking else "Пока нет оценок."),parse_mode="HTML")
+            return await m.answer("<b>⭐ ТОП РЕПУТАЦИИ</b>\n"+("\n".join(ranking) if ranking else "Пока нет оценок."),parse_mode="HTML")
         if cmd in ("giveaway","розыгрыш"):
             if lv<40 and not owner:return await m.answer("⛔ Создавать розыгрыши может модератор (уровень 40) и выше.")
             mat=re.match(r"^(\d+)(m|h|d)?\s+(.+)$",arg,re.I)
@@ -207,7 +207,7 @@ def register(dp,bot,db,owners=()):
                         winner=random.choice(entrants)["uid"]
                         execq(db,f"UPDATE cm_giveaways SET status='finished',winner={p} WHERE id={p}",(winner,g["id"]))
                         winner_label=await user_label(bot,g["chat_id"],winner)
-                        await bot.send_message(g["chat_id"],f"🏆 Розыгрыш #{g['id']} завершён!\\nПриз: {escape(g['prize'])}\\nПобедитель: {winner_label}",parse_mode="HTML")
+                        await bot.send_message(g["chat_id"],f"🏆 Розыгрыш #{g['id']} завершён!\nПриз: {escape(g['prize'])}\nПобедитель: {winner_label}",parse_mode="HTML")
                     else:
                         execq(db,f"UPDATE cm_giveaways SET status='finished' WHERE id={p}",(g["id"],))
                         await bot.send_message(g["chat_id"],f"Розыгрыш #{g['id']} завершён без участников.")
