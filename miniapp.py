@@ -496,8 +496,16 @@ async def shop_buy(req):
         plate=f"{letters} {digits} {region}"
         product_name=f"Автомобильный номер {plate} · {country}"
         details={"country":country,"plate":plate,"letters":letters,"digits":digits,"region":region}
+        try:
+            with db.con() as conn:
+                conn.execute(f"INSERT INTO vehicle_plates(plate,uid,country,created) VALUES({db._ph()},{db._ph()},{db._ph()},{db._ph()})",(plate,user_id,country,db._now()))
+        except Exception:
+            return response("Этот автомобильный номер уже занят. Выбери другую комбинацию.",409)
     order_id=shop.create_order(db,user_id,nick,code,product_name,price,json.dumps(details,ensure_ascii=False)[:1500])
-    if not order_id:return response("Недостаточно FNZ. Сначала пополни кошелёк.",409)
+    if not order_id:
+        if code=="vehicle_plate":
+            db._execute(f"DELETE FROM vehicle_plates WHERE plate={db._ph()} AND uid={db._ph()}",(plate,user_id))
+        return response("Недостаточно FNZ. Сначала пополни кошелёк.",409)
     msg=f"Покупка #{order_id} завершена. {product_name} добавлен в инвентарь. Стоимость: {price} FNZ. Запроси выдачу предмета в игре."
     db.add_notification(user_id,"Покупка оформлена",msg)
     return response({"id":order_id,"balance":shop.balance(db,user_id)})
