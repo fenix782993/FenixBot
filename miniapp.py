@@ -878,6 +878,8 @@ async def main():
     register_telegram_store(core.dp, tg, db)
     from iris_features import register as register_iris_features
     register_iris_features(core.dp, tg, db)
+    from iris_modules import register as register_iris_modules
+    register_iris_modules(core.dp, tg, db, core.OWNER_IDS)
     from chat_manager import register_chat_manager
     register_chat_manager(core.dp, tg, db, core.OWNER_IDS)
     # Load the exact OutlineEmoji custom-emoji pack in the real Render entrypoint.
