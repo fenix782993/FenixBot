@@ -544,7 +544,9 @@ def register_chat_manager(dp, bot, db, owner_ids):
             kb=InlineKeyboardMarkup(inline_keyboard=([[InlineKeyboardButton(text="📖 Открыть справочник команд",url=article)]] if article else [])+[[InlineKeyboardButton(text="← Назад",callback_data="cmui:home")]])
             await cmui_show(c,"<b>FENIX MANAGER · КОМАНДЫ</b>\\nПолный справочник команд проекта.",kb)
         elif action=="gifts":
-            await cmui_show(c,"<b>🎁 TELEGRAM-ПОДАРКИ</b>\\nОткрой личный чат с ботом и нажми /stars. Там есть кнопка покупки подарка и Premium. Для подарка другому человеку используй /giftshop TELEGRAM_ID.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← Назад",callback_data="cmui:home")]]))
+            me=await bot.get_me()
+            url=f"https://t.me/{me.username}?start=fenix_gifts"
+            await cmui_show(c,"<b>🎁 TELEGRAM-ПОДАРКИ</b>\\nНажми кнопку ниже, чтобы открыть магазин FENIX в личном чате. Там можно купить настоящий подарок Telegram или Premium за Stars.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🎁 Открыть магазин подарков",url=url)],[InlineKeyboardButton(text="← Назад",callback_data="cmui:home")]]))
         elif action=="toggle" and len(data)>3:
             chat_id=int(data[2]); setting=data[3]
             if setting=="silence":
