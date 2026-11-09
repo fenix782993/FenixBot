@@ -261,4 +261,4 @@ def register(dp,bot,db,owner_ids=()):
             await asyncio.sleep(10)
     asyncio.create_task(timers())
     dp.include_router(router)
-    log.info("FENIX Iris-style modules registered")
+    log.info("FENIX Manager automation modules registered")
