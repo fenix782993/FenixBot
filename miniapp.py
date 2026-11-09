@@ -893,21 +893,32 @@ async def main():
         log.exception("FENIX command reference publishing failed; /commands will retry after next deploy")
     from chat_manager import register_chat_manager
     register_chat_manager(core.dp, tg, db, core.OWNER_IDS)
-    # Load the exact OutlineEmoji custom-emoji pack in the real Render entrypoint.
-    # bot.py's standalone main() is not used here; miniapp.main() owns startup.
+    # Load all configured Premium Custom Emoji packs in the actual Render entrypoint.
+    # miniapp.main() owns startup; bot.py's standalone main() is not used on Render.
     try:
-        sticker_set = await tg.get_sticker_set("OutlineEmoji")
-        pack_items = [
-            {"id": str(sticker.custom_emoji_id), "emoji": getattr(sticker, "emoji", None) or "💎"}
-            for sticker in sticker_set.stickers
-            if getattr(sticker, "custom_emoji_id", None)
-        ]
-        if not pack_items:
-            raise RuntimeError("OutlineEmoji returned zero custom_emoji_id values")
-        db.set_setting("premium_emoji_pack", json.dumps(pack_items, ensure_ascii=False))
-        log.info("FENIX Premium Emoji: imported %s IDs from OutlineEmoji", len(pack_items))
+        pack_items = []
+        for pack_name in ("OutlineEmoji", "TONEmoji"):
+            try:
+                sticker_set = await tg.get_sticker_set(pack_name)
+                current = [
+                    {"id": str(sticker.custom_emoji_id),
+                     "emoji": getattr(sticker, "emoji", None) or "💎",
+                     "pack": pack_name}
+                    for sticker in sticker_set.stickers
+                    if getattr(sticker, "custom_emoji_id", None)
+                ]
+                pack_items.extend(current)
+                log.info("FENIX Premium Emoji: imported %s IDs from %s", len(current), pack_name)
+            except Exception:
+                log.exception("FENIX Premium Emoji: could not import pack %s", pack_name)
+        unique = {item["id"]: item for item in pack_items if str(item.get("id", "")).isdigit()}
+        if unique:
+            db.set_setting("premium_emoji_pack", json.dumps(list(unique.values()), ensure_ascii=False))
+            log.info("FENIX Premium Emoji: total unique Custom Emoji IDs loaded: %s", len(unique))
+        else:
+            log.warning("FENIX Premium Emoji: no Custom Emoji IDs loaded from configured packs")
     except Exception:
-        log.exception("FENIX Premium Emoji: OutlineEmoji import failed; existing icon map retained")
+        log.exception("FENIX Premium Emoji: pack import failed; existing icon map retained")
     try:
         await tg.set_chat_menu_button(menu_button=MenuButtonCommands())
         log.info("Mini App menu button disabled; standalone website mode")
