@@ -64,7 +64,7 @@ def level(db,chat,uid):
     except Exception:return 0
 def register(dp,bot,db,owner_ids=()):
     init(db); router=Router(name="fenix_iris_modules"); owners=set(owner_ids or ())
-    commands="note|bookmark|bookmarks|unbookmark|timer|timers|timerdel|vote|voteresult|voteclose|access|triggeradd|triggerdel|triggers|purge|del|report|antispam"
+    commands="note|notes|bookmark|bookmarks|unbookmark|timer|timers|timerdel|vote|voteresult|voteclose|access|triggeradd|triggerdel|triggers|purge|del|report|antispam"
     async def ensure_creator(chat_id, user_id):
         try:
             member=await bot.get_chat_member(chat_id,user_id)
@@ -133,6 +133,9 @@ def register(dp,bot,db,owner_ids=()):
                 if x and (int(x["author_uid"])==uid or lv>=60 or owner):
                     run(db,f"DELETE FROM cm_notes WHERE id={p} AND chat_id={p}",(int(args[1]),chat));return await m.answer("Заметка удалена.")
             return await m.answer("Не удалось выполнить действие.")
+        if cmd=="notes":
+            rr=rows(db,f"SELECT id,body FROM cm_notes WHERE chat_id={p} AND uid={p} ORDER BY id DESC LIMIT 20",(chat,uid))
+            return await m.answer("<b>ТВОИ ЗАМЕТКИ</b>\n"+("\n".join(f"#{x['id']} · {escape(x['body'])}" for x in rr) if rr else "Заметок нет."),parse_mode="HTML")
         if cmd=="bookmark":
             if not m.reply_to_message:return await m.answer("Ответь !bookmark на нужное сообщение.")
             body=(m.reply_to_message.text or m.reply_to_message.caption or "")[:1200]
