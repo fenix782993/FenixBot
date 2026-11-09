@@ -117,7 +117,7 @@ def register(dp, bot, db, owner_ids=()):
         if c.from_user.id not in owner_ids and not db.is_admin(c.from_user.id):
             return await c.answer("Нет доступа.",show_alert=True)
         with db.con() as conn:
-            totals=dict(conn.execute("SELECT COUNT(*) AS orders,COALESCE(SUM(stars),0) AS revenue,COALESCE(SUM(CASE WHEN status='delivered' THEN stars-? ELSE 0 END),0) AS commission,COALESCE(SUM(CASE WHEN status='delivered' THEN 1 ELSE 0 END),0) AS delivered,COALESCE(SUM(CASE WHEN status='delivery_failed' THEN 1 ELSE 0 END),0) AS failed FROM tg_store_orders",(MARKUP_STARS,)).fetchone())
+            totals=dict(conn.execute(f"SELECT COUNT(*) AS orders,COALESCE(SUM(stars),0) AS revenue,COALESCE(SUM(CASE WHEN status='delivered' THEN stars-{MARKUP_STARS} ELSE 0 END),0) AS commission,COALESCE(SUM(CASE WHEN status='delivered' THEN 1 ELSE 0 END),0) AS delivered,COALESCE(SUM(CASE WHEN status='delivery_failed' THEN 1 ELSE 0 END),0) AS failed FROM tg_store_orders").fetchone())
         balance=await bot_star_balance()
         await c.message.answer(f"💰 <b>ФИНАНСЫ FENIX STARS</b>\nЗаказов: <b>{totals['orders']}</b>\nДоставлено: <b>{totals['delivered']}</b>\nОшибок доставки: <b>{totals['failed']}</b>\nПолучено по заказам: <b>{totals['revenue']} ⭐</b>\nКомиссия начислена: <b>{totals['commission']} ⭐</b>\nБаланс бота сейчас: <b>{balance} ⭐</b>\nКомиссия за заказ: <b>{MARKUP_STARS} ⭐</b>",parse_mode="HTML")
         await c.answer()
