@@ -94,9 +94,10 @@ def register(dp,bot,db,owners=()):
             try:
                 p=ph(db);games=rows(db,f"SELECT id,chat_id,prize FROM cm_giveaways WHERE status='open' AND draw_at<={p} ORDER BY draw_at LIMIT 10",(db._now(),))
                 for g in games:
-                    cur,_=execq(db,f"UPDATE cm_giveaways SET status='drawing' WHERE id={p} AND status='open'",(g["id"],))
-                    # Only the process that changed the row should publish a result.
-                    if cur is None:continue
+                    with db.con() as conn:
+                        claimed=conn.execute(f"UPDATE cm_giveaways SET status='drawing' WHERE id={p} AND status='open'",(g["id"],))
+                        changed=claimed.rowcount
+                    if changed!=1:continue
                     entrants=rows(db,f"SELECT uid FROM cm_giveaway_entries WHERE giveaway_id={p}",(g["id"],))
                     if entrants:
                         winner=random.choice(entrants)["uid"]
