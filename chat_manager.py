@@ -170,7 +170,6 @@ def register_chat_manager(dp, bot, db, owner_ids):
             command_text=raw.split(maxsplit=1)[1]
         else:
             command_text=raw[1:]
-                command_text=command_text[1:]
         parts=command_text.split(maxsplit=1); name=parts[0].lower().split("@")[0] if parts else ""; argtext=parts[1] if len(parts)>1 else ""
         cmd=ALIASES.get(name)
         if not cmd: return
