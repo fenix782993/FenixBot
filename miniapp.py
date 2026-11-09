@@ -140,6 +140,19 @@ async def home(_):
     return web.FileResponse(WEB_DIR / "index.html")
 
 
+async def serve_asset(request):
+    # Explicit one-file handler keeps product images working even when the
+    # hosting proxy handles the directory static mount differently.
+    name = request.match_info["filename"]
+    if name in (".", "..") or Path(name).name != name:
+        raise web.HTTPNotFound()
+    path = ROOT / "assets" / name
+    if not path.is_file():
+        log.warning("Asset not found: %s (ROOT=%s)", name, ROOT)
+        raise web.HTTPNotFound(text="Asset not found")
+    return web.FileResponse(path, headers={"Cache-Control": "public, max-age=86400"})
+
+
 async def bootstrap(req):
     user_id = uid(req)
     user = db.user(user_id)
@@ -888,7 +901,14 @@ async def main():
     app.router.add_get("/audio", lambda _: web.FileResponse(WEB_DIR / "audio.html"))
     app.router.add_get("/wheel", lambda _: web.FileResponse(WEB_DIR / "wheel.html"))
     app.router.add_get("/health", lambda _: web.json_response({"status": "ok", "service": "fenix-miniapp"}))
+    app.router.add_get("/assets/{filename}", serve_asset)
     app.router.add_static("/assets/", ROOT / "assets", show_index=False)
+    expected_assets = ("bmw-m3.png", "cybertruck.png", "audi-tt.png", "lancer-evolution.png", "home-v748-world.webp")
+    missing_assets = [name for name in expected_assets if not (ROOT / "assets" / name).is_file()]
+    if missing_assets:
+        log.error("FENIX asset files missing from deployment: %s", ", ".join(missing_assets))
+    else:
+        log.info("FENIX assets verified: %s product/hero images available", len(expected_assets))
     app.router.add_post("/api/auth/telegram", login_telegram)
     app.router.add_post("/api/auth/logout", logout)
     app.router.add_get("/api/bootstrap", bootstrap)
