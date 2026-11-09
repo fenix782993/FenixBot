@@ -117,6 +117,9 @@ def register(dp, bot, db):
         if not order or int(order["buyer_uid"])!=m.from_user.id:
             log.error("Unmatched successful Stars payment %s",pay.invoice_payload)
             return await m.answer("Платёж получен, но заказ не найден. Обратись в поддержку и приложи ID платежа.")
+        if pay.currency != "XTR" or int(pay.total_amount) != int(order["stars"]):
+            log.error("Stars payment mismatch for order %s: currency=%s amount=%s expected=%s", order["id"], pay.currency, pay.total_amount, order["stars"])
+            return await m.answer("Платёж получен, но сумма не совпала с заказом. Доставка остановлена, обратись в поддержку и приложи ID платежа.")
         charge=pay.telegram_payment_charge_id
         claimed=run(db,f"UPDATE tg_store_orders SET status='delivering',charge_id={p} WHERE id={p} AND status='invoice'",(charge,order["id"]))
         if getattr(claimed,"rowcount",0)!=1:
