@@ -323,13 +323,13 @@ def register_chat_manager(dp, bot, db, owner_ids):
             for line in text.splitlines():
                 line_size = len(line) + 1
                 if current_lines and current_size + line_size > 3800:
-                    pages.append("\\n".join(current_lines))
+                    pages.append("\n".join(current_lines))
                     current_lines = []
                     current_size = 0
                 current_lines.append(line)
                 current_size += line_size
             if current_lines:
-                pages.append("\\n".join(current_lines))
+                pages.append("\n".join(current_lines))
             for page_index, page_text in enumerate(pages):
                 await reply(m, page_text, markup if page_index == 0 else None)
             return
