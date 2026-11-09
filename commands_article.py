@@ -165,7 +165,7 @@ async def ensure_article(db):
     existing = (db.setting("fenix_commands_article_url", "") or "").strip()
     saved_token = (db.setting("fenix_commands_article_token", "") or "").strip()
     saved_path = (db.setting("fenix_commands_article_path", "") or "").strip()
-    version = "fenix-online-unified-guide-2026-11-09-v10"
+    version = "fenix-online-unified-guide-2026-11-09-v11"
     if existing and db.setting("fenix_commands_article_version", "") == version:
         return existing
 
