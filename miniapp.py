@@ -541,6 +541,68 @@ async def audio_track_delete(req):
     return response({"deleted":True})
 
 
+# FENIX Wheel: 100 FNZ equals the requested 50 RUB at the current 1 RUB = 2 FNZ rate.
+WHEEL_ITEMS = [p for p in shop.PRODUCTS if p.get("code") not in ("vehicle_plate",)]
+WHEEL_WEIGHTS = [
+    ("nothing", 60.0), ("fnz500", 15.0), ("cash", 10.0),
+] + [(p["code"], 15.0 / max(1, len(WHEEL_ITEMS))) for p in WHEEL_ITEMS]
+
+async def wheel_home(req):
+    user_id=uid(req)
+    return response({
+        "cost_fnz":100,
+        "cost_rub":50,
+        "balance":shop.balance(db,user_id),
+        "history":db._all(f"SELECT id,prize_type,prize_name,prize_value,created FROM wheel_spins WHERE uid={db._ph()} ORDER BY id DESC LIMIT 20",(user_id,)),
+        "items":[{"code":p["code"],"name":p["name"],"image":p.get("image"),"weight":round(w,3)} for (code,w) in WHEEL_WEIGHTS if code not in ("nothing","fnz500","cash") for p in WHEEL_ITEMS if p["code"]==code],
+        "probabilities":{"nothing":60,"fnz500":15,"cash":10,"shop_items_total":15}
+    })
+
+async def wheel_spin(req):
+    user_id=uid(req)
+    user=db.user(user_id)
+    if not user:return response("Сначала зарегистрируй игровой аккаунт.",403)
+    import random
+    # Charge and reward are committed together; duplicate requests cannot spin for free.
+    with db.con() as c:
+        if db.use_postgres:
+            row=c.execute("SELECT balance FROM wallets WHERE uid=%s FOR UPDATE",(user_id,)).fetchone()
+        else:
+            c.execute("BEGIN IMMEDIATE")
+            row=c.execute("SELECT balance FROM wallets WHERE uid=?",(user_id,)).fetchone()
+        if not row or int(row["balance"])<100:
+            return response("Для вращения нужно 100 FNZ (эквивалент 50 ₽). Пополни баланс.",409)
+        c.execute("UPDATE wallets SET balance=balance-100 WHERE uid="+db._ph(),(user_id,))
+        now=db._now()
+        prize=random.choices([x[0] for x in WHEEL_WEIGHTS],weights=[x[1] for x in WHEEL_WEIGHTS],k=1)[0]
+        prize_type,prize_name,prize_value="nothing","Ничего",0
+        if prize=="fnz500":
+            prize_type,prize_name,prize_value="fnz","500 FNZ",500
+            if db.use_postgres:
+                c.execute("INSERT INTO wallet_ledger(uid,delta,reason,ref_key,created) VALUES(%s,%s,%s,%s,%s)",(user_id,500,"Выигрыш в колесе фортуны",f"wheel:{secrets.token_hex(16)}",now))
+                c.execute("INSERT INTO wallets(uid,balance) VALUES(%s,%s) ON CONFLICT(uid) DO UPDATE SET balance=wallets.balance+EXCLUDED.balance",(user_id,500))
+            else:
+                c.execute("INSERT INTO wallet_ledger(uid,delta,reason,ref_key,created) VALUES(?,?,?,?,?)",(user_id,500,"Выигрыш в колесе фортуны",f"wheel:{secrets.token_hex(16)}",now))
+                c.execute("UPDATE wallets SET balance=balance+500 WHERE uid=?",(user_id,))
+        elif prize=="cash":
+            prize_type,prize_value="game_cash",random.randint(1_000_000,5_000_000)
+            prize_name=f"{prize_value:,} игровой валюты".replace(","," ")
+        else:
+            item=next(p for p in WHEEL_ITEMS if p["code"]==prize)
+            prize_type,prize_name,prize_value="item",item["name"],item["code"]
+            details=json.dumps({"source":"wheel"},ensure_ascii=False)
+            if db.use_postgres:
+                c.execute("INSERT INTO shop_orders(uid,nick,product_code,product_name,price_fnz,status,details,created,updated) VALUES(%s,%s,%s,%s,0,'purchased',%s,%s,%s)",(user_id,user["nick"],prize,item["name"],details,now,now))
+            else:
+                c.execute("INSERT INTO shop_orders(uid,nick,product_code,product_name,price_fnz,status,details,created,updated) VALUES(?,?,?,?,0,'purchased',?,?,?)",(user_id,user["nick"],prize,item["name"],details,now,now))
+        if db.use_postgres:
+            saved=c.execute("INSERT INTO wheel_spins(uid,prize_type,prize_name,prize_value,created) VALUES(%s,%s,%s,%s,%s) RETURNING id",(user_id,prize_type,prize_name,str(prize_value),now)).fetchone()
+            spin_id=int(saved["id"])
+        else:
+            saved=c.execute("INSERT INTO wheel_spins(uid,prize_type,prize_name,prize_value,created) VALUES(?,?,?,?,?)",(user_id,prize_type,prize_name,str(prize_value),now))
+            spin_id=int(saved.lastrowid)
+    return response({"id":spin_id,"prize_type":prize_type,"prize_name":prize_name,"prize_value":prize_value,"balance":shop.balance(db,user_id)})
+
 async def wallet_payment_details(req):
     user_id=uid(req)
     if not db.user(user_id):
@@ -822,6 +884,8 @@ async def main():
     app.router.add_post("/api/admin/payouts/{payout_id}", admin_payout_decision)
     app.router.add_post("/api/admin/broadcast", admin_broadcast)
     app.router.add_post("/api/admin/publish", admin_publish)
+    app.router.add_get("/api/wheel", wheel_home)
+    app.router.add_post("/api/wheel/spin", wheel_spin)
     app.router.add_get("/api/shop", shop_home)
     app.router.add_post("/api/shop/buy", shop_buy)
     app.router.add_get("/api/audio", audio_tracks)
