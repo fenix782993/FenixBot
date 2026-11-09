@@ -30,15 +30,21 @@ def init(db):
             c.execute("""CREATE TABLE IF NOT EXISTS tg_store_favorites(uid BIGINT NOT NULL,gift_id TEXT NOT NULL,created TEXT NOT NULL,PRIMARY KEY(uid,gift_id))""")
             c.execute("""CREATE TABLE IF NOT EXISTS tg_store_promos(code TEXT PRIMARY KEY,discount INTEGER NOT NULL,uses_left INTEGER NOT NULL,active INTEGER NOT NULL DEFAULT 1,created TEXT NOT NULL)""")
             c.execute("""CREATE TABLE IF NOT EXISTS tg_store_promo_uses(code TEXT NOT NULL,uid BIGINT NOT NULL,order_id TEXT NOT NULL UNIQUE,created TEXT NOT NULL,PRIMARY KEY(code,uid,order_id))""")
+            c.execute("""CREATE TABLE IF NOT EXISTS tg_store_active_promos(uid BIGINT PRIMARY KEY,code TEXT NOT NULL,created TEXT NOT NULL)""")
             try: c.execute("ALTER TABLE tg_store_orders ADD COLUMN IF NOT EXISTS note TEXT")
+            except Exception: pass
+            try: c.execute("ALTER TABLE tg_store_orders ADD COLUMN IF NOT EXISTS promo_code TEXT")
             except Exception: pass
         else:
             c.executescript("""CREATE TABLE IF NOT EXISTS tg_store_items(token TEXT PRIMARY KEY,owner_uid INTEGER NOT NULL,recipient_uid INTEGER NOT NULL,gift_id TEXT NOT NULL,title TEXT,stars INTEGER NOT NULL,created TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS tg_store_orders(id TEXT PRIMARY KEY,payload TEXT UNIQUE NOT NULL,buyer_uid INTEGER NOT NULL,recipient_uid INTEGER NOT NULL,kind TEXT NOT NULL,item_id TEXT NOT NULL,title TEXT NOT NULL,stars INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'invoice',charge_id TEXT UNIQUE,error TEXT,created TEXT NOT NULL,delivered TEXT,note TEXT);
             CREATE TABLE IF NOT EXISTS tg_store_favorites(uid INTEGER NOT NULL,gift_id TEXT NOT NULL,created TEXT NOT NULL,PRIMARY KEY(uid,gift_id));
             CREATE TABLE IF NOT EXISTS tg_store_promos(code TEXT PRIMARY KEY,discount INTEGER NOT NULL,uses_left INTEGER NOT NULL,active INTEGER NOT NULL DEFAULT 1,created TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS tg_store_promo_uses(code TEXT NOT NULL,uid INTEGER NOT NULL,order_id TEXT NOT NULL UNIQUE,created TEXT NOT NULL,PRIMARY KEY(code,uid,order_id));""")
+            CREATE TABLE IF NOT EXISTS tg_store_promo_uses(code TEXT NOT NULL,uid INTEGER NOT NULL,order_id TEXT NOT NULL UNIQUE,created TEXT NOT NULL,PRIMARY KEY(code,uid,order_id));
+            CREATE TABLE IF NOT EXISTS tg_store_active_promos(uid INTEGER PRIMARY KEY,code TEXT NOT NULL,created TEXT NOT NULL);""")
             try: c.execute("ALTER TABLE tg_store_orders ADD COLUMN note TEXT")
+            except Exception: pass
+            try: c.execute("ALTER TABLE tg_store_orders ADD COLUMN promo_code TEXT")
             except Exception: pass
 
 async def api(method, data=None):
@@ -92,13 +98,23 @@ def register(dp, bot, db, owner_ids=()):
         return [g for g in result.get("gifts",[]) if int(g.get("star_count",0))>0]
 
     async def create_invoice(buyer, recipient, gift, note):
-        base=int(gift["star_count"]); total=base+MARKUP_STARS
-        oid=secrets.token_hex(6); payload="fenixgift:"+oid; p=ph(db)
+        base=int(gift["star_count"]); p=ph(db); promo_code=None; discount=0
+        active=one(db,f"SELECT code FROM tg_store_active_promos WHERE uid={p}",(buyer,))
+        if active:
+            promo=one(db,f"SELECT discount,uses_left,active FROM tg_store_promos WHERE code={p}",(active["code"],))
+            used=one(db,f"SELECT 1 AS used FROM tg_store_promo_uses WHERE code={p} AND uid={ph(db)}",(active["code"],buyer))
+            if promo and int(promo["active"])==1 and int(promo["uses_left"])>0 and not used:
+                promo_code=active["code"]; discount=min(MARKUP_STARS,max(0,int(promo["discount"])))
+            else:
+                run(db,f"DELETE FROM tg_store_active_promos WHERE uid={p}",(buyer,))
+        total=base+MARKUP_STARS-discount
+        oid=secrets.token_hex(6); payload="fenixgift:"+oid
         title=(gift.get("sticker") or {}).get("emoji") or "🎁"
         title=f"{title} Telegram-подарок"
-        run(db,f"INSERT INTO tg_store_orders(id,payload,buyer_uid,recipient_uid,kind,item_id,title,stars,status,created,note) VALUES({','.join([p]*11)})",
-            (oid,payload,buyer,recipient,"gift",str(gift["id"]),title,total,"invoice",datetime.now(timezone.utc).isoformat(),note))
-        await bot.send_invoice(chat_id=buyer,title=title[:32],description=f"Подарок Telegram · {base} ⭐ + 5 ⭐ комиссия. Получатель ID {recipient}.",
+        run(db,f"INSERT INTO tg_store_orders(id,payload,buyer_uid,recipient_uid,kind,item_id,title,stars,status,created,note,promo_code) VALUES({','.join([p]*12)})",
+            (oid,payload,buyer,recipient,"gift",str(gift["id"]),title,total,"invoice",datetime.now(timezone.utc).isoformat(),note,promo_code))
+        promo_text=f" · промокод {promo_code} (-{discount} ⭐)" if promo_code else ""
+        await bot.send_invoice(chat_id=buyer,title=title[:32],description=f"Подарок Telegram · {base} ⭐ + комиссия {MARKUP_STARS-discount} ⭐{promo_text}. Получатель ID {recipient}.",
             payload=payload,provider_token="",currency="XTR",prices=[LabeledPrice(label=title[:32],amount=total)])
 
     async def send_catalog(chat_id, owner_id, recipient_id, prefix="tgs:buy:"):
@@ -113,12 +129,44 @@ def register(dp, bot, db, owner_ids=()):
             run(db,f"INSERT INTO tg_store_items(token,owner_uid,recipient_uid,gift_id,title,stars,created) VALUES({','.join([ph(db)]*7)})",
                 (token,owner_id,recipient_id,str(gift["id"]),emoji,base,datetime.now(timezone.utc).isoformat()))
             rows.append([InlineKeyboardButton(text=f"{emoji} {base+MARKUP_STARS} ⭐ · {(base+MARKUP_STARS)*1.35:.2f} ₽",callback_data=f"{prefix}{token}")])
+        rows.append([InlineKeyboardButton(text="🎟 Ввести промокод",callback_data="tgs:enterpromo")])
         rows.append([InlineKeyboardButton(text="🧾 Мои заказы",callback_data="tgs:history")])
         await bot.send_message(chat_id,"<b>🎁 ПОДАРКИ TELEGRAM · FENIX</b>\nЦена: стоимость подарка + 5 ⭐ комиссия. Курс: 1 ⭐ = 1,35 ₽. Выбери подарок:",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
     @router.message(Command("gifts"))
     async def gifts_command(m):
         await m.answer("🎁 Открой магазин подарков через кнопку меню.",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🎁 Открыть подарки",callback_data="tgs:catalog")]]))
+
+    @router.message(Command("promo"))
+    async def promo_redeem_command(m):
+        parts=(m.text or "").strip().split(maxsplit=1)
+        if len(parts)<2:
+            return await m.answer("Использование: /promo FENIX5")
+        await apply_promo(m,parts[1].strip())
+
+    async def apply_promo(message, raw_code):
+        code=raw_code.strip().upper()
+        if not code.isalnum() or len(code)>32:
+            return await message.answer("Промокод содержит недопустимые символы.")
+        promo=one(db,f"SELECT * FROM tg_store_promos WHERE code={ph(db)}",(code,))
+        if not promo or int(promo["active"])!=1 or int(promo["uses_left"])<1:
+            return await message.answer("Промокод не найден, отключён или лимит активаций исчерпан.")
+        used=one(db,f"SELECT 1 AS used FROM tg_store_promo_uses WHERE code={ph(db)} AND uid={ph(db)}",(code,message.from_user.id))
+        if used:
+            return await message.answer("Ты уже использовал этот промокод.")
+        with db.con() as conn:
+            p=ph(db)
+            if db.use_postgres:
+                conn.execute("INSERT INTO tg_store_active_promos(uid,code,created) VALUES(%s,%s,%s) ON CONFLICT(uid) DO UPDATE SET code=EXCLUDED.code,created=EXCLUDED.created",(message.from_user.id,code,datetime.now(timezone.utc).isoformat()))
+            else:
+                conn.execute("INSERT OR REPLACE INTO tg_store_active_promos(uid,code,created) VALUES(?,?,?)",(message.from_user.id,code,datetime.now(timezone.utc).isoformat()))
+        discount=min(MARKUP_STARS,max(0,int(promo["discount"])))
+        await message.answer(f"✅ Промокод {code} применён. Скидка: {discount} ⭐ на следующий заказ подарка. Открой магазин и оформи заказ.")
+
+    @router.callback_query(F.data=="tgs:enterpromo")
+    async def promo_entry(c):
+        await c.message.answer("🎟 Отправь промокод командой /promo КОД. Он применится к следующему заказу.")
+        await c.answer()
 
     @router.callback_query(F.data=="tgs:promos")
     async def promo_admin(c,state: FSMContext):
@@ -142,7 +190,7 @@ def register(dp, bot, db, owner_ids=()):
             else:
                 conn.execute("INSERT OR REPLACE INTO tg_store_promos(code,discount,uses_left,active,created) VALUES(?,?,?,1,?)",(code,discount,uses,datetime.now(timezone.utc).isoformat()))
         await state.clear()
-        await m.answer(f"Промокод {code} создан. Скидка {discount} ⭐. Активаций: {uses}.")
+        await m.answer(f"Промокод {code} создан. Скидка {discount} ⭐. Активаций: {uses}.\nИгроки вводят его командой /promo {code}.")
     @router.callback_query(F.data=="tgs:history")
     async def order_history(c):
         stats=one(db,f"SELECT COUNT(*) AS total, SUM(CASE WHEN status IN ('delivering','delivered','delivery_failed') THEN 1 ELSE 0 END) AS paid, SUM(CASE WHEN status='delivered' THEN 1 ELSE 0 END) AS delivered, SUM(CASE WHEN status='delivery_failed' THEN 1 ELSE 0 END) AS failed, SUM(CASE WHEN status='invoice' THEN 1 ELSE 0 END) AS unpaid, COALESCE(SUM(CASE WHEN status IN ('delivering','delivered','delivery_failed') THEN stars ELSE 0 END),0) AS spent FROM tg_store_orders WHERE buyer_uid={ph(db)}",(c.from_user.id,)) or {}
@@ -349,7 +397,16 @@ def register(dp, bot, db, owner_ids=()):
             if order.get("note"): payload["text"]=order["note"]
             await api("sendGift",payload)
             run(db,f"UPDATE tg_store_orders SET status='delivered',delivered={p},error=NULL WHERE id={p}",(datetime.now(timezone.utc).isoformat(),order["id"]))
-            await m.answer(f"✅ Подарок отправлен пользователю <code>{order['recipient_uid']}</code>. Оплата: {order['stars']} ⭐ (включая комиссию {MARKUP_STARS} ⭐).",parse_mode="HTML")
+            if order.get("promo_code"):
+                with db.con() as conn:
+                    if db.use_postgres:
+                        conn.execute("UPDATE tg_store_promos SET uses_left=GREATEST(uses_left-1,0) WHERE code=%s AND uses_left>0",(order["promo_code"],))
+                        conn.execute("INSERT INTO tg_store_promo_uses(code,uid,order_id,created) VALUES(%s,%s,%s,%s) ON CONFLICT(order_id) DO NOTHING",(order["promo_code"],m.from_user.id,order["id"],datetime.now(timezone.utc).isoformat()))
+                    else:
+                        conn.execute("UPDATE tg_store_promos SET uses_left=MAX(uses_left-1,0) WHERE code=? AND uses_left>0",(order["promo_code"],))
+                        conn.execute("INSERT OR IGNORE INTO tg_store_promo_uses(code,uid,order_id,created) VALUES(?,?,?,?)",(order["promo_code"],m.from_user.id,order["id"],datetime.now(timezone.utc).isoformat()))
+                run(db,f"DELETE FROM tg_store_active_promos WHERE uid={p}",(m.from_user.id,))
+            await m.answer(f"✅ Подарок отправлен пользователю <code>{order['recipient_uid']}</code>. Оплата: {order['stars']} ⭐ (комиссия до скидки {MARKUP_STARS} ⭐).",parse_mode="HTML")
         except Exception as e:
             log.exception("Paid gift delivery failed")
             run(db,f"UPDATE tg_store_orders SET status='delivery_failed',error={p} WHERE id={p}",(str(e)[:1000],order["id"]))
