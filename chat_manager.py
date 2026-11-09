@@ -136,9 +136,16 @@ def register_chat_manager(dp, bot, db, owner_ids):
             if m.from_user.id not in owner_ids and not db.is_admin(m.from_user.id):
                 return await m.answer("⛔ Доступ только владельцу FENIX.")
             chats=rows(db,"SELECT chat_id,title,updated FROM cm_settings ORDER BY updated DESC LIMIT 50")
-            body="<b>FENIX · ПОДКЛЮЧЁННЫЕ БЕСЕДЫ</b>\\n\\n"
-            body += ("\\n".join(f"• {x['title'] or 'Без названия'} · <code>{x['chat_id']}</code>" for x in chats) if chats else "Беседы пока не подключены. Добавь бота в группу и выполни !setup.")
-            return await m.answer(body,parse_mode="HTML")
+            if not chats:
+                keyboard=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="Как подключить беседу",callback_data="cmui:connect")],
+                    [InlineKeyboardButton(text="Обновить",callback_data="cmui:home")]
+                ])
+                return await m.answer("<b>FENIX · УПРАВЛЕНИЕ БЕСЕДАМИ</b>\\n\\nПока не подключено ни одной группы.\\n\\n1. Добавь FENIX в нужную группу.\\n2. Выдай боту права администратора: удаление сообщений, блокировка участников и закрепление.\\n3. После добавления открой эту панель снова — группа появится автоматически.",parse_mode="HTML",reply_markup=keyboard)
+            keyboard=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=(x["title"] or "Беседа")[:32],callback_data=f"cmui:chat:{x['chat_id']}")] for x in chats
+            ]+[[InlineKeyboardButton(text="Обновить список",callback_data="cmui:home")]])
+            return await m.answer("<b>FENIX · CHAT MANAGER</b>\\nВыбери беседу для управления:",parse_mode="HTML",reply_markup=keyboard)
         if not raw.startswith("!"): 
             if m.chat.type!="private":
                 s=chat_settings(db,m.chat.id)
@@ -460,5 +467,83 @@ def register_chat_manager(dp, bot, db, owner_ids):
         p=ph(db)
         q(db,f"UPDATE cm_settings SET title={p},updated={p} WHERE chat_id={p}",(chat.title or "",now(db),chat.id))
         log.info("Chat Manager linked group: %s (%s)",chat.title,chat.id)
+    def cmui_keyboard(chat_id):
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⚙️ Настройки беседы",callback_data=f"cmui:section:{chat_id}:settings")],
+            [InlineKeyboardButton(text="🛡 Модерация",callback_data=f"cmui:section:{chat_id}:moderation")],
+            [InlineKeyboardButton(text="👥 Роли и руководство",callback_data=f"cmui:section:{chat_id}:roles")],
+            [InlineKeyboardButton(text="📜 Журнал действий",callback_data=f"cmui:section:{chat_id}:logs")],
+            [InlineKeyboardButton(text="📚 Команды и возможности",callback_data=f"cmui:section:{chat_id}:commands")],
+            [InlineKeyboardButton(text="← К списку бесед",callback_data="cmui:home")]
+        ])
+    async def cmui_show(c, body, keyboard):
+        try:
+            if c.message.text is not None:
+                await c.message.edit_text(body,parse_mode="HTML",reply_markup=keyboard,disable_web_page_preview=True)
+            elif c.message.caption is not None:
+                await c.message.edit_caption(caption=body,parse_mode="HTML",reply_markup=keyboard)
+            else:
+                await c.message.answer(body,parse_mode="HTML",reply_markup=keyboard,disable_web_page_preview=True)
+        except Exception:
+            await c.message.answer(body,parse_mode="HTML",reply_markup=keyboard,disable_web_page_preview=True)
+    @router.callback_query(F.data.startswith("cmui:"))
+    async def cmui_callback(c):
+        if c.from_user.id not in owner_ids and not db.is_admin(c.from_user.id):
+            return await c.answer("Нет доступа",show_alert=True)
+        data=c.data.split(":")
+        action=data[1] if len(data)>1 else ""
+        if action=="connect":
+            await cmui_show(c,"<b>ПОДКЛЮЧЕНИЕ БЕСЕДЫ</b>\\n\\nДобавь бота в группу и назначь администратором. После события добавления Telegram автоматически зарегистрирует беседу. Затем снова открой /chatmanager.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← Назад",callback_data="cmui:home")]]))
+        elif action=="home":
+            chats=rows(db,"SELECT chat_id,title FROM cm_settings ORDER BY updated DESC LIMIT 50")
+            if not chats:
+                await cmui_show(c,"<b>FENIX · УПРАВЛЕНИЕ БЕСЕДАМИ</b>\\n\\nПока нет подключённых групп. Добавь бота в группу и выдай ему права администратора.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Как подключить",callback_data="cmui:connect")]]))
+            else:
+                kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=(x["title"] or "Беседа")[:32],callback_data=f"cmui:chat:{x['chat_id']}")] for x in chats]+[[InlineKeyboardButton(text="Обновить",callback_data="cmui:home")]])
+                await cmui_show(c,"<b>FENIX · CHAT MANAGER</b>\\nВыбери беседу:",kb)
+        elif action=="chat" and len(data)>2:
+            chat_id=int(data[2]); s=chat_settings(db,chat_id)
+            info=one(db,f"SELECT title FROM cm_settings WHERE chat_id={ph(db)}",(chat_id,)) or {}
+            body=f"<b>{info.get('title') or 'Беседа'}</b>\\n<code>{chat_id}</code>\\n\\nПриветствие: {'установлено' if s.get('welcome') else 'не задано'}\\nПравила: {'установлены' if s.get('rules') else 'не заданы'}\\nРежим тишины: {'включён' if s.get('silence') else 'выключен'}"
+            await cmui_show(c,body,cmui_keyboard(chat_id))
+        elif action=="section" and len(data)>3:
+            chat_id=int(data[2]); section=data[3]; s=chat_settings(db,chat_id)
+            back=cmui_keyboard(chat_id)
+            if section=="settings":
+                body=f"<b>⚙️ НАСТРОЙКИ</b>\\nПриветствие: {'есть' if s.get('welcome') else 'нет'}\\nПравила: {'есть' if s.get('rules') else 'нет'}\\nТишина: {'включена' if s.get('silence') else 'выключена'}\\nОграничение ссылок: {'включено' if s.get('invite_mode')=='on' else 'выключено'}"
+                kb=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=("🔕 Выключить тишину" if s.get("silence") else "🔔 Включить тишину"),callback_data=f"cmui:toggle:{chat_id}:silence")],
+                    [InlineKeyboardButton(text="Как изменить приветствие",callback_data=f"cmui:hint:{chat_id}:welcome")],
+                    [InlineKeyboardButton(text="Как изменить правила",callback_data=f"cmui:hint:{chat_id}:rules")],
+                    [InlineKeyboardButton(text="← Назад",callback_data=f"cmui:chat:{chat_id}")]
+                ])
+                await cmui_show(c,body,kb)
+            elif section=="moderation":
+                await cmui_show(c,"<b>🛡 МОДЕРАЦИЯ</b>\\n\\nДействия над участником выполняются в самой группе ответом на его сообщение: !mute 15m, !unmute, !warn причина, !ban причина, !kick.\\n\\nФильтры: !filteradd фраза и !filterdel фраза. Белый список ссылок: !addlink https://example.com.",back)
+            elif section=="roles":
+                rr=rows(db,f"SELECT uid,level,title FROM cm_roles WHERE chat_id={ph(db)} AND level>0 ORDER BY level DESC",(chat_id,))
+                body="<b>👥 РОЛИ И РУКОВОДСТВО</b>\\n"+("\\n".join(f"• {x['title']} · <code>{x['uid']}</code> · {x['level']}" for x in rr) if rr else "Роли ещё не назначены.")
+                await cmui_show(c,body,back)
+            elif section=="logs":
+                rr=rows(db,f"SELECT action,target,details,created FROM cm_logs WHERE chat_id={ph(db)} ORDER BY id DESC LIMIT 12",(chat_id,))
+                body="<b>📜 ПОСЛЕДНИЕ ДЕЙСТВИЯ</b>\\n"+("\\n".join(f"{x['created']} · {x['action']} · {x['details'] or ''}" for x in rr) if rr else "Записей пока нет.")
+                await cmui_show(c,body,back)
+            else:
+                body="<b>📚 ВОЗМОЖНОСТИ FENIX CHAT MANAGER</b>\\n\\n<b>Участники:</b> правила, руководство, статистика, репорты, игровые команды.\\n<b>Модерация:</b> мут, снятие мута, предупреждения, бан, разбан, кик, фильтры, белый список ссылок.\\n<b>Управление:</b> роли, приветствие, правила, тишина, закрепление, журнал, объединения.\\n\\nЭто перечень уже существующих в проекте команд, а не заявление о полной совместимости со всеми модулями Iris."
+                await cmui_show(c,body,back)
+        elif action=="toggle" and len(data)>3:
+            chat_id=int(data[2]); setting=data[3]
+            if setting=="silence":
+                s=chat_settings(db,chat_id); val=0 if s.get("silence") else 1; p=ph(db)
+                q(db,f"UPDATE cm_settings SET silence={p},updated={p} WHERE chat_id={p}",(val,now(db),chat_id))
+                log_action(db,chat_id,c.from_user.id,"silence_panel",None,str(val))
+                await c.answer("Режим тишины обновлён")
+                await cmui_show(c,f"<b>⚙️ НАСТРОЙКИ</b>\\nРежим тишины теперь {'включён' if val else 'выключен'}.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← К настройкам",callback_data=f"cmui:section:{chat_id}:settings")]]))
+                return
+        elif action=="hint" and len(data)>3:
+            field=data[3]
+            text_hint=("В группе отправь: !welcome текст приветствия" if field=="welcome" else "В группе отправь: !setrules текст правил")
+            await cmui_show(c,"<b>ИЗМЕНЕНИЕ ТЕКСТА</b>\\n\\n"+text_hint,InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← К настройкам",callback_data=f"cmui:section:{data[2]}:settings")]]))
+        await c.answer()
     dp.include_router(router)
     log.info("FENIX Chat Manager router registered")
