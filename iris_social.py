@@ -22,15 +22,15 @@ def init(db):
     with db.con() as c:
         if db.use_postgres:
             sql=[
-            "CREATE TABLE IF NOT EXISTS cm_reputation(chat_id BIGINT,uid BIGINT,score INTEGER DEFAULT 0,updated TEXT,PRIMARY KEY(chat_id,uid))",
-            "CREATE TABLE IF NOT EXISTS cm_rep_votes(chat_id BIGINT,giver BIGINT,target BIGINT,day TEXT,PRIMARY KEY(chat_id,giver,target,day))",
+            "CREATE TABLE IF NOT EXISTS iris_rep(chat_id BIGINT,uid BIGINT,score INTEGER DEFAULT 0,PRIMARY KEY(chat_id,uid))",
+            "CREATE TABLE IF NOT EXISTS iris_rep_log(chat_id BIGINT,giver BIGINT,target BIGINT,created TEXT,PRIMARY KEY(chat_id,giver,target))",
             "CREATE TABLE IF NOT EXISTS cm_giveaways(id BIGSERIAL PRIMARY KEY,chat_id BIGINT,creator BIGINT,prize TEXT,draw_at TEXT,status TEXT DEFAULT 'open',winner BIGINT,created TEXT)",
             "CREATE TABLE IF NOT EXISTS cm_giveaway_entries(giveaway_id BIGINT,uid BIGINT,created TEXT,PRIMARY KEY(giveaway_id,uid))"]
             for x in sql:c.execute(x)
         else:
             c.executescript("""
-            CREATE TABLE IF NOT EXISTS cm_reputation(chat_id INTEGER,uid INTEGER,score INTEGER DEFAULT 0,updated TEXT,PRIMARY KEY(chat_id,uid));
-            CREATE TABLE IF NOT EXISTS cm_rep_votes(chat_id INTEGER,giver INTEGER,target INTEGER,day TEXT,PRIMARY KEY(chat_id,giver,target,day));
+            CREATE TABLE IF NOT EXISTS iris_rep(chat_id INTEGER,uid INTEGER,score INTEGER DEFAULT 0,PRIMARY KEY(chat_id,uid));
+            CREATE TABLE IF NOT EXISTS iris_rep_log(chat_id INTEGER,giver INTEGER,target INTEGER,created TEXT,PRIMARY KEY(chat_id,giver,target));
             CREATE TABLE IF NOT EXISTS cm_giveaways(id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEGER,creator INTEGER,prize TEXT,draw_at TEXT,status TEXT DEFAULT 'open',winner INTEGER,created TEXT);
             CREATE TABLE IF NOT EXISTS cm_giveaway_entries(giveaway_id INTEGER,uid INTEGER,created TEXT,PRIMARY KEY(giveaway_id,uid));
             """)
@@ -62,14 +62,17 @@ def register(dp,bot,db,owners=()):
             if not target:return await m.answer("Ответь !rep на сообщение или укажи Telegram ID.")
             if target==uid:return await m.answer("Нельзя повышать собственную репутацию.")
             day=datetime.now(timezone.utc).date().isoformat()
-            try:execq(db,f"INSERT INTO cm_rep_votes(chat_id,giver,target,day) VALUES({','.join([p]*4)})",(chat,uid,target,day))
+            old=one(db,f"SELECT created FROM iris_rep_log WHERE chat_id={p} AND giver={p} AND target={p}",(chat,uid,target))
+            if old and old["created"][:10]==day:return await m.answer("Ты уже оценивал этого участника сегодня.")
+            if db.use_postgres:execq(db,f"INSERT INTO iris_rep_log(chat_id,giver,target,created) VALUES({p},{p},{p},{p}) ON CONFLICT(chat_id,giver,target) DO UPDATE SET created=excluded.created",(chat,uid,target,db._now()))
+            else:execq(db,f"INSERT INTO iris_rep_log(chat_id,giver,target,created) VALUES({p},{p},{p},{p}) ON CONFLICT(chat_id,giver,target) DO UPDATE SET created=excluded.created",(chat,uid,target,db._now()))
             except Exception:return await m.answer("Ты уже оценивал этого участника сегодня.")
-            if db.use_postgres:execq(db,f"INSERT INTO cm_reputation(chat_id,uid,score,updated) VALUES({p},{p},1,{p}) ON CONFLICT(chat_id,uid) DO UPDATE SET score=cm_reputation.score+1,updated=excluded.updated",(chat,target,db._now()))
-            else:execq(db,f"INSERT INTO cm_reputation(chat_id,uid,score,updated) VALUES({p},{p},1,{p}) ON CONFLICT(chat_id,uid) DO UPDATE SET score=cm_reputation.score+1,updated=excluded.updated",(chat,target,db._now()))
-            x=one(db,f"SELECT score FROM cm_reputation WHERE chat_id={p} AND uid={p}",(chat,target))
+            if db.use_postgres:execq(db,f"INSERT INTO iris_rep(chat_id,uid,score) VALUES({p},{p},1) ON CONFLICT(chat_id,uid) DO UPDATE SET score=iris_rep.score+1",(chat,target))
+            else:execq(db,f"INSERT INTO iris_rep(chat_id,uid,score) VALUES({p},{p},1) ON CONFLICT(chat_id,uid) DO UPDATE SET score=score+1",(chat,target))
+            x=one(db,f"SELECT score FROM iris_rep WHERE chat_id={p} AND uid={p}",(chat,target))
             return await m.answer(f"⭐ Репутация <code>{target}</code>: {x['score']}",parse_mode="HTML")
         if cmd=="топреп":
-            rr=rows(db,f"SELECT uid,score FROM cm_reputation WHERE chat_id={p} ORDER BY score DESC LIMIT 10",(chat,))
+            rr=rows(db,f"SELECT uid,score FROM iris_rep WHERE chat_id={p} ORDER BY score DESC LIMIT 10",(chat,))
             return await m.answer("<b>⭐ ТОП РЕПУТАЦИИ</b>\n"+("\n".join(f"{i+1}. <code>{x['uid']}</code> — {x['score']}" for i,x in enumerate(rr)) if rr else "Пока нет оценок."),parse_mode="HTML")
         if cmd in ("giveaway","розыгрыш"):
             if lv<40 and not owner:return await m.answer("⛔ Создавать розыгрыши может модератор (уровень 40) и выше.")
