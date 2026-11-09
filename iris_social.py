@@ -59,7 +59,7 @@ def register(dp,bot,db,owners=()):
                 execq(db,f"INSERT INTO cm_roles(chat_id,uid,level,title,by_uid,updated) VALUES({','.join([p]*6)}) ON CONFLICT(chat_id,uid) DO UPDATE SET level=100,title='Владелец',updated=excluded.updated",(chat_id,user_id,100,"Владелец",user_id,db._now()))
         except Exception:pass
     social_commands="dice|кости|duel|дуэль|rep|reputation|топреп|giveaway|розыгрыш|gstop|circle|круг"
-    rx=re.compile(r"(?i)^(?:[!./](?:"+social_commands+r")(?=$|[^a-zA-Z0-9_])"+social_commands+r")(?=$|[^a-zA-Z0-9_]))")
+    rx=re.compile(r"(?i)^[!./](?:"+social_commands+r")(?=$|[^a-zA-Z0-9_])")
     @router.message(F.text.regexp(rx))
     async def social(m):
         if m.chat.type=="private":return
