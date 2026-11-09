@@ -392,6 +392,28 @@ async def import_emoji_pack(m: Message):
         parse_mode="HTML"
     )
 
+@dp.message(Command("emojistatus"))
+async def emoji_pack_status(m: Message):
+    if not is_owner(m.from_user.id):
+        return await m.answer("⛔ Нет доступа.")
+    items = _load_emoji_pack()
+    valid = [x for x in items if isinstance(x, dict) and str(x.get("id", "")).isdigit()]
+    affection = ("💋", "😘", "💗", "💖", "❤️", "💛", "💕", "🫂", "🤗", "💞")
+    available = []
+    for item in valid:
+        glyph = str(item.get("emoji") or "")
+        if glyph in affection and glyph not in available:
+            available.append(glyph)
+    lines = [
+        "<b>💎 СТАТУС PREMIUM CUSTOM EMOJI</b>",
+        f"Загружено ID: <b>{len(valid)}</b>",
+        f"Значки для поцелуев/объятий: <b>{'есть' if available else 'не найдены в паке'}</b>",
+        "Доступные подходящие символы: " + (html.escape(" ".join(available)) if available else "нет"),
+        f"Кнопок с назначенными ID: <b>{len(premium_button_icons())}</b>",
+    ]
+    await m.answer("\\n".join(lines), parse_mode="HTML")
+
+
 @dp.message(Command("emojilist"))
 async def list_pack_emojis(m: Message):
     if not is_owner(m.from_user.id):
