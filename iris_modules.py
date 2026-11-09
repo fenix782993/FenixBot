@@ -72,7 +72,7 @@ def register(dp,bot,db,owner_ids=()):
                 p=ph(db);stamp_value=stamp(db)
                 run(db,f"INSERT INTO cm_roles(chat_id,uid,level,title,by_uid,updated) VALUES({','.join([p]*6)}) ON CONFLICT(chat_id,uid) DO UPDATE SET level=100,title='Владелец',updated=excluded.updated",(chat_id,user_id,100,"Владелец",user_id,stamp_value))
         except Exception:pass
-    pattern=re.compile(r"(?i)^(?:[!./](?:"+commands+r")(?:@[a-zA-Z0-9_]+)?(?=$|[^a-zA-Z0-9_])"+commands+r")(?=$|[^a-zA-Z0-9_]))")
+    pattern=re.compile(r"(?i)^[!./](?:"+commands+r")(?:@[a-zA-Z0-9_]+)?(?=$|[^a-zA-Z0-9_])")
     @router.message(F.text.regexp(pattern))
     async def command(m):
         if m.chat.type=="private":return await m.answer("Эта команда работает в групповой беседе.")
@@ -246,7 +246,7 @@ def register(dp,bot,db,owner_ids=()):
         except Exception:log.exception("Anti-spam restriction failed")
     class TriggerFilter(BaseFilter):
         async def __call__(self,m):
-            if not m.text or m.chat.type=="private" or m.text.startswith(("!","/",".")) or m.text.lower().startswith(("ирис ","ириска ")):return False
+            if not m.text or m.chat.type=="private" or m.text.startswith(("!","/",".")):return False
             for x in rows(db,f"SELECT phrase,response FROM cm_triggers WHERE chat_id={ph(db)}",(m.chat.id,)):
                 if x["phrase"].casefold() in m.text.casefold():return {"answer_text":x["response"]}
             return False
