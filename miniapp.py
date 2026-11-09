@@ -431,7 +431,7 @@ async def admin_publish(req):
 
 
 
-# --- FENIX NMZ store / donations ---
+# --- FENIX FNZ store / donations ---
 def store_prices():
     return read_json_setting("store_prices", {})
 
@@ -497,8 +497,8 @@ async def shop_buy(req):
         product_name=f"Автомобильный номер {plate} · {country}"
         details={"country":country,"plate":plate,"letters":letters,"digits":digits,"region":region}
     order_id=shop.create_order(db,user_id,nick,code,product_name,price,json.dumps(details,ensure_ascii=False)[:1500])
-    if not order_id:return response("Недостаточно NMZ. Сначала пополни кошелёк.",409)
-    msg=f"Покупка #{order_id} завершена. {product_name} добавлен в инвентарь. Стоимость: {price} NMZ. Запроси выдачу предмета в игре."
+    if not order_id:return response("Недостаточно FNZ. Сначала пополни кошелёк.",409)
+    msg=f"Покупка #{order_id} завершена. {product_name} добавлен в инвентарь. Стоимость: {price} FNZ. Запроси выдачу предмета в игре."
     db.add_notification(user_id,"Покупка оформлена",msg)
     return response({"id":order_id,"balance":shop.balance(db,user_id)})
 
@@ -559,9 +559,9 @@ async def wallet_donate(req):
     except Exception:return response("Укажи сумму в рублях.",400)
     if rub<100 or rub>100000:return response("Сумма должна быть от 100 до 100 000 ₽.",400)
     rate=fnz_rate()
-    if not rate:return response("Курс NMZ не настроен. Используется базовый курс 1 ₽ = 2 NMZ.",503)
+    if not rate:return response("Курс FNZ не настроен. Используется базовый курс 1 ₽ = 2 FNZ.",503)
     nmz=int(round(rub*rate))
-    if nmz<1:return response("Сумма слишком мала для начисления NMZ.",400)
+    if nmz<1:return response("Сумма слишком мала для начисления FNZ.",400)
     method=str(data.get("method","manual"))
     if method != "manual":return response("Доступно только ручное пополнение.",400)
     proof=str(data.get("proof","")).strip()[:500]
@@ -572,7 +572,7 @@ async def wallet_donate(req):
     if not manual_details or "УКАЖИТЕ" in manual_details.upper():
         return response("Владелец ещё не настроил реквизиты ручного пополнения. Попробуй позже.",503)
     did=shop.new_donation(db,user_id,rub,nmz,method,proof)
-    text=f"💳 Новое ручное пополнение #{did}\nИгрок: {user_id}\nСумма: {rub:.2f} ₽\nНачисление после проверки: {nmz} NMZ\nПодтверждение: {proof}"
+    text=f"💳 Новое ручное пополнение #{did}\nИгрок: {user_id}\nСумма: {rub:.2f} ₽\nНачисление после проверки: {nmz} FNZ\nПодтверждение: {proof}"
     keyboard=core.markup([[InlineKeyboardButton(text="Одобрить",callback_data=f"donation_paid:{did}"),InlineKeyboardButton(text="Отклонить",callback_data=f"donation_rejected:{did}")]])
     for aid in core.OWNER_IDS:
         try:await tg.send_message(aid,text,reply_markup=keyboard)
@@ -592,7 +592,7 @@ async def admin_store(req):
         return response({"orders":shop.list_orders(db,limit=150),"donations":shop.donations(db,"all",150),"balance_rate":fnz_rate(),"prices":store_prices(),"catalog":catalog()})
     data=await payload(req)
     try:rate=float(data.get("fnz_per_rub",2))
-    except Exception:return response("Некорректный курс NMZ.",400)
+    except Exception:return response("Некорректный курс FNZ.",400)
     if rate<0 or rate>100000:return response("Курс вне допустимого диапазона.",400)
     prices=data.get("prices") or {}
     if not isinstance(prices,dict):return response("Неверный список цен.",400)
@@ -620,7 +620,7 @@ async def admin_donation_decision(req):
     elif decision=="rejected":ok=shop.reject_donation(db,did,uid(req),note)
     else:return response("Неизвестное решение.",400)
     if not ok:return response("Не удалось изменить платёж.",409)
-    text=(f"Пополнение #{did} подтверждено. Зачислено {int(item['fnz_amount'])} NMZ." if decision=="paid" else f"Пополнение #{did} отклонено. {note}")
+    text=(f"Пополнение #{did} подтверждено. Зачислено {int(item['fnz_amount'])} FNZ." if decision=="paid" else f"Пополнение #{did} отклонено. {note}")
     db.add_notification(item["uid"],"Статус пополнения",text)
     try:await tg.send_message(item["uid"],text)
     except Exception:log.exception("Donation decision notification failed")
