@@ -48,6 +48,20 @@ def register(dp, bot, db):
         await bot.send_invoice(chat_id=buyer,title=title[:32],description=f"Подарок для Telegram ID {recipient}. Оплата Telegram Stars.",
             payload=payload,provider_token="",currency="XTR",prices=[LabeledPrice(label=title[:32],amount=int(stars))])
 
+    @router.message(Command("myid"))
+    async def myid(m):
+        await m.answer(f"Твой Telegram ID: <code>{m.from_user.id}</code>",parse_mode="HTML")
+
+    @router.message(Command("starsorders"))
+    async def starsorders(m):
+        p=ph(db)
+        with db.con() as c:
+            items=[dict(x) for x in c.execute(f"SELECT id,title,stars,status,created,recipient_uid FROM tg_store_orders WHERE buyer_uid={p} ORDER BY created DESC LIMIT 15",(m.from_user.id,)).fetchall()]
+        if not items:
+            return await m.answer("Покупок Telegram Stars пока нет.")
+        body="<b>МОИ ЗАКАЗЫ STARS</b>\\n"+"\\n".join(f"#{x['id']} · {x['title']} · {x['stars']} ⭐ · {x['status']} · получатель {x['recipient_uid']}" for x in items)
+        await m.answer(body,parse_mode="HTML")
+
     @router.message(Command("giftshop"))
     async def giftshop(m):
         args=(m.text or "").split()
