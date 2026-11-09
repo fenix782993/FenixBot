@@ -20,7 +20,7 @@ ALIASES = {
  "start":"start","начать":"start","ping":"ping","пинг":"ping","status":"ping","статус":"ping","test":"ping","тест":"ping",
  "rules":"rules","правила":"rules","setup":"setup","settings":"settings","setsettings":"setsettings",
  "settingsmute":"settingsmute","settingsinvite":"settingsinvite","welcome":"welcome","setrules":"setrules",
- "admins":"admins","staff":"admins","админы":"admins","chatinfo":"chatinfo","info":"chatinfo","инфо":"chatinfo","чатинфо":"chatinfo",
+ "admins":"admins","staff":"admins","админы":"admins", "stats":"stats","стата":"stats","статистика":"stats","reg":"reg","рег":"reg","getban":"getban","гетбан":"getban","online":"online","онлайн":"online","wipe":"wipe","вайп":"wipe","newrole":"newrole","deleterole":"deleterole","delrole":"deleterole","editunity":"editunity","voice":"voice","mafia":"mafia","мафия":"mafia","emoji":"emoji","эмодзи":"emoji","enick":"enick","никэмодзи":"enick","chatinfo":"chatinfo","info":"chatinfo","инфо":"chatinfo","чатинфо":"chatinfo",
  "mute":"mute","мут":"mute","unmute":"unmute","унмут":"unmute","kick":"kick","кик":"kick","исключить":"kick",
  "warn":"warn","варн":"warn","пред":"warn","unwarn":"unwarn","унварн":"unwarn","getwarn":"getwarn","предупреждения":"getwarn",
  "warnhistory":"warnhistory","историяварнов":"warnhistory","warnlist":"warnlist","преды":"warnlist",
@@ -210,7 +210,7 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 title=ROLE_NAMES[level]
             p=ph(db); q(db,f"INSERT INTO cm_roles(chat_id,uid,level,title,by_uid,updated) VALUES({','.join([p]*6)}) ON CONFLICT(chat_id,uid) DO UPDATE SET level=excluded.level,title=excluded.title,by_uid=excluded.by_uid,updated=excluded.updated",(chat,target,level,title,uid,now(db)))
             log_action(db,chat,uid,"role_set",target,title); return await reply(m,f"✅ Назначена роль <b>{title}</b> · уровень {level}.")
-        if cmd in ("mute","unmute","kick","warn","unwarn","getwarn","warnhistory","getnick","setnick","removenick","nicknames","nonames","getbynick","ban","unban","banlist"):
+        if cmd in ("mute","unmute","kick","warn","unwarn","getwarn","warnhistory","warnlist","getnick","setnick","removenick","nicknames","nonames","getbynick","ban","unban","banlist","getban"):
             levels={"mute":20,"unmute":20,"kick":20,"warn":20,"unwarn":20,"getwarn":20,"warnhistory":20,"getnick":20,"setnick":20,"removenick":20,"nicknames":20,"nonames":20,"getbynick":20,"ban":40,"unban":40,"banlist":40}
             if not can(db,chat,uid,levels[cmd]) and uid not in owner_ids: return await reply(m,"⛔ Недостаточно прав для этой команды.")
             target,rest=parse_target(m,args)
@@ -270,6 +270,12 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 try: await bot.unban_chat_member(chat,target,only_if_banned=True)
                 except Exception: return await reply(m,"Не удалось снять блокировку.")
                 log_action(db,chat,uid,"unban",target); return await reply(m,"Блокировка снята.")
+            if cmd=="getban":
+                try:
+                    member=await bot.get_chat_member(chat,target)
+                    return await reply(m, "Участник не заблокирован." if member.status!="kicked" else "Участник заблокирован.")
+                except Exception:
+                    return await reply(m,"Не удалось получить статус блокировки. Возможно, участник не состоит в беседе.")
             if cmd=="getnick":
                 x=one(db,f"SELECT nick FROM cm_nicks WHERE chat_id={ph(db)} AND uid={ph(db)}",(chat,target))
                 return await reply(m,f"Ник: {x['nick']}" if x else "Ник не установлен.")
@@ -281,6 +287,43 @@ def register_chat_manager(dp, bot, db, owner_ids):
                 log_action(db,chat,uid,"nickname_set",target,nick); return await reply(m,"Ник сохранён в системе FENIX. Telegram-имя пользователя не меняется.")
             if cmd=="removenick":
                 q(db,f"DELETE FROM cm_nicks WHERE chat_id={ph(db)} AND uid={ph(db)}",(chat,target)); log_action(db,chat,uid,"nickname_remove",target); return await reply(m,"Ник удалён.")
+        if cmd=="stats":
+            target,rest=parse_target(m,args)
+            target=target or uid
+            user=db.user(target) or {}
+            warns=one(db,f"SELECT COUNT(*) AS n FROM cm_warns WHERE chat_id={ph(db)} AND uid={ph(db)} AND active=1",(chat,target))
+            nick=one(db,f"SELECT nick FROM cm_nicks WHERE chat_id={ph(db)} AND uid={ph(db)}",(chat,target))
+            role=get_role(db,chat,target)
+            return await reply(m,f"<b>СТАТИСТИКА УЧАСТНИКА</b>\\nID: <code>{target}</code>\\nИгровой ник: {user.get('nick') or (nick or {}).get('nick') or 'не указан'}\\nРоль в беседе: {role[1]} ({role[0]})\\nПредупреждения: {(warns or {}).get('n',0)}")
+        if cmd=="reg":
+            target,rest=parse_target(m,args); target=target or uid
+            user=db.user(target)
+            if user and user.get("created"):
+                return await reply(m,f"Дата регистрации в FENIX: <code>{user['created']}</code>\\nДата регистрации Telegram через Bot API недоступна.")
+            return await reply(m,"Дата регистрации Telegram не предоставляется Bot API. Пользователь ещё не найден в базе FENIX.")
+        if cmd=="online":
+            return await reply(m,"Telegram Bot API не предоставляет боту полный список участников и их статус онлайн. Используй !admins для просмотра руководства.")
+        if cmd=="wipe":
+            if not can(db,chat,uid,40) and uid not in owner_ids: return await reply(m,"⛔ Требуется уровень 40.")
+            kind=(args[0].lower() if args else "")
+            table={"warns":"cm_warns","предупреждения":"cm_warns","filters":"cm_filters","фильтры":"cm_filters","logs":"cm_logs","логи":"cm_logs","nicks":"cm_nicks","ники":"cm_nicks"}.get(kind)
+            if not table: return await reply(m,"Формат: !wipe warns|filters|logs|nicks")
+            q(db,f"DELETE FROM {table} WHERE chat_id={ph(db)}",(chat,)); log_action(db,chat,uid,"wipe",None,kind)
+            return await reply(m,"Список очищен.")
+        if cmd=="newrole":
+            if not can(db,chat,uid,80) and uid not in owner_ids: return await reply(m,"⛔ Требуется уровень 80.")
+            if len(args)<2 or not args[0].isdigit(): return await reply(m,"Формат: !newrole приоритет название")
+            level=int(args[0]); title=" ".join(args[1:])
+            if level not in (20,40,60,80): return await reply(m,"Допустимые приоритеты: 20, 40, 60, 80. Уровни базовой иерархии зарезервированы.")
+            db.set_setting(f"cm_role_name:{chat}:{level}",title)
+            return await reply(m,f"Название уровня {level} сохранено: {title}")
+        if cmd=="deleterole":
+            if not can(db,chat,uid,80) and uid not in owner_ids: return await reply(m,"⛔ Требуется уровень 80.")
+            if not args or not args[0].isdigit(): return await reply(m,"Формат: !deleterole приоритет")
+            level=int(args[0]); q(db,f"DELETE FROM cm_roles WHERE chat_id={ph(db)} AND level={ph(db)}",(chat,level))
+            return await reply(m,"Роли указанного уровня удалены у участников.")
+        if cmd in ("voice","mafia","emoji","enick"):
+            return await reply(m,"Эта функция пока не активирована в Chat Manager. Голосовая генерация, полноценная игра «Мафия» и изменение Telegram-эмодзи статуса/ника требуют отдельных модулей и разрешений Telegram.")
         if cmd in ("filters","filteradd","filterdel","addlink","whitelistlinks","silence","pin","unpin","logs","zov"):
             required=60 if cmd in ("filters","filteradd","filterdel","addlink","whitelistlinks") else 40
             if not can(db,chat,uid,required) and uid not in owner_ids: return await reply(m,"⛔ Недостаточно прав.")
@@ -358,5 +401,22 @@ def register_chat_manager(dp, bot, db, owner_ids):
             if cmd=="deleteunity" and args:
                 q(db,f"DELETE FROM cm_unities WHERE name={p}",(" ".join(args),)); return await reply(m,"Объединение удалено.")
             return await reply(m,f"Текущее объединение: {u['name']}" if u else "Эта беседа не подключена к объединению.")
+    @router.message(Command("chatmanager"))
+    async def global_chat_manager(m: Message):
+        if m.from_user.id not in owner_ids and not db.is_admin(m.from_user.id):
+            return await m.answer("⛔ Доступ только владельцу FENIX.")
+        chats=rows(db,"SELECT chat_id,title,updated FROM cm_settings ORDER BY updated DESC LIMIT 50")
+        if not chats:
+            return await m.answer("Пока нет подключённых бесед. Добавь бота в группу, выдай права администратора и выполни !setup.")
+        text="<b>FENIX · ПОДКЛЮЧЁННЫЕ БЕСЕДЫ</b>\\n\\n"+"\\n".join(f"• {x['title'] or 'Без названия'} · <code>{x['chat_id']}</code>" for x in chats)
+        await m.answer(text,parse_mode="HTML")
+    @router.my_chat_member()
+    async def bot_membership(update):
+        chat=update.chat
+        if chat.type not in ("group","supergroup"): return
+        chat_settings(db,chat.id)
+        p=ph(db)
+        q(db,f"UPDATE cm_settings SET title={p},updated={p} WHERE chat_id={p}",(chat.title or "",now(db),chat.id))
+        log.info("Chat Manager linked group: %s (%s)",chat.title,chat.id)
     dp.include_router(router)
     log.info("FENIX Chat Manager router registered")
