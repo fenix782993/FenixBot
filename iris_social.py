@@ -46,11 +46,12 @@ def register(dp,bot,db,owners=()):
                 p=ph(db)
                 execq(db,f"INSERT INTO cm_roles(chat_id,uid,level,title,by_uid,updated) VALUES({','.join([p]*6)}) ON CONFLICT(chat_id,uid) DO UPDATE SET level=100,title='Владелец',updated=excluded.updated",(chat_id,user_id,100,"Владелец",user_id,db._now()))
         except Exception:pass
-    rx=re.compile(r"(?i)^[!./](?:dice|кости|rep|reputation|топреп|giveaway|розыгрыш|gstop)\b")
+    social_commands="dice|кости|rep|reputation|топреп|giveaway|розыгрыш|gstop"
+    rx=re.compile(r"(?i)^(?:[!./](?:"+social_commands+r")(?=$|[^a-zA-Z0-9_])|ирис(?:ка)?[ ]+(?:"+social_commands+r")(?=$|[^a-zA-Z0-9_]))")
     @router.message(F.text.regexp(rx))
     async def social(m):
         if m.chat.type=="private":return
-        raw=m.text.strip();parts=raw[1:].split(maxsplit=1);cmd=parts[0].lower();arg=parts[1] if len(parts)>1 else "";args=arg.split()
+        raw=m.text.strip();command_text=raw.split(maxsplit=1)[1] if raw.lower().startswith(("ирис ","ириска ")) else raw[1:];parts=command_text.split(maxsplit=1);cmd=parts[0].lower();arg=parts[1] if len(parts)>1 else "";args=arg.split()
         chat,uid,p=m.chat.id,m.from_user.id,ph(db)
         await ensure_creator(chat,uid)
         lv=level(db,chat,uid);owner=uid in owners or db.is_admin(uid)
