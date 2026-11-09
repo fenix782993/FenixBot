@@ -140,6 +140,7 @@ class DB:
                 c.execute("CREATE TABLE IF NOT EXISTS achievements (uid BIGINT, code TEXT, title TEXT, earned TEXT, PRIMARY KEY(uid,code))")
                 c.execute("CREATE TABLE IF NOT EXISTS media_video_stats (id BIGSERIAL PRIMARY KEY, uid BIGINT, video_url TEXT, views BIGINT DEFAULT 0, checked_by BIGINT, created TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS audio_tracks (id BIGSERIAL PRIMARY KEY, uid BIGINT NOT NULL, title TEXT NOT NULL, artist TEXT, audio_url TEXT NOT NULL, visibility TEXT NOT NULL DEFAULT 'private', created TEXT NOT NULL)")
+                c.execute("CREATE TABLE IF NOT EXISTS wheel_spins (id BIGSERIAL PRIMARY KEY, uid BIGINT NOT NULL, prize_type TEXT NOT NULL, prize_name TEXT NOT NULL, prize_value TEXT, created TEXT NOT NULL)")
             else:
                 c.executescript("""
                     CREATE TABLE IF NOT EXISTS users(uid INTEGER PRIMARY KEY, username TEXT, nick TEXT UNIQUE, pwhash TEXT, ref INTEGER, created TEXT);
@@ -159,6 +160,7 @@ class DB:
                     CREATE TABLE IF NOT EXISTS achievements(uid INTEGER, code TEXT, title TEXT, earned TEXT, PRIMARY KEY(uid,code));
                     CREATE TABLE IF NOT EXISTS media_video_stats(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER, video_url TEXT, views INTEGER DEFAULT 0, checked_by INTEGER, created TEXT);
                     CREATE TABLE IF NOT EXISTS audio_tracks(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER NOT NULL, title TEXT NOT NULL, artist TEXT, audio_url TEXT NOT NULL, visibility TEXT NOT NULL DEFAULT 'private', created TEXT NOT NULL);
+                    CREATE TABLE IF NOT EXISTS wheel_spins(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER NOT NULL, prize_type TEXT NOT NULL, prize_name TEXT NOT NULL, prize_value TEXT, created TEXT NOT NULL);
                 """)
             owners = [int(x) for x in os.getenv("ADMIN_IDS", "").replace(" ", "").split(",") if x]
             for uid in owners:
