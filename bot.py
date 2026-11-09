@@ -2050,15 +2050,11 @@ async def _send_post_payload(chat_id, photo, text, keyboard=None):
             await bot.send_photo(chat_id, photo)
         return await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=keyboard)
     except Exception:
-        if "<tg-emoji " not in text:
-            raise
-        logging.warning("Telegram не разрешил Custom Emoji в публикации; отправляю обычные emoji")
-        fallback = _plain_post_fallback(text)
-        if photo and len(fallback) <= 1024:
-            return await bot.send_photo(chat_id, photo, caption=fallback, reply_markup=keyboard, parse_mode="HTML")
-        if photo:
-            await bot.send_photo(chat_id, photo)
-        return await bot.send_message(chat_id, fallback, parse_mode="HTML", reply_markup=keyboard)
+        # Не удаляем и не заменяем Premium Emoji незаметно: возвращаем ошибку владельцу,
+        # чтобы исходные custom_emoji_id не потерялись при публикации.
+        if "<tg-emoji " in text:
+            logging.exception("Telegram rejected Premium Emoji in post; original entities were not replaced")
+        raise
 
 async def send_composed(chat_id,data):
     """Любая публикация FENIX получает фирменную подпись и аккуратные emoji."""
@@ -2089,10 +2085,9 @@ async def send_composed(chat_id,data):
             await bot.send_message(chat_id, body, parse_mode="HTML",
                 reply_markup=keyboard if i==len(chunks)-1 else None)
         except Exception:
-            if "<tg-emoji " not in body:
-                raise
-            await bot.send_message(chat_id, _plain_post_fallback(body), parse_mode="HTML",
-                reply_markup=keyboard if i==len(chunks)-1 else None)
+            # Не публикуем урезанную версию без Premium Emoji.
+            logging.exception("Не удалось отправить часть публикации с исходными Premium Emoji")
+            raise
 
 @dp.channel_post()
 async def auto_style_channel_post(message: Message):
