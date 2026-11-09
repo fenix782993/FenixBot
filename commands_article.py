@@ -73,7 +73,7 @@ SECTIONS=[
 "!kiss / !поцелуй / !поцеловать — виртуальный поцелуй; ответь на сообщение или укажи ID.",
 "!obnyat / !обнять — виртуальное объятие; ответь на сообщение или укажи ID."
 ]),
-("Дополнительные модули FENIX — все команды бывшего IRIS",[
+("Дополнительные модули FENIX — полный набор команд",[
 "Модули заметок, закладок, таймеров, голосований, автоматизации, антиспама, социальных функций и игр подключены как часть FENIX. Команды можно вводить с !, / или точкой.",
 "!note add ТЕКСТ — сохранить заметку. Если команда отправлена ответом на сообщение, заметка относится к автору исходного сообщения.",
 "!note list / !notes — показать заметки. !note del ID — удалить заметку.",
@@ -183,7 +183,7 @@ async def ensure_article(db):
     existing=(db.setting("fenix_commands_article_url","") or "").strip()
     saved_token=(db.setting("fenix_commands_article_token","") or "").strip()
     saved_path=(db.setting("fenix_commands_article_path","") or "").strip()
-    version="fenix-manager-full-2026-11-09-v8"
+    version="fenix-manager-full-2026-11-09-v9"
     if existing and db.setting("fenix_commands_article_version","") == version:
         return existing
     timeout=aiohttp.ClientTimeout(total=35)
