@@ -219,15 +219,20 @@ def register(dp, bot, db, owner_ids=()):
         except Exception as e:
             log.exception("Admin gift send failed"); await c.answer(f"Ошибка отправки: {str(e)[:150]}",show_alert=True)
 
-    @router.callback_query(F.data.startswith("tgs:buy:"))
-    async def duplicate_guard(c):
-        await c.answer("Обнови каталог.",show_alert=True)
-
     @router.pre_checkout_query()
     async def pre_checkout(q):
         order=one(db,f"SELECT * FROM tg_store_orders WHERE payload={ph(db)}",(q.invoice_payload,))
         ok=bool(order and order["status"]=="invoice" and int(order["buyer_uid"])==q.from_user.id and int(order["stars"])==int(q.total_amount) and q.currency=="XTR")
-        await q.answer(ok=ok,error_message=None if ok else "Счёт недействителен. Открой магазин заново.")
+        error="Счёт недействителен. Открой магазин заново."
+        if ok:
+            try:
+                if await bot_star_balance() < int(order["stars"])-MARKUP_STARS:
+                    ok=False
+                    error="У магазина временно недостаточно Stars для отправки подарка. Попробуй позже."
+            except Exception:
+                ok=False
+                error="Не удалось проверить баланс магазина. Попробуй позже."
+        await q.answer(ok=ok,error_message=None if ok else error)
 
     @router.message(F.successful_payment)
     async def payment_success(m):
@@ -243,7 +248,7 @@ def register(dp, bot, db, owner_ids=()):
         if claimed!=1: return await m.answer("Этот платёж уже обрабатывается.")
         try:
             balance=await bot_star_balance()
-            gift_cost=int(one(db,f"SELECT stars FROM tg_store_items WHERE gift_id={p} AND owner_uid={p} ORDER BY created DESC LIMIT 1",(order["item_id"],order["buyer_uid"]))["stars"])
+            gift_cost=int(order["stars"])-MARKUP_STARS
             if balance<gift_cost: raise RuntimeError(f"Недостаточно Stars на балансе бота: {balance}, нужно {gift_cost}")
             payload={"user_id":int(order["recipient_uid"]),"gift_id":str(order["item_id"])}
             if order.get("note"): payload["text"]=order["note"]
