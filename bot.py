@@ -664,6 +664,9 @@ TELEGRAPH_HELP_CONTENT = [
     ("p", "/emojistatus — показать количество сохранённых ID и состояние настройки значков."),
     ("p", "/btnlist — показать каталог кнопок, которым можно назначить Premium Emoji."),
     ("p", "/setbtnemoji НОМЕР_КНОПКИ НОМЕР_ЭМОДЗИ — назначить кнопке элемент по номеру из списка. Сначала проверь номера командами /btnlist и /emojilist."),
+    ("p", "/setbtnemojiid КЛЮЧ ID_ЭМОДЗИ — назначить Premium Emoji любой зарегистрированной кнопке. Ключ берётся из строки «Ключ» в /btnlist; для URL-кнопок ключом служит точный текст кнопки. ID можно взять из /emojilist или из custom_emoji_id полученного Telegram-эмодзи."),
+    ("p", "/btnlist — показывает не только стандартный каталог, но и кнопки, которые бот уже отправлял; рядом указывает callback-ключ для точечного назначения."),
+
     ("p", "/resetbtnemoji — сбросить индивидуальные назначения значков кнопок к автоматическим настройкам."),
     ("p", "/premiumall — запустить пошаговую настройку значков: отправляй нужные Premium Emoji по одному, следуя подсказкам бота."),
     ("p", "/premiumstop — остановить пошаговую настройку Premium Emoji."),
@@ -686,8 +689,6 @@ TELEGRAPH_HELP_CONTENT = [
 
 async def get_telegraph_help_url():
     saved_url = db.setting("telegraph_help_url", "")
-    if saved_url:
-        return saved_url
     token = db.setting("telegraph_access_token", "")
     async with __import__("aiohttp").ClientSession() as session:
         if not token:
@@ -702,6 +703,20 @@ async def get_telegraph_help_url():
             token = account["result"]["access_token"]
             db.set_setting("telegraph_access_token", token)
         nodes = [{"tag": tag, "children": [value]} for tag, value in TELEGRAPH_HELP_CONTENT]
+        if saved_url:
+            path = saved_url.rstrip("/").split("/")[-1]
+            async with session.post("https://api.telegra.ph/editPage", data={
+                "access_token": token,
+                "path": path,
+                "title": TELEGRAPH_HELP_TITLE,
+                "author_name": "FENIX BOT",
+                "content": json.dumps(nodes, ensure_ascii=False),
+                "return_content": "false"
+            }, timeout=30) as response:
+                page = await response.json(content_type=None)
+            if page.get("ok"):
+                return saved_url
+            logging.warning("Telegraph editPage failed; creating a replacement page: %s", page)
         async with session.post("https://api.telegra.ph/createPage", data={
             "access_token": token,
             "title": TELEGRAPH_HELP_TITLE,
@@ -711,7 +726,7 @@ async def get_telegraph_help_url():
         }, timeout=30) as response:
             page = await response.json(content_type=None)
     if not page.get("ok"):
-        raise RuntimeError("Telegraph createPage failed: " + str(page))
+        raise RuntimeError("Telegraph create/edit page failed: " + str(page))
     url = page["result"]["url"]
     db.set_setting("telegraph_help_url", url)
     return url
