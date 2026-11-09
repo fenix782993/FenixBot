@@ -65,6 +65,13 @@ def level(db,chat,uid):
 def register(dp,bot,db,owner_ids=()):
     init(db); router=Router(name="fenix_iris_modules"); owners=set(owner_ids or ())
     commands="note|notes|bookmark|bookmarks|unbookmark|timer|vote|access|triggeradd|triggerdel|triggers|purge|del|report|antispam"
+    async def ensure_creator(chat_id, user_id):
+        try:
+            member=await bot.get_chat_member(chat_id,user_id)
+            if member.status=="creator":
+                p=ph(db);stamp_value=stamp(db)
+                run(db,f"INSERT INTO cm_roles(chat_id,uid,level,title,by_uid,updated) VALUES({','.join([p]*6)}) ON CONFLICT(chat_id,uid) DO UPDATE SET level=100,title='Владелец',updated=excluded.updated",(chat_id,user_id,100,"Владелец",user_id,stamp_value))
+        except Exception:pass
     pattern=re.compile(r"(?i)^(?:[!./](?:"+commands+r")(?:@[a-zA-Z0-9_]+)?(?=$|[^a-zA-Z0-9_])|ирис(?:ка)?[ ]+(?:"+commands+r")(?=$|[^a-zA-Z0-9_]))")
     @router.message(F.text.regexp(pattern))
     async def command(m):
@@ -72,7 +79,9 @@ def register(dp,bot,db,owner_ids=()):
         raw=m.text.strip()
         text=raw.split(maxsplit=1)[1] if raw.lower().startswith(("ирис ","ириска ")) else raw[1:]
         parts=text.split(maxsplit=1); cmd=parts[0].lower().split("@")[0]; arg=parts[1] if len(parts)>1 else ""; args=arg.split()
-        chat,uid,p=m.chat.id,m.from_user.id,ph(db); lv=level(db,chat,uid); owner=uid in owners or db.is_admin(uid)
+        chat,uid,p=m.chat.id,m.from_user.id,ph(db)
+        await ensure_creator(chat,uid)
+        lv=level(db,chat,uid); owner=uid in owners or db.is_admin(uid)
         ac=one(db,f"SELECT min_level,enabled FROM cm_access WHERE chat_id={p} AND command={p}",(chat,cmd))
         if ac and (not int(ac["enabled"]) or lv<int(ac["min_level"])):return await m.answer("⛔ Доступ к команде ограничен.")
         if cmd=="antispam":
@@ -245,6 +254,10 @@ def register(dp,bot,db,owner_ids=()):
                         try:await bot.send_message(x["chat_id"],"⏰ Напоминание: "+escape(x["body"]),parse_mode="HTML")
                         except Exception:log.exception("timer delivery failed")
             except Exception:log.exception("timer loop failed")
+            try:
+                cutoff=(datetime.now(timezone.utc)-timedelta(days=1)).isoformat()
+                run(db,f"DELETE FROM cm_message_events WHERE created<{p}",(cutoff,))
+            except Exception:pass
             await asyncio.sleep(10)
     asyncio.create_task(timers())
     dp.include_router(router)
