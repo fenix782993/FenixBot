@@ -562,8 +562,8 @@ async def wheel_home(req):
         "cost_rub":50,
         "balance":shop.balance(db,user_id),
         "history":db._all(f"SELECT id,prize_type,prize_name,prize_value,created FROM wheel_spins WHERE uid={db._ph()} ORDER BY id DESC LIMIT 20",(user_id,)),
-        "items":[{"code":p["code"],"name":p["name"],"image":p.get("image"),"weight":round(w,3)} for (code,w) in WHEEL_WEIGHTS if code not in ("nothing","fnz500","cash") for p in WHEEL_ITEMS if p["code"]==code],
-        "probabilities":{"nothing":60,"fnz500":15,"cash":10,"shop_items_total":15}
+        "items":[{"code":p["code"],"name":p["name"],"image":{ "bmw_m3":"/assets/bmw-m3.png","cybertruck":"/assets/cybertruck.png","audi_tt":"/assets/audi-tt.png","lancer_evo":"/assets/lancer-evolution.png","stage3_chip":"/assets/chip-stage-3.png","drift_smoke":"/assets/drift-smoke.svg","audio_system":"/assets/audio-system.png","nitro":"/assets/nitro.png","neon":"/assets/neon.png","military_id":"/assets/military-id.png"}.get(p["code"],"/assets/vehicle-number.png"),"weight":round(w,3)} for (code,w) in WHEEL_WEIGHTS if code not in ("nothing","fnz500","cash") for p in WHEEL_ITEMS if p["code"]==code],
+        "probabilities":{"nothing":60,"fnz500":15,"cash":10,"shop_items_total":15},"special_images":{"nothing":"/assets/prize-empty.svg","fnz500":"/assets/prize-fnz.svg","cash":"/assets/prize-cash.svg"}
     })
 
 async def wheel_spin(req):
