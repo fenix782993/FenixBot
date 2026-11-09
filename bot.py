@@ -2414,9 +2414,6 @@ async def start_health_server():
 
 async def main():
     db.init()
-    # Register the Iris-inspired feature router before Chat Manager's catch-all text handler.
-    from iris_features import register as register_iris_features
-    register_iris_features(dp, bot, db)
     from chat_manager import register_chat_manager
     register_chat_manager(dp, bot, db, OWNER_IDS)
     # Не перезаписываем пользовательский набор, импортированный владельцем через /emojipack.
