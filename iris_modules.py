@@ -7,8 +7,19 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 log=logging.getLogger("fenix.iris_modules")
 def ph(db): return "%s" if db.use_postgres else "?"
+class CursorResult:
+    def __init__(self, row=None, rowcount=0, lastrowid=None):
+        self._row=row
+        self.rowcount=rowcount
+        self.lastrowid=lastrowid
+    def fetchone(self):
+        return self._row
+
 def run(db,sql,args=()):
-    with db.con() as c: return c.execute(sql,args)
+    with db.con() as c:
+        cur=c.execute(sql,args)
+        row=cur.fetchone() if "RETURNING" in sql.upper() else None
+        return CursorResult(dict(row) if row is not None else None,cur.rowcount,getattr(cur,"lastrowid",None))
 def one(db,sql,args=()):
     with db.con() as c:
         x=c.execute(sql,args).fetchone()
