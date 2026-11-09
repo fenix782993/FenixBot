@@ -105,7 +105,7 @@ def register(dp,bot,db,owners=()):
             else:
                 _,last=execq(db,f"INSERT INTO cm_duels(chat_id,challenger,opponent,status,created) VALUES({p},{p},{p},'pending',{p})",(chat,uid,target,db._now()));did=int(last)
             kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⚔️ Принять дуэль",callback_data=f"fenduel:{did}")]])
-            return await m.answer(f"⚔️ <a href=\\"tg://user?id={uid}\\">Участник</a> вызывает <code>{target}</code> на дуэль в кости!",parse_mode="HTML",reply_markup=kb)
+            return await m.answer(f"⚔️ Участник <code>{uid}</code> вызывает <code>{target}</code> на дуэль в кости!",parse_mode="HTML",reply_markup=kb)
         if cmd in ("rep","reputation"):
             target=m.reply_to_message.from_user.id if m.reply_to_message and m.reply_to_message.from_user else (int(args[0]) if args and args[0].isdigit() else None)
             if not target:return await m.answer("Ответь !rep на сообщение или укажи Telegram ID.")
