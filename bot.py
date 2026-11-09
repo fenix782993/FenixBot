@@ -1,4 +1,4 @@
-import asyncio, logging, os, re, secrets, hashlib, html, json
+import asyncio, logging, os, re, secrets, hashlib, html, json, random
 import store as shop
 from datetime import datetime, timezone, timedelta
 from aiogram import Bot, Dispatcher, F
@@ -1855,38 +1855,111 @@ def split_message(text,limit=4000):
     if text: chunks.append(text)
     return chunks
 
+POST_FOOTER_HTML = (
+    "━━━━━━━━━━━━━━━━━━\\n<b>🔥 FENIX ONLINE</b>\\n"
+    "<i>Твой проект. Твои возможности.</i>\\n\\n"
+    "🛡 <b>VPN:</b> @fenixVPNrobot\\n"
+    "⭐ <b>Stars:</b> @Fenix_stars_bot\\n"
+    '💬 <b>Форум:</b> <a href="http://forum.wh35740.web1.maze-tech.ru/index.php">Открыть форум</a>'
+)
+POST_SIGNATURE_HTML = f"<blockquote>{POST_FOOTER_HTML}</blockquote>"
+
+def _post_emoji_items():
+    return [
+        item for item in _load_emoji_pack()
+        if isinstance(item, dict) and str(item.get("id", "")).isdigit()
+        and str(item.get("emoji", "")).strip()
+    ]
+
+def _decorate_post_html(content):
+    """Распределяет несколько Custom Emoji по абзацам, не меняя текст публикации."""
+    content = str(content or "").strip()
+    items = _post_emoji_items()
+    if not content or not items:
+        return content
+    lines = content.split("\\n")
+    candidates = [i for i, line in enumerate(lines) if line.strip()]
+    if not candidates:
+        return content
+    count = min(len(candidates), random.randint(2, 4))
+    chosen = set(random.sample(candidates, count))
+    for index in sorted(chosen, reverse=True):
+        item = random.choice(items)
+        emoji = html.escape(str(item.get("emoji") or "✨"), quote=False)
+        emoji_id = html.escape(str(item["id"]), quote=True)
+        lines[index] = f'<tg-emoji emoji-id="{emoji_id}">{emoji}</tg-emoji> ' + lines[index]
+    return "\\n".join(lines)
+
+def _plain_post_fallback(content):
+    return re.sub(r'<tg-emoji\\s+emoji-id="[^"]+">([^<]+)</tg-emoji>', r'\\1', content)
+
+def _build_post_html(raw):
+    author = _decorate_post_html(html.escape((raw or "").strip()))
+    return (author + "\\n\\n" if author else "") + POST_SIGNATURE_HTML
+
+async def _send_post_payload(chat_id, photo, text, keyboard=None):
+    """Try Premium Custom Emoji first; if Telegram disallows them, publish readable fallback."""
+    try:
+        if photo and len(text) <= 1024:
+            return await bot.send_photo(chat_id, photo, caption=text, reply_markup=keyboard, parse_mode="HTML")
+        if photo:
+            await bot.send_photo(chat_id, photo)
+        return await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=keyboard)
+    except Exception:
+        if "<tg-emoji " not in text:
+            raise
+        logging.warning("Telegram не разрешил Custom Emoji в публикации; отправляю обычные emoji")
+        fallback = _plain_post_fallback(text)
+        if photo and len(fallback) <= 1024:
+            return await bot.send_photo(chat_id, photo, caption=fallback, reply_markup=keyboard, parse_mode="HTML")
+        if photo:
+            await bot.send_photo(chat_id, photo)
+        return await bot.send_message(chat_id, fallback, parse_mode="HTML", reply_markup=keyboard)
+
 async def send_composed(chat_id,data):
-    """Авторский текст остаётся обычным; фирменная подпись FENIX цитируется внизу."""
+    """Любая публикация FENIX получает фирменную подпись и аккуратные emoji."""
     keyboard=None
     if data.get("bt") and data.get("bu"):
         keyboard=markup([[InlineKeyboardButton(text=data["bt"],url=data["bu"])]])
     raw=(data.get("text") or "").strip()
-    author=html.escape(raw)
-    footer=(
-        "━━━━━━━━━━━━━━━━━━\n<b>🔥 FENIX ONLINE</b>\n"
-        "<i>Твой проект. Твои возможности.</i>\n\n"
-        "🛡 <b>VPN:</b> @fenixVPNrobot\n"
-        "⭐ <b>Stars:</b> @Fenix_stars_bot\n"
-        '💬 <b>Форум:</b> <a href="http://forum.wh35740.web1.maze-tech.ru/index.php">Открыть форум</a>'
-    )
-    signature=f"<blockquote>{footer}</blockquote>"
-    text=(author+"\n\n" if author else "")+signature
+    text=_build_post_html(raw)
     photo=data.get("photo")
-    if photo and len(text)<=1024:
-        await bot.send_photo(chat_id,photo,caption=text,reply_markup=keyboard,parse_mode="HTML")
+    if len(text) <= (1024 if photo else 4096):
+        await _send_post_payload(chat_id, photo, text, keyboard)
         return
     if photo:
-        await bot.send_photo(chat_id,photo)
-    if len(text)<=4096:
-        await bot.send_message(chat_id,text,parse_mode="HTML",reply_markup=keyboard)
-        return
+        await bot.send_photo(chat_id, photo)
     chunks=split_message(raw)
     for i,chunk in enumerate(chunks):
-        body=html.escape(chunk)
+        body=_decorate_post_html(html.escape(chunk))
         if i==len(chunks)-1:
-            body+="\n\n"+signature
-        await bot.send_message(chat_id,body,parse_mode="HTML",
-                               reply_markup=keyboard if i==len(chunks)-1 else None)
+            body += "\\n\\n" + POST_SIGNATURE_HTML
+        try:
+            await bot.send_message(chat_id, body, parse_mode="HTML",
+                reply_markup=keyboard if i==len(chunks)-1 else None)
+        except Exception:
+            if "<tg-emoji " not in body:
+                raise
+            await bot.send_message(chat_id, _plain_post_fallback(body), parse_mode="HTML",
+                reply_markup=keyboard if i==len(chunks)-1 else None)
+
+@dp.channel_post()
+async def auto_style_channel_post(message: Message):
+    """Оформляет посты, опубликованные администраторами канала не через бота."""
+    if not CHANNEL or str(message.chat.id) != str(CHANNEL):
+        return
+    current = message.html_text or message.html_caption or message.text or message.caption or ""
+    if "FENIX ONLINE" in current and "fenixVPNrobot" in current:
+        return
+    decorated = _decorate_post_html(current)
+    final_text = (decorated + "\\n\\n" if decorated else "") + POST_SIGNATURE_HTML
+    try:
+        if message.text is not None:
+            await message.edit_text(final_text, parse_mode="HTML")
+        elif message.caption is not None:
+            await message.edit_caption(caption=final_text, parse_mode="HTML")
+    except Exception as exc:
+        logging.exception("Не удалось автоматически оформить channel post %s: %s", message.message_id, exc)
 
 async def _broadcast_worker(data, initiator):
     ids=db.user_ids()
@@ -1971,18 +2044,23 @@ async def main():
     register_chat_manager(dp, bot, db, OWNER_IDS)
     # Import the owner's OutlineEmoji custom-emoji pack automatically on startup.
     try:
-        sticker_set = await bot.get_sticker_set("OutlineEmoji")
-        pack_items = [
-            {"id": str(sticker.custom_emoji_id), "emoji": getattr(sticker, "emoji", None) or "💎"}
-            for sticker in sticker_set.stickers if getattr(sticker, "custom_emoji_id", None)
-        ]
+        pack_items = []
+        for pack_name in ("OutlineEmoji", "TONEmoji"):
+            try:
+                sticker_set = await bot.get_sticker_set(pack_name)
+                pack_items.extend(
+                    {"id": str(sticker.custom_emoji_id), "emoji": getattr(sticker, "emoji", None) or "💎", "pack": pack_name}
+                    for sticker in sticker_set.stickers if getattr(sticker, "custom_emoji_id", None)
+                )
+                logging.info("Loaded %s custom emoji set", pack_name)
+            except Exception:
+                logging.exception("Could not load custom emoji pack %s", pack_name)
         if pack_items:
-            db.set_setting("premium_emoji_pack", json.dumps(pack_items, ensure_ascii=False))
-            logging.info("Loaded OutlineEmoji pack: %s custom emoji IDs", len(pack_items))
+            unique = {item["id"]: item for item in pack_items}
+            db.set_setting("premium_emoji_pack", json.dumps(list(unique.values()), ensure_ascii=False))
+            logging.info("Loaded combined Premium Emoji pool: %s IDs", len(unique))
         else:
-            logging.warning("OutlineEmoji returned no custom emoji IDs")
-    except Exception:
-        logging.exception("Could not load OutlineEmoji pack at startup")
+            logging.warning("No custom emoji IDs loaded from OutlineEmoji / TONEmoji")
     logging.info("Assets directory: %s | found: %s", ASSETS_DIR, sorted(p.name for p in ASSETS_DIR.glob("*") if p.is_file()))
     runner = await start_health_server()
     try:
