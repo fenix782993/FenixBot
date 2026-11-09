@@ -12,7 +12,7 @@ AUTHOR="FENIX ONLINE"
 
 SECTIONS=[
 ("Как пользоваться",[
-"FENIX MANAGER работает в группах. Команды менеджера вводятся с ! или точкой; для команд бота используются /. Можно отвечать на сообщение участника или указывать его числовой Telegram ID. Бот должен быть администратором группы с нужными правами.",
+"FENIX MANAGER работает в группах. Команды Chat Manager доступны с !, точкой и через /команду из меню Telegram-группы. Полный список и русские алиасы смотри в !help. Можно отвечать на сообщение участника или указывать его числовой Telegram ID. Бот должен быть администратором группы с нужными правами.",
 "Уровни доступа: 20 — Помощник; 40 — Модератор; 60 — Администратор; 80 — Главный администратор; 100 — Владелец. Уровень проверяется для каждой команды отдельно.",
 "Для открытия меню используй /fenix. Для этой страницы — /help или /commands. Список возможностей зависит от включённых модулей, прав Telegram и настроек конкретной группы."
 ]),
@@ -158,7 +158,7 @@ async def ensure_article(db):
     existing=(db.setting("fenix_commands_article_url","") or "").strip()
     saved_token=(db.setting("fenix_commands_article_token","") or "").strip()
     saved_path=(db.setting("fenix_commands_article_path","") or "").strip()
-    version="fenix-manager-full-2026-11-09-v6"
+    version="fenix-manager-full-2026-11-09-v7"
     if existing and db.setting("fenix_commands_article_version","") == version:
         return existing
     timeout=aiohttp.ClientTimeout(total=35)
