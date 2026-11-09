@@ -346,10 +346,61 @@ PREMIUM_BUTTON_CATALOG = [
 ]
 
 def _load_emoji_pack():
+    """Return the merged emoji library from every imported custom-emoji pack."""
     try:
-        return json.loads(db.setting("premium_emoji_pack", "[]") or "[]")
+        value = json.loads(db.setting("premium_emoji_pack", "[]") or "[]")
+        if isinstance(value, list):
+            return value
+        if isinstance(value, dict):
+            merged, seen = [], set()
+            for pack in value.values():
+                for item in (pack.get("items", []) if isinstance(pack, dict) else []):
+                    if isinstance(item, dict) and str(item.get("id", "")).isdigit():
+                        emoji_id = str(item["id"])
+                        if emoji_id not in seen:
+                            seen.add(emoji_id)
+                            merged.append({"id": emoji_id, "emoji": item.get("emoji") or "💎"})
+            return merged
+        return []
     except Exception:
         return []
+
+
+def _load_emoji_packs():
+    """Load named packs; migrate the old flat list without losing imported IDs."""
+    try:
+        raw = json.loads(db.setting("premium_emoji_packs", "{}") or "{}")
+        packs = raw if isinstance(raw, dict) else {}
+    except Exception:
+        packs = {}
+    if not packs:
+        legacy = _load_emoji_pack()
+        if legacy:
+            packs["Импортированный набор"] = {"title": "Импортированный набор", "items": legacy}
+            db.set_setting("premium_emoji_packs", json.dumps(packs, ensure_ascii=False))
+    return packs
+
+
+def _save_named_emoji_pack(pack_name, title, items):
+    """Merge a pack into the library; importing another pack never deletes old ones."""
+    packs = _load_emoji_packs()
+    clean, seen = [], set()
+    for item in items:
+        emoji_id = str(item.get("id", "")).strip()
+        if emoji_id.isdigit() and emoji_id not in seen:
+            seen.add(emoji_id)
+            clean.append({"id": emoji_id, "emoji": item.get("emoji") or "💎"})
+    packs[str(pack_name)] = {"title": str(title or pack_name), "items": clean}
+    db.set_setting("premium_emoji_packs", json.dumps(packs, ensure_ascii=False))
+    merged, all_seen = [], set()
+    for pack in packs.values():
+        for item in (pack.get("items", []) if isinstance(pack, dict) else []):
+            emoji_id = str(item.get("id", ""))
+            if emoji_id.isdigit() and emoji_id not in all_seen:
+                all_seen.add(emoji_id)
+                merged.append({"id": emoji_id, "emoji": item.get("emoji") or "💎"})
+    db.set_setting("premium_emoji_pack", json.dumps(merged, ensure_ascii=False))
+    return len(clean), len(merged)
 
 def _save_button_emoji_map(mapping):
     db.set_setting("button_custom_emoji_map", json.dumps(mapping, ensure_ascii=False))
@@ -375,13 +426,15 @@ async def import_preloaded_emoji_ids(m: Message):
         if custom_id and custom_id not in seen:
             seen.add(custom_id)
             items.append({"id": custom_id, "emoji": getattr(sticker, "emoji", None) or "💎"})
-    db.set_setting("premium_emoji_pack", json.dumps(items, ensure_ascii=False))
+    added, total = _save_named_emoji_pack("emojiids85", "Проверенные 85 ID", items)
     await m.answer(
         "💎 <b>ПРОВЕРКА 85 PREMIUM EMOJI ЗАВЕРШЕНА</b>\n"
         f"Передано ID: <b>{len(PRELOADED_PREMIUM_EMOJI_IDS)}</b>\n"
         f"Подтверждено Telegram: <b>{len(items)}</b>\n"
+        f"Добавлено в библиотеку: <b>{added}</b>\n"
+        f"Всего в библиотеке: <b>{total}</b>\n"
         f"Не найдено: <b>{len(PRELOADED_PREMIUM_EMOJI_IDS)-len(items)}</b>\n\n"
-        "Теперь отправь /emojilist. Если Telegram вернул все 85 — они появятся в списке.",
+        "Список всех эмодзи: /emojilist\nНаборы: /emojipacks",
         parse_mode="HTML"
     )
 
@@ -389,71 +442,123 @@ async def import_preloaded_emoji_ids(m: Message):
 async def import_emoji_pack(m: Message):
     if not is_owner(m.from_user.id):
         return await m.answer("⛔ Импортировать наборы эмодзи может только владелец.")
-    parts = (m.text or "").split(maxsplit=1)
-    if len(parts) < 2:
+
+    # Read the complete message (including pasted/multiline links) rather than
+    # assuming that the URL is always in the second whitespace-separated part.
+    source_text = (m.text or m.caption or "").strip()
+    match = re.search(
+        r"(?:https?://)?(?:www\.)?(?:t\.me|telegram\.me)/(?:addemoji|addstickers)/([A-Za-z0-9_]+)",
+        source_text,
+        re.IGNORECASE
+    )
+    if not match:
         return await m.answer(
             "💎 <b>ИМПОРТ PREMIUM-ПАКА</b>\n\n"
-            "Отправь ссылку на набор:\n"
+            "Пришли команду и ссылку одним сообщением:\n"
             "<code>/emojipack https://t.me/addemoji/НАЗВАНИЕ_ПАКА</code>\n\n"
-            "Также поддерживается ссылка <code>t.me/addstickers/...</code>.",
+            "Можно также отправить <code>t.me/addstickers/...</code>. "
+            "Каждый новый набор добавляется к предыдущим, ничего не заменяется.",
             parse_mode="HTML"
         )
-    link = parts[1].strip()
-    match = re.search(r"(?:https?://)?(?:www\.)?(?:t\.me|telegram\.me)/(?:addemoji|addstickers)/([A-Za-z0-9_]+)", link, re.IGNORECASE)
-    if not match:
-        return await m.answer("❌ Не распознал ссылку. Нужна ссылка вида https://t.me/addemoji/название_пака")
+
     pack_name = match.group(1)
     try:
         sticker_set = await bot.get_sticker_set(pack_name)
-    except Exception as e:
+    except Exception:
         logging.exception("Не удалось получить Telegram sticker set %s", pack_name)
         return await m.answer(
-            "❌ Не удалось загрузить набор через Telegram Bot API. "
-            "Проверь ссылку и доступность набора для бота."
+            "❌ Telegram не смог открыть этот набор. Проверь, что ссылка публичная, "
+            "не повреждена и ведёт на существующий набор."
         )
+
     items = []
     for sticker in sticker_set.stickers:
         custom_id = getattr(sticker, "custom_emoji_id", None)
         if custom_id:
-            items.append({"id": str(custom_id), "emoji": getattr(sticker, "emoji", None) or "💎"})
+            items.append({
+                "id": str(custom_id),
+                "emoji": getattr(sticker, "emoji", None) or "💎"
+            })
+
     if not items:
+        sticker_type = str(getattr(sticker_set, "sticker_type", "") or "")
+        if sticker_type == "regular":
+            return await m.answer(
+                "⚠️ Это обычный набор стикеров, а не Premium Custom Emoji. "
+                "Обычные стикеры нельзя назначить значками кнопок через custom_emoji_id. "
+                "Пришли ссылку именно на набор из вкладки Premium Emoji."
+            )
         return await m.answer(
-            "⚠️ Набор получен, но Telegram не вернул для его элементов custom_emoji_id. "
-            "Убедись, что это именно набор Custom Emoji, а не обычных стикеров."
+            "⚠️ Набор найден, но Telegram не вернул ни одного custom_emoji_id. "
+            "Проверь, что это именно набор Custom Emoji."
         )
-    db.set_setting("premium_emoji_pack", json.dumps(items, ensure_ascii=False))
+
+    added, total = _save_named_emoji_pack(
+        pack_name,
+        getattr(sticker_set, "title", None) or pack_name,
+        items
+    )
+
     lines = [
-        "НАБОР СОХРАНЁН",
-        f"Пак: {pack_name}",
-        f"Premium Custom Emoji загружено: {len(items)}",
-        ""
-    ]
-    # Use one known single-code-point fallback (💎). Some sticker fallback
-    # glyphs contain ZWJ/variation selectors and can make Telegram reject offsets.
-    marker_positions = []
-    for i, item in enumerate(items[:30], 1):
-        line = f"{i}. 💎  ID: {item['id']}"
-        marker_positions.append((len("\n".join(lines)) + (1 if lines else 0) + len(f"{i}. "), str(item["id"])))
-        lines.append(line)
-    text = "\n".join(lines)
-    entities = []
-    for char_offset, custom_id in marker_positions:
-        utf16_offset = len(text[:char_offset].encode("utf-16-le")) // 2
-        entities.append(MessageEntity(
-            type="custom_emoji",
-            offset=utf16_offset,
-            length=1,
-            custom_emoji_id=custom_id
-        ))
-    if len(items) > 30:
-        lines.append(f"… и ещё {len(items)-30}")
-    lines += [
+        "💎 PREMIUM-ПАК ДОБАВЛЕН",
+        f"Набор: {getattr(sticker_set, 'title', None) or pack_name}",
+        f"Эмодзи в наборе: {len(items)}",
+        f"Новых добавлено: {added}",
+        f"Всего в общей библиотеке: {total}",
         "",
-        "Назначить значок кнопке: /setbtnemoji НОМЕР_КНОПКИ НОМЕР_ЭМОДЗИ",
+        "Список наборов: /emojipacks",
+        "Общий список эмодзи: /emojilist",
         "Список кнопок: /btnlist",
-        "Список эмодзи: /emojilist"
     ]
-    await m.answer("\n".join(lines), entities=entities)
+    await m.answer("\n".join(lines))
+
+
+@dp.message(Command("emojipacks"))
+async def list_emoji_packs(m: Message):
+    if not is_owner(m.from_user.id):
+        return await m.answer("⛔ Нет доступа.")
+    packs = _load_emoji_packs()
+    if not packs:
+        return await m.answer("Пока нет импортированных наборов. Добавь первый: /emojipack ссылка")
+    lines = ["💎 <b>МОИ PREMIUM-ПАКИ</b>", ""]
+    total = 0
+    for index, (name, pack) in enumerate(packs.items(), 1):
+        items = pack.get("items", []) if isinstance(pack, dict) else []
+        count = len(items)
+        total += count
+        title = html.escape(str(pack.get("title") or name))
+        lines.append(f"{index}. <b>{title}</b> — {count} эмодзи")
+        lines.append(f"<code>{html.escape(str(name))}</code>")
+    lines += ["", f"Всего записей в наборах: <b>{total}</b>", f"Уникальных эмодзи: <b>{len(_load_emoji_pack())}</b>"]
+    await m.answer("\n".join(lines), parse_mode="HTML")
+
+
+@dp.message(Command("emojipackremove"))
+async def remove_emoji_pack(m: Message):
+    if not is_owner(m.from_user.id):
+        return await m.answer("⛔ Нет доступа.")
+    parts = (m.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        return await m.answer(
+            "Формат: <code>/emojipackremove НАЗВАНИЕ_ПАКА</code>\n"
+            "Сначала посмотри точное название через /emojipacks.",
+            parse_mode="HTML"
+        )
+    name = parts[1].strip()
+    packs = _load_emoji_packs()
+    if name not in packs:
+        return await m.answer("❌ Такой набор не найден. Список: /emojipacks")
+    del packs[name]
+    db.set_setting("premium_emoji_packs", json.dumps(packs, ensure_ascii=False))
+    merged, seen = [], set()
+    for pack in packs.values():
+        for item in (pack.get("items", []) if isinstance(pack, dict) else []):
+            emoji_id = str(item.get("id", ""))
+            if emoji_id.isdigit() and emoji_id not in seen:
+                seen.add(emoji_id)
+                merged.append({"id": emoji_id, "emoji": item.get("emoji") or "💎"})
+    db.set_setting("premium_emoji_pack", json.dumps(merged, ensure_ascii=False))
+    await m.answer(f"✅ Набор удалён из библиотеки. Осталось уникальных эмодзи: {len(merged)}.")
 
 @dp.message(Command("emojistatus"))
 async def emoji_pack_status(m: Message):
