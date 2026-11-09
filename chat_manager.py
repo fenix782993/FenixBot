@@ -540,7 +540,9 @@ def register_chat_manager(dp, bot, db, owner_ids):
             else:
                 await cmui_show(c,"<b>FENIX MANAGER</b>\\nИспользуй кнопки настроек и модерации. Полный справочник команд доступен отдельной статьёй.",back)
         elif action=="commands":
-            await cmui_show(c,"<b>FENIX MANAGER · КОМАНДЫ</b>\\nПолный справочник открыт отдельной статьёй. Напиши /commands в личном чате с ботом, чтобы получить ссылку.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← Назад",callback_data="cmui:home")]]))
+            article=(db.setting("fenix_commands_article_url","") or "").strip()
+            kb=InlineKeyboardMarkup(inline_keyboard=([[InlineKeyboardButton(text="📖 Открыть справочник команд",url=article)]] if article else [])+[[InlineKeyboardButton(text="← Назад",callback_data="cmui:home")]])
+            await cmui_show(c,"<b>FENIX MANAGER · КОМАНДЫ</b>\\nПолный справочник команд проекта.",kb)
         elif action=="gifts":
             await cmui_show(c,"<b>🎁 TELEGRAM-ПОДАРКИ</b>\\nОткрой личный чат с ботом и нажми /stars. Там есть кнопка покупки подарка и Premium. Для подарка другому человеку используй /giftshop TELEGRAM_ID.",InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← Назад",callback_data="cmui:home")]]))
         elif action=="toggle" and len(data)>3:
