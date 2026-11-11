@@ -1564,6 +1564,79 @@ async def mno(c):
         try: await bot.send_message(a["uid"],"Заявка в медиапартнёры отклонена.")
         except: pass
     await c.message.edit_reply_markup(reply_markup=None); await c.answer("Отклонено")
+@dp.callback_query(F.data=="media_admin")
+async def media_admin(c):
+    if not is_admin(c.from_user.id): return await c.answer("Нет доступа.",show_alert=True)
+    rows=db.media_list(40)
+    if not rows:
+        return await edit_panel(c.message,"🤝 <b>МЕДИАПАРТНЁРЫ</b>\n\nСписок пока пуст.",parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="⬅️ В панель владельца",callback_data="owner")]]))
+    lines=["🤝 <b>УПРАВЛЕНИЕ МЕДИАПАРТНЁРАМИ</b>","━━━━━━━━━━━━━━━━━━"]
+    buttons=[]
+    labels={"pending":"🕒 Заявка","approved":"🟢 Медиапартнёр","rejected":"🔴 Отклонён","revoked":"⚫ Статус снят"}
+    for row in rows:
+        uid=int(row["uid"]); user=db.user(uid) or {}
+        nick=html.escape(str(user.get("nick") or user.get("username") or uid))
+        lines.append(f"\n<b>{nick}</b> · <code>{uid}</code>\n{labels.get(row.get('status'),row.get('status'))}\n{html.escape(str(row.get('ch') or ''))}")
+        buttons.append([InlineKeyboardButton(text=f"⚙️ {nick[:18]} · {uid}",callback_data=f"media_manage:{row['id']}")])
+    buttons.append([InlineKeyboardButton(text="⬅️ В панель владельца",callback_data="owner")])
+    await edit_panel(c.message,"\n".join(lines),parse_mode="HTML",reply_markup=markup(buttons)); await c.answer()
+
+@dp.callback_query(F.data.startswith("media_manage:"))
+async def media_manage(c):
+    if not is_admin(c.from_user.id): return await c.answer("Нет доступа.",show_alert=True)
+    mid=int(c.data.split(":",1)[1]); row=db.media_get(mid)
+    if not row: return await c.answer("Запись не найдена.",show_alert=True)
+    user=db.user(int(row["uid"])) or {}; nick=html.escape(str(user.get("nick") or user.get("username") or row["uid"]))
+    status={"pending":"На рассмотрении","approved":"Медиапартнёр","rejected":"Отклонён","revoked":"Статус снят"}.get(row.get("status"),str(row.get("status")))
+    text=(f"🤝 <b>КАРТОЧКА МЕДИАПАРТНЁРА</b>\n━━━━━━━━━━━━━━━━━━\n👤 {nick}\n🆔 <code>{row['uid']}</code>\n📌 Статус: <b>{status}</b>\n🔗 Канал: {html.escape(str(row.get('ch') or '—'))}\n📊 Аудитория: {html.escape(str(row.get('stats') or '—'))}\n📩 Контакт: {html.escape(str(row.get('contact') or '—'))}\n🗓 Заявка: {html.escape(str(row.get('created') or '—'))}")
+    buttons=[]
+    if row.get("status")=="approved": buttons.append([InlineKeyboardButton(text="➖ Снять статус медиапартнёра",callback_data=f"media_revoke:{mid}")])
+    else: buttons.append([InlineKeyboardButton(text="✅ Выдать статус медиапартнёра",callback_data=f"media_restore:{mid}")])
+    buttons += [[InlineKeyboardButton(text="🗑 Удалить запись полностью",callback_data=f"media_delete:{mid}")],[InlineKeyboardButton(text="⬅️ К списку медиапартнёров",callback_data="media_admin")]]
+    await edit_panel(c.message,text,parse_mode="HTML",reply_markup=markup(buttons)); await c.answer()
+
+@dp.callback_query(F.data.startswith("media_revoke:"))
+async def media_revoke(c):
+    if not is_admin(c.from_user.id): return await c.answer("Нет доступа.",show_alert=True)
+    mid=int(c.data.split(":",1)[1]); row=db.media_get(mid)
+    if not row or row.get("status")!="approved": return await c.answer("Активный медиапартнёр не найден.",show_alert=True)
+    db.media_status(mid,"revoked")
+    db.add_notification(int(row["uid"]),"Статус медиапартнёра снят","Администрация сняла с тебя статус медиапартнёра FENIX ONLINE.")
+    try: await bot.send_message(int(row["uid"]),"⚠️ Администрация FENIX ONLINE сняла с тебя статус медиапартнёра.")
+    except Exception: logging.exception("Media revoke notification failed")
+    await c.answer("Статус снят."); await media_manage(c)
+
+@dp.callback_query(F.data.startswith("media_restore:"))
+async def media_restore(c):
+    if not is_admin(c.from_user.id): return await c.answer("Нет доступа.",show_alert=True)
+    mid=int(c.data.split(":",1)[1]); row=db.media_get(mid)
+    if not row or row.get("status")=="approved": return await c.answer("Запись не найдена или статус уже активен.",show_alert=True)
+    db.media_status(mid,"approved")
+    db.add_notification(int(row["uid"]),"Статус медиапартнёра восстановлен","Тебе снова открыт доступ к кабинету медиапартнёра FENIX ONLINE.")
+    try: await bot.send_message(int(row["uid"]),"🎉 Тебе снова открыт статус медиапартнёра FENIX ONLINE.")
+    except Exception: logging.exception("Media restore notification failed")
+    await c.answer("Статус выдан."); await media_manage(c)
+
+@dp.callback_query(F.data.startswith("media_delete:"))
+async def media_delete_confirm(c):
+    if not is_admin(c.from_user.id): return await c.answer("Нет доступа.",show_alert=True)
+    mid=int(c.data.split(":",1)[1]); row=db.media_get(mid)
+    if not row: return await c.answer("Запись уже удалена.",show_alert=True)
+    await edit_panel(c.message,f"🗑 <b>УДАЛИТЬ АНКЕТУ?</b>\n\nID записи: <code>{mid}</code>\nTelegram ID: <code>{row['uid']}</code>\n\nАнкета удалится без восстановления. История выплат останется.",parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="🗑 Да, удалить",callback_data=f"media_delete_yes:{mid}")],[InlineKeyboardButton(text="↩️ Отмена",callback_data=f"media_manage:{mid}")]]))
+    await c.answer()
+
+@dp.callback_query(F.data.startswith("media_delete_yes:"))
+async def media_delete_yes(c):
+    if not is_admin(c.from_user.id): return await c.answer("Нет доступа.",show_alert=True)
+    mid=int(c.data.split(":",1)[1]); row=db.media_get(mid)
+    if not row: return await c.answer("Запись уже удалена.",show_alert=True)
+    db.media_delete(mid)
+    db.add_notification(int(row["uid"]),"Анкета медиапартнёра удалена","Администрация удалила твою анкету медиапартнёра FENIX ONLINE.")
+    try: await bot.send_message(int(row["uid"]),"🗑 Администрация FENIX ONLINE удалила твою анкету медиапартнёра.")
+    except Exception: logging.exception("Media delete notification failed")
+    await edit_panel(c.message,"✅ Анкета удалена. История выплат сохранена.",reply_markup=markup([[InlineKeyboardButton(text="⬅️ К медиапартнёрам",callback_data="media_admin")],[InlineKeyboardButton(text="⚙️ Панель владельца",callback_data="owner")]]))
+    await c.answer("Удалено")
+
 @dp.callback_query(F.data=="button_emoji_setup")
 async def button_emoji_setup(c, state: FSMContext):
     if not is_owner(c.from_user.id):
@@ -1586,6 +1659,7 @@ async def owner(c):
         [InlineKeyboardButton(text="📣 Опубликовать пост",callback_data="post")],
         [InlineKeyboardButton(text="📨 Рассылка",callback_data="broadcast")],
         [InlineKeyboardButton(text="💸 Заявки на выплаты",callback_data="payout_queue")],
+        [InlineKeyboardButton(text="🤝 Управление медиапартнёрами",callback_data="media_admin")],
         [InlineKeyboardButton(text="🎫 Обращения игроков",callback_data="ticket_queue")],
         [InlineKeyboardButton(text="🎨 Кастомизация бота",callback_data="customize")],
         [InlineKeyboardButton(text="👥 Составы и чаты",callback_data="staff_setup")],
