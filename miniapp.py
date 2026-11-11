@@ -893,6 +893,9 @@ async def main():
         log.exception("FENIX command reference publishing failed; /commands will retry after next deploy")
     from chat_manager import register_chat_manager
     register_chat_manager(core.dp, tg, db, core.OWNER_IDS)
+    # Register games on Render's real entrypoint; miniapp.main() owns polling.
+    from arena import register_arena
+    register_arena(core.dp, tg, db, core.markup, core.subscribed, core.REQUIRED_CHANNEL_URL)
     # Load all configured Premium Custom Emoji packs in the actual Render entrypoint.
     # miniapp.main() owns startup; bot.py's standalone main() is not used on Render.
     try:
