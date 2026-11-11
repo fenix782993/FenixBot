@@ -24,6 +24,15 @@ OWNER_IDS={int(x) for x in os.getenv('OWNER_IDS', os.getenv('ADMIN_IDS','')).rep
 REQUIRED_CHANNEL_URL = CHANNEL_URL or "https://t.me/+1usTps-EXmxjNWRl"
 def is_admin(uid): return db.is_admin(uid)
 
+def ensure_user(uid, username=None, first_name=None):
+    user = db.user(int(uid))
+    if user: return user
+    nick = str(username or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_]{3,24}", nick) or db.nick_exists(nick): nick = f"tg_{int(uid)}"
+    try: db.add_user(int(uid), str(username or ""), nick, "", None)
+    except Exception: logging.exception("Automatic Telegram account creation failed for %s", uid)
+    return db.user(int(uid))
+
 def payout_status_label(status):
     return {"pending":"🕒 На проверке","paid":"✅ Выплачено","rejected":"❌ Отклонено"}.get(str(status), str(status))
 
@@ -278,31 +287,6 @@ async def edit_panel(message, text, reply_markup=None, parse_mode="HTML"):
         except Exception:
             return await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
 
-@dp.callback_query(F.data == "fenixid:show")
-async def fenix_id_open(c):
-    try:
-        from fenix_id import render as render_fenix_id
-        text = render_fenix_id(db, c.from_user)
-        await edit_panel(c.message, text, parse_mode="HTML", reply_markup=markup([
-            [InlineKeyboardButton(text="🔄 Обновить профиль", callback_data="fenixid:show")],
-            [InlineKeyboardButton(text="⬅️ В меню", callback_data="back_home")]
-        ]))
-        await c.answer()
-    except Exception:
-        logging.exception("FENIX ID open failed")
-        await c.answer("Не удалось открыть FENIX ID. Ошибка записана.", show_alert=True)
-
-@dp.message(Command("fenixid"))
-@dp.message(Command("idcard"))
-async def fenix_id_command(m):
-    try:
-        from fenix_id import render as render_fenix_id
-        await m.answer(render_fenix_id(db, m.from_user), parse_mode="HTML",
-            reply_markup=markup([[InlineKeyboardButton(text="🪪 Открыть FENIX ID", callback_data="fenixid:show")]]))
-    except Exception:
-        logging.exception("FENIX ID command failed")
-        await m.answer("Не удалось открыть FENIX ID. Попробуй ещё раз позже.")
-
 def menu(uid):
     media_status=(db.media_current(uid) or {}).get("status")
     label=db.setting("home_label","📢 Новости FENIX ONLINE")
@@ -312,8 +296,6 @@ def menu(uid):
           [InlineKeyboardButton(text=db.setting("wheel_label","🎡 Колесо фортуны · 50 ₽"),url=wheel_url)],
           [InlineKeyboardButton(text=db.setting("stars_label","⭐ Пополнить Stars"),callback_data="donate_stars"),
            InlineKeyboardButton(text=db.setting("manual_label","💳 Ручное пополнение"),callback_data="manual_donation")],
-          [InlineKeyboardButton(text="🎮 Игры",callback_data="arena_lobby")],
-          [InlineKeyboardButton(text=db.setting("fenixid_label","🪪 FENIX ID"),callback_data="fenixid:show")],
           [InlineKeyboardButton(text=db.setting("cab_label","👤 Личный кабинет"),callback_data="cab"),
            InlineKeyboardButton(text=db.setting("ref_label","🔗 Моя реферальная ссылка"),callback_data="ref")],
           [InlineKeyboardButton(text=db.setting("stats_label","📊 Статистика"),callback_data="stats"),
@@ -330,7 +312,7 @@ class S(StatesGroup):
     post_button_choice=State(); post_button=State(); post_url=State()
     button_label=State(); button_url=State(); broadcast=State(); admin_add=State(); admin_remove=State()
     button_emoji=State(); button_emoji_sequence=State()
-    support_subject=State(); support_body=State(); arena_custom_stake=State()
+    support_subject=State(); support_body=State()
 def hashpw(p):
     salt=secrets.token_hex(16)
     return salt+"$"+hashlib.pbkdf2_hmac("sha256",p.encode(),salt.encode(),200000).hex()
@@ -809,12 +791,9 @@ async def start(m:Message,state:FSMContext):
                                      [InlineKeyboardButton(text="✅ Проверить подписку", callback_data="check_subscription")]])
             )
             return
-        u=db.user(m.from_user.id)
+        u=ensure_user(m.from_user.id, m.from_user.username, m.from_user.first_name)
         args=(m.text or '').split(maxsplit=1)
         payload=args[1] if len(args)>1 else ''
-        if payload == "arena":
-            bal=db.arena_wallet(m.from_user.id)
-            return await m.answer(f"🔥 <b>FENIX ARENA</b>\\nТестовый баланс: ⭐ {bal:g}\\n\\nРегистрация игрового аккаунта не требуется. Звёзды виртуальные, вывода нет.",parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="🎮 Открыть лобби",callback_data="arena_lobby")]]))
         if u and payload == "fenix_gifts":
             return await m.answer(
                 "🎁 <b>FENIX · МАГАЗИН TELEGRAM</b>\nВыбери, что хочешь купить:",
@@ -844,22 +823,7 @@ async def start(m:Message,state:FSMContext):
             kb=markup([[InlineKeyboardButton(text='✅ Подтвердить покупку',callback_data='buy_confirm:'+code)],
                        [InlineKeyboardButton(text='❌ Отмена',callback_data='buy_cancel')]])
             return await m.answer('🛒 Подтверждение покупки\n\nТовар: '+item['name']+'\nЦена: '+str(item['price'])+' FNZ\nИгровой ник: '+u['nick']+'\n\nПодтверди списание с баланса.',reply_markup=kb)
-        if u:
-            return await answer_visual(
-                m, "welcome", welcome_caption(),
-                reply_markup=menu(m.from_user.id)
-            )
-        p=(m.text or "").split(maxsplit=1); ref=None
-        if len(p)>1 and p[1].startswith("r"):
-            try: ref=int(p[1][1:])
-            except: pass
-        if ref==m.from_user.id: ref=None
-        await state.update_data(ref=ref)
-        await state.set_state(S.nick)
-        await answer_visual(
-            m, "welcome",
-            db.setting("registration_text", "🔥 FENIX ONLINE — регистрация\n\nВведи игровой никнейм (3–24 символа, латиница, цифры и _).")
-        )
+        return await answer_visual(m, "welcome", welcome_caption(), reply_markup=menu(m.from_user.id))
     except Exception:
         logging.exception("Ошибка /start")
         await m.answer("Не удалось открыть бота. Попробуй ещё раз позже.")
@@ -1072,29 +1036,6 @@ async def check_subscription(c):
     await c.message.answer("✅ Подписка подтверждена. Нажми /start для продолжения.")
     await c.answer("Подписка подтверждена")
 
-@dp.message(S.nick)
-async def nick(m:Message,state:FSMContext):
-    n=(m.text or "").strip()
-    if not re.fullmatch(r"[A-Za-z0-9_]{3,24}",n): return await m.answer("Неверный формат. Пример: Fenix_Rudcov")
-    if db.nick_exists(n): return await m.answer("Такой ник уже занят. Введи другой.")
-    await state.update_data(nick=n); await state.set_state(S.password)
-    await m.answer("Придумай пароль кабинета (минимум 8 символов). Не используй пароль от других сервисов.")
-@dp.message(S.password)
-async def password(m:Message,state:FSMContext):
-    p=m.text or ""
-    if len(p)<8: return await m.answer("Пароль должен быть не короче 8 символов.")
-    d=await state.get_data(); db.add_user(m.from_user.id,m.from_user.username or "",d["nick"],hashpw(p),d.get("ref"))
-    db.achievement_award(m.from_user.id,"first_login","Первый вход в FENIX ONLINE")
-    if d.get("ref") and db.user(d["ref"]):
-        db.add_ref(d["ref"],m.from_user.id)
-        if db.ref_count(d["ref"]) >= 1:
-            db.achievement_award(d["ref"],"first_referral","Первый приглашённый игрок")
-            db.add_notification(d["ref"],"Новый реферал",f"По твоей ссылке зарегистрировался игрок {d['nick']}.")
-    await state.clear()
-    await answer_visual(m, "welcome", "✅ Регистрация завершена!", reply_markup=menu(m.from_user.id))
-    if d.get("ref"):
-        try: await bot.send_message(d["ref"],f"🎉 По твоей ссылке зарегистрировался игрок {d['nick']}.")
-        except: pass
 @dp.callback_query(F.data=="cab")
 async def cab(c):
     try:
@@ -1925,7 +1866,6 @@ CUSTOM_LABELS={
     "wheel":("wheel_label","🎡 Колесо фортуны · 50 ₽","wheel"),
     "stars":("stars_label","⭐ Пополнить Stars","donate_stars"),
     "manual":("manual_label","💳 Ручное пополнение","manual_donation"),
-    "fenixid":("fenixid_label","🪪 FENIX ID","fenixid:show"),
     "cab":("cab_label","👤 Личный кабинет","cab"),
     "ref":("ref_label","🔗 Моя реферальная ссылка","ref"),
     "stats":("stats_label","📊 Статистика","stats"),
@@ -2323,8 +2263,6 @@ async def main():
     db.init()
     from chat_manager import register_chat_manager
     register_chat_manager(dp, bot, db, OWNER_IDS)
-    from arena import register_arena
-    register_arena(dp, bot, db, markup, subscribed, REQUIRED_CHANNEL_URL)
     # Не перезаписываем пользовательский набор, импортированный владельцем через /emojipack.
     # Встроенные наборы используются только как стартовый резерв, если пользовательский пак ещё пуст.
     try:
