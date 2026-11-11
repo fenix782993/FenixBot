@@ -139,11 +139,15 @@ class DB:
                 c.execute("CREATE TABLE IF NOT EXISTS notifications (id BIGSERIAL PRIMARY KEY, uid BIGINT, title TEXT, body TEXT, created TEXT, is_read INTEGER DEFAULT 0)")
                 c.execute("CREATE TABLE IF NOT EXISTS achievements (uid BIGINT, code TEXT, title TEXT, earned TEXT, PRIMARY KEY(uid,code))")
                 c.execute("CREATE TABLE IF NOT EXISTS media_video_stats (id BIGSERIAL PRIMARY KEY, uid BIGINT, video_url TEXT, views BIGINT DEFAULT 0, checked_by BIGINT, created TEXT)")
+                c.execute("CREATE TABLE IF NOT EXISTS arena_wallets (uid BIGINT PRIMARY KEY, stars DOUBLE PRECISION NOT NULL DEFAULT 1000)")
+                c.execute("CREATE TABLE IF NOT EXISTS arena_rooms (id BIGSERIAL PRIMARY KEY, game TEXT NOT NULL, host BIGINT NOT NULL, opponent BIGINT, stake DOUBLE PRECISION NOT NULL, status TEXT NOT NULL, board TEXT, turn BIGINT, p1_choice TEXT, p2_choice TEXT, created TEXT NOT NULL)")
                 c.execute("CREATE TABLE IF NOT EXISTS audio_tracks (id BIGSERIAL PRIMARY KEY, uid BIGINT NOT NULL, title TEXT NOT NULL, artist TEXT, audio_url TEXT NOT NULL, visibility TEXT NOT NULL DEFAULT 'private', created TEXT NOT NULL)")
                 c.execute("CREATE TABLE IF NOT EXISTS wheel_spins (id BIGSERIAL PRIMARY KEY, uid BIGINT NOT NULL, prize_type TEXT NOT NULL, prize_name TEXT NOT NULL, prize_value TEXT, created TEXT NOT NULL)")
                 c.execute("CREATE TABLE IF NOT EXISTS vehicle_plates (plate TEXT PRIMARY KEY, uid BIGINT NOT NULL, country TEXT, created TEXT NOT NULL)")
             else:
                 c.executescript("""
+                    CREATE TABLE IF NOT EXISTS arena_wallets(uid INTEGER PRIMARY KEY, stars REAL NOT NULL DEFAULT 1000);
+                    CREATE TABLE IF NOT EXISTS arena_rooms(id INTEGER PRIMARY KEY AUTOINCREMENT, game TEXT NOT NULL, host INTEGER NOT NULL, opponent INTEGER, stake REAL NOT NULL, status TEXT NOT NULL, board TEXT, turn INTEGER, p1_choice TEXT, p2_choice TEXT, created TEXT NOT NULL);
                     CREATE TABLE IF NOT EXISTS users(uid INTEGER PRIMARY KEY, username TEXT, nick TEXT UNIQUE, pwhash TEXT, ref INTEGER, created TEXT);
                     CREATE TABLE IF NOT EXISTS refs(ref INTEGER, uid INTEGER UNIQUE, created TEXT);
                     CREATE TABLE IF NOT EXISTS media(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER, ch TEXT, stats TEXT, contact TEXT, status TEXT, created TEXT);
@@ -510,6 +514,74 @@ class DB:
 
     def media_video_views_total(self, uid):
         return int(self._scalar(f"SELECT COALESCE(SUM(views),0) FROM media_video_stats WHERE uid={self._ph()}", (uid,)) or 0)
+
+
+    # FENIX ARENA: virtual test balance only.
+    def arena_wallet(self, uid):
+        with self.con() as c:
+            if self.use_postgres: c.execute("INSERT INTO arena_wallets(uid,stars) VALUES(%s,1000) ON CONFLICT(uid) DO NOTHING",(uid,))
+            else: c.execute("INSERT OR IGNORE INTO arena_wallets(uid,stars) VALUES(?,1000)",(uid,))
+        return float(self._scalar(f"SELECT stars FROM arena_wallets WHERE uid={self._ph()}",(uid,)) or 0)
+
+    def arena_room_create(self, game, host, stake):
+        if game not in ("rps","ttt") or not 10 <= int(stake) <= 1000: return None
+        with self.con() as c:
+            ph=self._ph()
+            if self.use_postgres:
+                c.execute("INSERT INTO arena_wallets(uid,stars) VALUES(%s,1000) ON CONFLICT(uid) DO NOTHING",(host,))
+                row=c.execute("SELECT stars FROM arena_wallets WHERE uid=%s FOR UPDATE",(host,)).fetchone(); bal=float(row["stars"])
+            else:
+                c.execute("INSERT OR IGNORE INTO arena_wallets(uid,stars) VALUES(?,1000)",(host,))
+                row=c.execute("SELECT stars FROM arena_wallets WHERE uid=?",(host,)).fetchone(); bal=float(row[0])
+            if bal < stake: return None
+            c.execute(f"UPDATE arena_wallets SET stars=stars-{ph} WHERE uid={ph}",(stake,host))
+            board='[null,null,null,null,null,null,null,null,null]' if game=='ttt' else '{"wins":[0,0],"round":1}'
+            if self.use_postgres:
+                row=c.execute("INSERT INTO arena_rooms(game,host,stake,status,board,turn,created) VALUES(%s,%s,%s,'waiting',%s,%s,%s) RETURNING id",(game,host,stake,board,host,self._now())).fetchone(); return row["id"]
+            cur=c.execute("INSERT INTO arena_rooms(game,host,stake,status,board,turn,created) VALUES(?,?,?,'waiting',?,?,?)",(game,host,stake,board,host,self._now())); return cur.lastrowid
+
+    def arena_waiting(self, limit=15):
+        return self._all("SELECT * FROM arena_rooms WHERE status='waiting' ORDER BY id DESC LIMIT "+str(max(1,min(int(limit),50))))
+
+    def arena_room(self, rid):
+        return self._one(f"SELECT * FROM arena_rooms WHERE id={self._ph()}",(rid,))
+
+    def arena_join(self, rid, uid):
+        with self.con() as c:
+            ph=self._ph()
+            row=c.execute(f"SELECT * FROM arena_rooms WHERE id={ph}"+(" FOR UPDATE" if self.use_postgres else ""),(rid,)).fetchone()
+            if not row: return "missing"
+            r=dict(row)
+            if r["status"]!="waiting": return "closed"
+            if int(r["host"])==int(uid): return "self"
+            if self.use_postgres:
+                c.execute("INSERT INTO arena_wallets(uid,stars) VALUES(%s,1000) ON CONFLICT(uid) DO NOTHING",(uid,))
+                w=c.execute("SELECT stars FROM arena_wallets WHERE uid=%s FOR UPDATE",(uid,)).fetchone(); bal=float(w["stars"])
+            else:
+                c.execute("INSERT OR IGNORE INTO arena_wallets(uid,stars) VALUES(?,1000)",(uid,))
+                w=c.execute("SELECT stars FROM arena_wallets WHERE uid=?",(uid,)).fetchone(); bal=float(w[0])
+            if bal<float(r["stake"]): return "funds"
+            c.execute(f"UPDATE arena_wallets SET stars=stars-{ph} WHERE uid={ph}",(r["stake"],uid))
+            c.execute(f"UPDATE arena_rooms SET opponent={ph},status='playing',turn={ph} WHERE id={ph} AND status='waiting'",(uid,uid,rid))
+            return "ok"
+
+    def arena_move(self, rid, uid, board, turn, status, p1=None, p2=None):
+        ph=self._ph()
+        with self.con() as c:
+            c.execute(f"UPDATE arena_rooms SET board=COALESCE({ph},board),turn={ph},status={ph},p1_choice=COALESCE({ph},p1_choice),p2_choice=COALESCE({ph},p2_choice) WHERE id={ph}",(board,turn,status,p1,p2,rid))
+
+    def arena_settle(self, rid, winner):
+        ph=self._ph()
+        with self.con() as c:
+            row=c.execute(f"SELECT host,opponent,stake,status FROM arena_rooms WHERE id={ph}"+(" FOR UPDATE" if self.use_postgres else ""),(rid,)).fetchone()
+            if not row: return False
+            r=dict(row)
+            if r["status"]=="finished" or not r["opponent"]: return False
+            if winner is None:
+                for uid in (r["host"],r["opponent"]): c.execute(f"UPDATE arena_wallets SET stars=stars+{ph} WHERE uid={ph}",(r["stake"],uid))
+            elif winner in (r["host"],r["opponent"]): c.execute(f"UPDATE arena_wallets SET stars=stars+{ph} WHERE uid={ph}",(float(r["stake"])*1.75,winner))
+            else: return False
+            c.execute(f"UPDATE arena_rooms SET status='finished' WHERE id={ph}",(rid,)); return True
 
     def open_tickets(self, limit=30):
         return self._all("SELECT id,uid,subject,status,created,updated FROM tickets WHERE status IN ('open','answered') ORDER BY updated DESC LIMIT " + str(int(limit)))

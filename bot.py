@@ -312,6 +312,7 @@ def menu(uid):
           [InlineKeyboardButton(text=db.setting("wheel_label","🎡 Колесо фортуны · 50 ₽"),url=wheel_url)],
           [InlineKeyboardButton(text=db.setting("stars_label","⭐ Пополнить Stars"),callback_data="donate_stars"),
            InlineKeyboardButton(text=db.setting("manual_label","💳 Ручное пополнение"),callback_data="manual_donation")],
+          [InlineKeyboardButton(text="🎮 FENIX ARENA",callback_data="arena_lobby")],
           [InlineKeyboardButton(text=db.setting("fenixid_label","🪪 FENIX ID"),callback_data="fenixid:show")],
           [InlineKeyboardButton(text=db.setting("cab_label","👤 Личный кабинет"),callback_data="cab"),
            InlineKeyboardButton(text=db.setting("ref_label","🔗 Моя реферальная ссылка"),callback_data="ref")],
@@ -329,7 +330,7 @@ class S(StatesGroup):
     post_button_choice=State(); post_button=State(); post_url=State()
     button_label=State(); button_url=State(); broadcast=State(); admin_add=State(); admin_remove=State()
     button_emoji=State(); button_emoji_sequence=State()
-    support_subject=State(); support_body=State()
+    support_subject=State(); support_body=State(); arena_custom_stake=State()
 def hashpw(p):
     salt=secrets.token_hex(16)
     return salt+"$"+hashlib.pbkdf2_hmac("sha256",p.encode(),salt.encode(),200000).hex()
@@ -811,6 +812,9 @@ async def start(m:Message,state:FSMContext):
         u=db.user(m.from_user.id)
         args=(m.text or '').split(maxsplit=1)
         payload=args[1] if len(args)>1 else ''
+        if payload == "arena":
+            bal=db.arena_wallet(m.from_user.id)
+            return await m.answer(f"🔥 <b>FENIX ARENA</b>\\nТестовый баланс: ⭐ {bal:g}\\n\\nРегистрация игрового аккаунта не требуется. Звёзды виртуальные, вывода нет.",parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="🎮 Открыть лобби",callback_data="arena_lobby")]]))
         if u and payload == "fenix_gifts":
             return await m.answer(
                 "🎁 <b>FENIX · МАГАЗИН TELEGRAM</b>\nВыбери, что хочешь купить:",
@@ -2319,6 +2323,8 @@ async def main():
     db.init()
     from chat_manager import register_chat_manager
     register_chat_manager(dp, bot, db, OWNER_IDS)
+    from arena import register_arena
+    register_arena(dp, bot, db, markup, subscribed, REQUIRED_CHANNEL_URL)
     # Не перезаписываем пользовательский набор, импортированный владельцем через /emojipack.
     # Встроенные наборы используются только как стартовый резерв, если пользовательский пак ещё пуст.
     try:
