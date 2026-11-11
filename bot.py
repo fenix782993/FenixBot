@@ -913,8 +913,7 @@ async def manual_donation_proof(m,state:FSMContext):
 
 @dp.callback_query(F.data == "donate_stars")
 async def donate_stars_menu(c):
-    if not db.user(c.from_user.id):
-        return await c.answer("Сначала зарегистрируйся через /start.", show_alert=True)
+    ensure_user(c.from_user.id, c.from_user.username, c.from_user.first_name)
     rows=[[InlineKeyboardButton(text=f"{rub} ₽ · {int(rub*1.05)} ⭐", callback_data=f"stars_rub:{rub}")]
           for rub in STARS_RUB_PRESETS]
     rows.append([InlineKeyboardButton(text="✏️ Ввести свою сумму", callback_data="stars_custom")])
