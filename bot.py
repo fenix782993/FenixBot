@@ -294,6 +294,8 @@ def menu(uid):
     wheel_url=os.getenv("WEBAPP_URL","https://fenixbot-vyqo.onrender.com").rstrip("/")+"/wheel"
     rows=[[InlineKeyboardButton(text=db.setting("gifts_label","🎁 Telegram-подарки"),callback_data="tgs:catalog")],
           [InlineKeyboardButton(text=db.setting("wheel_label","🎡 Колесо фортуны · 50 ₽"),url=wheel_url)],
+          [InlineKeyboardButton(text="🛡 FENIX VPN",url="https://t.me/fenixVPNrobot"),
+           InlineKeyboardButton(text="⭐ Купить дешёвые Stars",url="https://t.me/Fenix_stars_bot")],
           [InlineKeyboardButton(text=db.setting("stars_label","⭐ Пополнить Stars"),callback_data="donate_stars"),
            InlineKeyboardButton(text=db.setting("manual_label","💳 Ручное пополнение"),callback_data="manual_donation")],
           [InlineKeyboardButton(text=db.setting("cab_label","👤 Личный кабинет"),callback_data="cab"),
