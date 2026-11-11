@@ -294,6 +294,13 @@ class DB:
     def media_current(self, uid):
         return self._one(f"SELECT * FROM media WHERE uid={self._ph()} AND status IN ('pending','approved') ORDER BY id DESC LIMIT 1", (uid,))
 
+    def media_list(self, limit=40):
+        return self._all(f"SELECT * FROM media ORDER BY id DESC LIMIT {int(limit)}")
+
+    def media_delete(self, media_id):
+        with self.con() as c:
+            c.execute(f"DELETE FROM media WHERE id={self._ph()}", (media_id,))
+
     def media_payout(self, uid, amount, requisites):
         with self.con() as c:
             if self.use_postgres:
