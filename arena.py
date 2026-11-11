@@ -27,22 +27,32 @@ def register_arena(dp, bot, db, markup, subscribed, channel_url):
     async def create_room(target,game,stake,uid):
         rid=db.arena_room_create(game,uid,stake)
         if not rid: return await target.answer("Недостаточно тестовых звёзд. Стартовый баланс — 1000 ⭐.")
-        await target.answer(f"✅ Матч #{rid} создан. Ставка ⭐ {stake} заблокирована до завершения.",reply_markup=markup([[InlineKeyboardButton(text="🎮 Открыть лобби",callback_data="arena_lobby")]]))
+        await target.answer(f"✅ Матч #{rid} создан. Ставка ⭐ {stake} заблокирована до завершения.",reply_markup=markup([[InlineKeyboardButton(text="🎮 Игры",callback_data="arena_lobby")]]))
     @dp.message(F.text == "/arena")
     async def arena_command(m):
         if not await subscribed(m.from_user.id):
             return await m.answer("🔒 Для входа подпишись на канал.",reply_markup=markup([[InlineKeyboardButton(text="📢 Подписаться",url=channel_url)],[InlineKeyboardButton(text="✅ Проверить подписку",callback_data="check_subscription")]]))
         bal=db.arena_wallet(m.from_user.id)
-        await m.answer(f"🔥 <b>FENIX ARENA</b>\n⭐ Баланс: {bal:g} тестовых звёзд\nРегистрация игрового аккаунта не нужна. Вывод и обмен на деньги отключены.",parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="🎮 Открыть лобби",callback_data="arena_lobby")]]))
+        await m.answer(f"🔥 <b>FENIX ARENA</b>\n⭐ Баланс: {bal:g} тестовых звёзд\nРегистрация игрового аккаунта не нужна. Вывод и обмен на деньги отключены.",parse_mode="HTML",reply_markup=markup([[InlineKeyboardButton(text="🎮 Игры",callback_data="arena_lobby")]]))
     @dp.callback_query(F.data=="arena_wallet")
     async def wallet(c): await c.answer(f"Тестовый баланс: {db.arena_wallet(c.from_user.id):g} ⭐",show_alert=True)
     @dp.callback_query(F.data=="arena_lobby")
     async def lobby(c):
         if not await subscribed(c.from_user.id): return await c.answer("Сначала подпишись на канал.",show_alert=True)
-        rooms=db.arena_waiting(12); rows=[]
-        for r in rooms: rows.append([InlineKeyboardButton(text=f"#{r['id']} • {game_name(r['game'])} • {float(r['stake']):g} ⭐",callback_data=f"arena_join:{r['id']}")])
-        rows += [[InlineKeyboardButton(text="✊ Создать КНБ",callback_data="arena_create:rps"),InlineKeyboardButton(text="❌ Создать крестики-нолики",callback_data="arena_create:ttt")],[InlineKeyboardButton(text="⭐ Мой баланс",callback_data="arena_wallet")]]
-        await c.message.edit_text("🎮 <b>FENIX ARENA — ЛОББИ</b>\nВыбери открытый матч или создай свой."+("\nОткрытых матчей пока нет." if not rooms else ""),parse_mode="HTML",reply_markup=markup(rows)); await c.answer()
+        rows=[[InlineKeyboardButton(text="✊ Камень, ножницы, бумага",callback_data="arena_game:rps")],
+              [InlineKeyboardButton(text="❌ Крестики-нолики",callback_data="arena_game:ttt")],
+              [InlineKeyboardButton(text="⭐ Мой баланс",callback_data="arena_wallet")]]
+        await c.message.edit_text("🎮 <b>ИГРЫ</b>\\nВыбери игру:",parse_mode="HTML",reply_markup=markup(rows)); await c.answer()
+    @dp.callback_query(F.data.startswith("arena_game:"))
+    async def game_lobby(c):
+        if not await subscribed(c.from_user.id): return await c.answer("Сначала подпишись на канал.",show_alert=True)
+        game=c.data.split(":",1)[1]
+        if game not in ("rps","ttt"): return await c.answer("Игра не найдена.",show_alert=True)
+        rooms=[r for r in db.arena_waiting(50) if r["game"]==game]
+        rows=[[InlineKeyboardButton(text=f"Матч #{r['id']} · ставка {float(r['stake']):g} ⭐",callback_data=f"arena_join:{r['id']}")] for r in rooms]
+        rows.append([InlineKeyboardButton(text="➕ Создать игру",callback_data=f"arena_create:{game}")])
+        rows.append([InlineKeyboardButton(text="⬅️ К списку игр",callback_data="arena_lobby")])
+        await c.message.edit_text(f"🎮 <b>{game_name(game)}</b>\\n"+("Открытые матчи:" if rooms else "Пока нет открытых матчей. Создай первый!"),parse_mode="HTML",reply_markup=markup(rows)); await c.answer()
     @dp.callback_query(F.data.startswith("arena_create:"))
     async def choose_game(c):
         game=c.data.split(":",1)[1]

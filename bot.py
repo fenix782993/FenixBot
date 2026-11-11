@@ -312,7 +312,7 @@ def menu(uid):
           [InlineKeyboardButton(text=db.setting("wheel_label","🎡 Колесо фортуны · 50 ₽"),url=wheel_url)],
           [InlineKeyboardButton(text=db.setting("stars_label","⭐ Пополнить Stars"),callback_data="donate_stars"),
            InlineKeyboardButton(text=db.setting("manual_label","💳 Ручное пополнение"),callback_data="manual_donation")],
-          [InlineKeyboardButton(text="🎮 FENIX ARENA",callback_data="arena_lobby")],
+          [InlineKeyboardButton(text="🎮 Игры",callback_data="arena_lobby")],
           [InlineKeyboardButton(text=db.setting("fenixid_label","🪪 FENIX ID"),callback_data="fenixid:show")],
           [InlineKeyboardButton(text=db.setting("cab_label","👤 Личный кабинет"),callback_data="cab"),
            InlineKeyboardButton(text=db.setting("ref_label","🔗 Моя реферальная ссылка"),callback_data="ref")],
