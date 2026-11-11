@@ -835,8 +835,7 @@ STARS_RUB_PRESETS = (100, 300, 500, 1000, 2500, 5000)
 
 @dp.callback_query(F.data.startswith('buy_confirm:'))
 async def buy_confirm(c):
-    user=db.user(c.from_user.id)
-    if not user: return await c.answer('Сначала зарегистрируйся через /start.',show_alert=True)
+    user=ensure_user(c.from_user.id, c.from_user.username, c.from_user.first_name)
     code=c.data.split(':',1)[1]
     item=next((dict(x) for x in shop.PRODUCTS if x['code']==code),None)
     try: overrides=json.loads(db.setting('store_prices','{}') or '{}')
@@ -873,8 +872,7 @@ async def shop_orders(c):
     await c.answer()
 @dp.callback_query(F.data == "manual_donation")
 async def manual_donation_start(c,state:FSMContext):
-    if not db.user(c.from_user.id):
-        return await c.answer("Сначала зарегистрируйся через /start.",show_alert=True)
+    ensure_user(c.from_user.id, c.from_user.username, c.from_user.first_name)
     await state.set_state(S.manual_rub)
     await c.message.answer("Введи сумму перевода в рублях. Минимум 100 ₽.")
     await c.answer()
@@ -926,8 +924,7 @@ async def donate_stars_menu(c):
 
 @dp.callback_query(F.data=="stars_custom")
 async def stars_custom_start(c,state:FSMContext):
-    if not db.user(c.from_user.id):
-        return await c.answer("Сначала зарегистрируйся через /start.",show_alert=True)
+    ensure_user(c.from_user.id, c.from_user.username, c.from_user.first_name)
     await state.set_state(S.stars_custom)
     await c.message.answer("Введи сумму пополнения в рублях (от 100 до 100 000). Я выставлю счёт Telegram Stars.")
     await c.answer()
@@ -1039,9 +1036,7 @@ async def check_subscription(c):
 @dp.callback_query(F.data=="cab")
 async def cab(c):
     try:
-        u=db.user(c.from_user.id)
-        if not u:
-            return await c.answer("Сначала зарегистрируйся через /start", show_alert=True)
+        u=ensure_user(c.from_user.id, c.from_user.username, c.from_user.first_name)
         invited=db.ref_count(c.from_user.id)
         unread=db.unread_notifications(c.from_user.id)
         tickets=db.tickets_for_user(c.from_user.id,100)
@@ -1071,8 +1066,7 @@ async def cab(c):
 @dp.callback_query(F.data=="ref")
 async def ref(c):
     try:
-        if not db.user(c.from_user.id):
-            return await c.answer("Сначала зарегистрируйся через /start", show_alert=True)
+        ensure_user(c.from_user.id, c.from_user.username, c.from_user.first_name)
         me=await bot.get_me()
         link=f"https://t.me/{me.username}?start=r{c.from_user.id}"
         count=db.ref_count(c.from_user.id)
@@ -1086,7 +1080,7 @@ async def ref(c):
 @dp.message(Command("invite"))
 async def invite(m):
     if not CHANNEL: return await m.answer("Канал не настроен.")
-    if not db.user(m.from_user.id): return await m.answer("Сначала зарегистрируйся через /start")
+    ensure_user(m.from_user.id, m.from_user.username, m.from_user.first_name)
     try:
         x=await bot.create_chat_invite_link(CHANNEL,name=f"ref-{m.from_user.id}")
         db.save_invite(x.invite_link,m.from_user.id)
