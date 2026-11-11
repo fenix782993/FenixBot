@@ -100,8 +100,7 @@ async def auth(request, handler):
         if not user:
             return response("Требуется вход через Telegram.",401)
         request["tg_user"]=user
-        if not db.user(int(user["id"])):
-            return response("Сначала запусти бота командой /start и заверши регистрацию.",403)
+        core.ensure_user(int(user["id"]), user.get("username"), user.get("first_name"))
     return await handler(request)
 
 
@@ -109,7 +108,7 @@ async def login_telegram(req):
     data=await payload(req)
     user=verify_login_widget(data)
     if not user:return response("Telegram не подтвердил вход. Проверь домен бота и попробуй ещё раз.",401)
-    if not db.user(int(user["id"])):return response("Сначала зарегистрируйся в боте FENIX ONLINE через /start.",403)
+    core.ensure_user(int(user["id"]), user.get("username"), user.get("first_name"))
     res=response({"profile":user})
     res.set_cookie("fenix_session",make_session(user["id"]),httponly=True,secure=True,samesite="Lax",max_age=60*60*24*30,path="/")
     return res
@@ -876,8 +875,6 @@ async def main():
     # leaves all chat-manager commands and callback buttons without handlers.
     from telegram_store import register as register_telegram_store
     register_telegram_store(core.dp, tg, db, core.OWNER_IDS)
-    from fenix_id import register as register_fenix_id
-    register_fenix_id(core.dp, db)
     # Register narrow command routers before the legacy catch-all text router.
     from fenix_modules import register as register_fenix_modules
     register_fenix_modules(core.dp, tg, db, core.OWNER_IDS)
@@ -893,9 +890,6 @@ async def main():
         log.exception("FENIX command reference publishing failed; /commands will retry after next deploy")
     from chat_manager import register_chat_manager
     register_chat_manager(core.dp, tg, db, core.OWNER_IDS)
-    # Register games on Render's real entrypoint; miniapp.main() owns polling.
-    from arena import register_arena
-    register_arena(core.dp, tg, db, core.markup, core.subscribed, core.REQUIRED_CHANNEL_URL)
     # Load all configured Premium Custom Emoji packs in the actual Render entrypoint.
     # miniapp.main() owns startup; bot.py's standalone main() is not used on Render.
     try:
