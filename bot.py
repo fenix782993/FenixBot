@@ -2388,7 +2388,7 @@ async def start_health_server():
     # Render Web Service требует слушающий HTTP-порт.
     port = int(os.getenv("PORT", "10000"))
     app = web.Application()
-    app.router.add_get("/", health)
+    app.router.add_get("/", miniapp_index)
     app.router.add_get("/health", health)
     app.router.add_get("/miniapp/", miniapp_index)
     app.router.add_get("/api/miniapp/me", miniapp_me)
