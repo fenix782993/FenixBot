@@ -2421,7 +2421,7 @@ async def start_health_server():
             archive.extractall(site_root)
     port = int(os.getenv("PORT", "10000"))
     app = web.Application()
-    app.router.add_get("/", website_index)
+    app.router.add_get("/", miniapp_index)
     app.router.add_get("/health", health)
     app.router.add_get("/api/server-status", samp_server_status)
     app.router.add_get("/miniapp/", miniapp_index)
