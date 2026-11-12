@@ -3,7 +3,7 @@ import store as shop
 from datetime import datetime, timezone, timedelta
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, MessageEntity, WebAppInfo, LabeledPrice
+from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, MessageEntity, WebAppInfo, LabeledPrice, LinkPreviewOptions
 from pathlib import Path
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
@@ -2172,10 +2172,10 @@ async def _send_post_payload(chat_id, photo, text, keyboard=None):
     """Try Premium Custom Emoji first; if Telegram disallows them, publish readable fallback."""
     try:
         if photo and len(text) <= 1024:
-            return await bot.send_photo(chat_id, photo, caption=text, reply_markup=keyboard, parse_mode="HTML")
+            return await bot.send_photo(chat_id, photo, caption=text, reply_markup=keyboard, parse_mode="HTML", show_caption_above_media=False)
         if photo:
             await bot.send_photo(chat_id, photo)
-        return await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=keyboard)
+        return await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=keyboard, link_preview_options=LinkPreviewOptions(is_disabled=True))
     except Exception:
         # Не удаляем и не заменяем Premium Emoji незаметно: возвращаем ошибку владельцу,
         # чтобы исходные custom_emoji_id не потерялись при публикации.
@@ -2233,15 +2233,15 @@ async def _auto_style_channel_post(message: Message):
     final_text = (current.strip() + "\n\n" if current.strip() else "") + POST_SIGNATURE_HTML
     try:
         if message.text is not None:
-            await message.edit_text(final_text, parse_mode="HTML")
+            await message.edit_text(final_text, parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
         else:
-            await message.edit_caption(caption=final_text, parse_mode="HTML")
+            await message.edit_caption(caption=final_text, parse_mode="HTML", show_caption_above_media=False)
     except Exception as exc:
         if "<tg-emoji " in final_text:
             try:
                 fallback = _plain_post_fallback(final_text)
                 if message.text is not None:
-                    await message.edit_text(fallback, parse_mode="HTML")
+                    await message.edit_text(fallback, parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
                 else:
                     await message.edit_caption(caption=fallback, parse_mode="HTML")
                 logging.warning("Channel post %s styled with standard emoji fallback", message.message_id)
