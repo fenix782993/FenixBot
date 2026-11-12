@@ -1,4 +1,4 @@
-import asyncio, logging, os, re, secrets, hashlib, html, json, random, hmac, time
+import asyncio, logging, os, re, secrets, hashlib, html, json, random, hmac, time, zipfile
 import store as shop
 from datetime import datetime, timezone, timedelta
 from aiogram import Bot, Dispatcher, F
@@ -2381,17 +2381,29 @@ async def miniapp_tops(request):
 async def health(request):
     return web.json_response({"status": "ok", "service": "fenix-online-bot"})
 
+async def website_index(request):
+    site_root = Path(__file__).resolve().parent / "site"
+    return web.FileResponse(site_root / "index.html")
+
 async def start_health_server():
-    # Render Web Service требует слушающий HTTP-порт.
+    # Распаковываем оригинальные страницы и ресурсы сайта, собранные из файлов пользователя.
+    root = Path(__file__).resolve().parent
+    site_root = root / "site"
+    bundle = root / "fenix_full_site.zip"
+    if bundle.exists() and not (site_root / "index.html").exists():
+        with zipfile.ZipFile(bundle) as archive:
+            archive.extractall(site_root)
     port = int(os.getenv("PORT", "10000"))
     app = web.Application()
-    app.router.add_get("/", miniapp_index)
+    app.router.add_get("/", website_index)
     app.router.add_get("/health", health)
     app.router.add_get("/miniapp/", miniapp_index)
     app.router.add_get("/api/miniapp/me", miniapp_me)
     app.router.add_get("/api/miniapp/tops", miniapp_tops)
     app.router.add_static("/miniapp/assets/", str(Path(__file__).resolve().parent / "miniapp" / "assets"), show_index=False)
-    app.router.add_static("/assets/", str(Path(__file__).resolve().parent / "assets"), show_index=False)
+    app.router.add_static("/assets/", str(site_root / "assets"), show_index=False)
+    for page in ("client.html", "tops.html", "account.html", "donate.html", "shop.html"):
+        app.router.add_get("/" + page, lambda request, page=page: web.FileResponse(site_root / page))
     app.router.add_static("/launcher/", str(Path(__file__).resolve().parent / "launcher"), show_index=False)
     runner = web.AppRunner(app)
     await runner.setup()
