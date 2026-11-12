@@ -139,6 +139,7 @@ class DB:
                 c.execute("CREATE TABLE IF NOT EXISTS notifications (id BIGSERIAL PRIMARY KEY, uid BIGINT, title TEXT, body TEXT, created TEXT, is_read INTEGER DEFAULT 0)")
                 c.execute("CREATE TABLE IF NOT EXISTS achievements (uid BIGINT, code TEXT, title TEXT, earned TEXT, PRIMARY KEY(uid,code))")
                 c.execute("CREATE TABLE IF NOT EXISTS media_video_stats (id BIGSERIAL PRIMARY KEY, uid BIGINT, video_url TEXT, views BIGINT DEFAULT 0, checked_by BIGINT, created TEXT)")
+                c.execute("CREATE TABLE IF NOT EXISTS game_leaderboard (nickname TEXT PRIMARY KEY, level BIGINT DEFAULT 0, exp BIGINT DEFAULT 0, fhz BIGINT DEFAULT 0, pvp_wins BIGINT DEFAULT 0, pve_bosses BIGINT DEFAULT 0, updated TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS audio_tracks (id BIGSERIAL PRIMARY KEY, uid BIGINT NOT NULL, title TEXT NOT NULL, artist TEXT, audio_url TEXT NOT NULL, visibility TEXT NOT NULL DEFAULT 'private', created TEXT NOT NULL)")
                 c.execute("CREATE TABLE IF NOT EXISTS wheel_spins (id BIGSERIAL PRIMARY KEY, uid BIGINT NOT NULL, prize_type TEXT NOT NULL, prize_name TEXT NOT NULL, prize_value TEXT, created TEXT NOT NULL)")
                 c.execute("CREATE TABLE IF NOT EXISTS vehicle_plates (plate TEXT PRIMARY KEY, uid BIGINT NOT NULL, country TEXT, created TEXT NOT NULL)")
@@ -160,6 +161,7 @@ class DB:
                     CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER, title TEXT, body TEXT, created TEXT, is_read INTEGER DEFAULT 0);
                     CREATE TABLE IF NOT EXISTS achievements(uid INTEGER, code TEXT, title TEXT, earned TEXT, PRIMARY KEY(uid,code));
                     CREATE TABLE IF NOT EXISTS media_video_stats(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER, video_url TEXT, views INTEGER DEFAULT 0, checked_by INTEGER, created TEXT);
+                    CREATE TABLE IF NOT EXISTS game_leaderboard(nickname TEXT PRIMARY KEY, level INTEGER DEFAULT 0, exp INTEGER DEFAULT 0, fhz INTEGER DEFAULT 0, pvp_wins INTEGER DEFAULT 0, pve_bosses INTEGER DEFAULT 0, updated TEXT);
                     CREATE TABLE IF NOT EXISTS audio_tracks(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER NOT NULL, title TEXT NOT NULL, artist TEXT, audio_url TEXT NOT NULL, visibility TEXT NOT NULL DEFAULT 'private', created TEXT NOT NULL);
                     CREATE TABLE IF NOT EXISTS wheel_spins(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER NOT NULL, prize_type TEXT NOT NULL, prize_name TEXT NOT NULL, prize_value TEXT, created TEXT NOT NULL);
                     CREATE TABLE IF NOT EXISTS vehicle_plates(plate TEXT PRIMARY KEY, uid INTEGER NOT NULL, country TEXT, created TEXT NOT NULL);
@@ -221,6 +223,33 @@ class DB:
 
     def _ph(self):
         return "%s" if self.use_postgres else "?"
+
+    def game_player_set(self, nickname, level=0, exp=0, fhz=0, pvp_wins=0, pve_bosses=0):
+        values=(str(nickname),int(level),int(exp),int(fhz),int(pvp_wins),int(pve_bosses),self._now())
+        with self.con() as c:
+            if self.use_postgres:
+                c.execute("""INSERT INTO game_leaderboard(nickname,level,exp,fhz,pvp_wins,pve_bosses,updated)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(nickname) DO UPDATE SET
+                    level=EXCLUDED.level,exp=EXCLUDED.exp,fhz=EXCLUDED.fhz,pvp_wins=EXCLUDED.pvp_wins,
+                    pve_bosses=EXCLUDED.pve_bosses,updated=EXCLUDED.updated""",values)
+            else:
+                c.execute("""INSERT INTO game_leaderboard(nickname,level,exp,fhz,pvp_wins,pve_bosses,updated)
+                    VALUES(?,?,?,?,?,?,?) ON CONFLICT(nickname) DO UPDATE SET
+                    level=excluded.level,exp=excluded.exp,fhz=excluded.fhz,pvp_wins=excluded.pvp_wins,
+                    pve_bosses=excluded.pve_bosses,updated=excluded.updated""",values)
+
+    def game_player_delete(self,nickname):
+        with self.con() as c:
+            c.execute(f"DELETE FROM game_leaderboard WHERE lower(nickname)=lower({self._ph()})",(nickname,))
+
+    def game_top(self,kind="level",limit=50):
+        columns={"level":("level","уровень"),"fhz":("fhz","FHZ"),"pvp":("pvp_wins","побед PvP"),"pve":("pve_bosses","боссов PvE")}
+        column,unit=columns.get(kind,columns["level"])
+        rows=self._all(f"SELECT nickname,{column} AS value,level,exp FROM game_leaderboard ORDER BY {column} DESC,level DESC,exp DESC LIMIT {int(limit)}")
+        for row in rows:
+            row["unit"]=unit
+            row["subtitle"]=f"Уровень {row.get('level',0)} · {row.get('exp',0)} опыта"
+        return rows
 
     def user(self, uid):
         return self._one(f"SELECT * FROM users WHERE uid={self._ph()}", (uid,))
