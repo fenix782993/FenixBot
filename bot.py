@@ -2394,6 +2394,7 @@ async def start_health_server():
     app.router.add_get("/api/miniapp/me", miniapp_me)
     app.router.add_get("/api/miniapp/tops", miniapp_tops)
     app.router.add_static("/miniapp/assets/", str(Path(__file__).resolve().parent / "miniapp" / "assets"), show_index=False)
+    app.router.add_static("/assets/", str(Path(__file__).resolve().parent / "assets"), show_index=False)
     app.router.add_static("/launcher/", str(Path(__file__).resolve().parent / "launcher"), show_index=False)
     runner = web.AppRunner(app)
     await runner.setup()
