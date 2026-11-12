@@ -2378,6 +2378,32 @@ async def miniapp_tops(request):
     if kind not in {"level","fhz","pvp","pve"}:kind="level"
     return web.json_response({"items":db.game_top(kind)})
 
+async def samp_server_status(request):
+    import socket, struct
+    host = os.getenv("GAME_SERVER_HOST", "185.207.214.14")
+    port = int(os.getenv("GAME_SERVER_PORT", "4357"))
+    packet = b"SAMP" + socket.inet_aton(host) + struct.pack("<H", port) + b"i"
+    def query():
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(2.5)
+        try:
+            sock.sendto(packet, (host, port))
+            data, _ = sock.recvfrom(4096)
+            if len(data) < 15 or data[:4] != b"SAMP" or data[11:12] != b"i":
+                raise ValueError("Invalid SA-MP query response")
+            passworded = bool(data[12])
+            players, max_players = struct.unpack_from("<HH", data, 13)
+            return {"online": True, "players": players, "max_players": max_players,
+                    "password": passworded, "host": host, "port": port}
+        finally:
+            sock.close()
+    try:
+        result = await asyncio.wait_for(asyncio.to_thread(query), timeout=3.2)
+        return web.json_response(result, headers={"Cache-Control": "no-store"})
+    except Exception:
+        return web.json_response({"online": False, "players": 0, "max_players": 0,
+                                  "host": host, "port": port}, headers={"Cache-Control": "no-store"})
+
 async def health(request):
     return web.json_response({"status": "ok", "service": "fenix-online-bot"})
 
@@ -2397,6 +2423,7 @@ async def start_health_server():
     app = web.Application()
     app.router.add_get("/", website_index)
     app.router.add_get("/health", health)
+    app.router.add_get("/api/server-status", samp_server_status)
     app.router.add_get("/miniapp/", miniapp_index)
     app.router.add_get("/api/miniapp/me", miniapp_me)
     app.router.add_get("/api/miniapp/tops", miniapp_tops)
