@@ -2356,7 +2356,7 @@ def verify_miniapp_init_data(raw):
         values=dict(parse_qsl(raw or "",keep_blank_values=True))
         received=values.pop("hash","")
         if not received:return None
-        check="\\n".join(f"{k}={v}" for k,v in sorted(values.items()))
+        check="\n".join(f"{k}={v}" for k,v in sorted(values.items()))
         secret=hmac.new(b"WebAppData",TOKEN.encode(),hashlib.sha256).digest()
         actual=hmac.new(secret,check.encode(),hashlib.sha256).hexdigest()
         if not hmac.compare_digest(actual,received):return None
