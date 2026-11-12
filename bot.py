@@ -2222,7 +2222,7 @@ async def _auto_style_channel_post(message: Message):
         return
     # Берём HTML-представление Telegram: оно сохраняет tg-emoji и исходные custom_emoji_id.
     current = message.html_text or message.html_caption or html.escape(message.text or message.caption or "")
-    if "FENIX ONLINE" in current and "fenixVPNrobot" in current:
+    if "Наши переходники" in current and "fenixVPNrobot" in current and "Fenix_stars_bot" in current:
         return
     # Если в исходном посте уже есть Premium Custom Emoji, не редактируем его:
     # так Telegram сохраняет оригинальные entities и их ID без повторной сериализации.
