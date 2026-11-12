@@ -293,12 +293,9 @@ def menu(uid):
     media_status=(db.media_current(uid) or {}).get("status")
     label=db.setting("home_label","📢 Новости FENIX ONLINE")
     url=db.setting("home_url",CHANNEL_URL)
-    wheel_url=os.getenv("WEBAPP_URL","https://fenixbot-vyqo.onrender.com").rstrip("/")+"/wheel"
-    rows=[]
-    if MINI_APP_URL:
-        rows.append([InlineKeyboardButton(text="🔥 Открыть FENIX ONLINE", web_app=WebAppInfo(url=MINI_APP_URL + "/miniapp/"))])
-    rows += [[InlineKeyboardButton(text=db.setting("gifts_label","🎁 Telegram-подарки"),callback_data="tgs:catalog")],
-          [InlineKeyboardButton(text=db.setting("wheel_label","🎡 Колесо фортуны · 50 ₽"),url=wheel_url)],
+    site_url=os.getenv("WEBAPP_URL","https://fenixbot-vyqo.onrender.com").rstrip("/")
+    rows=[[InlineKeyboardButton(text="🌐 Наш сайт",url=site_url)],
+          [InlineKeyboardButton(text=db.setting("gifts_label","🎁 Telegram-подарки"),callback_data="tgs:catalog")],
           [InlineKeyboardButton(text="🛡 FENIX VPN",url="https://t.me/fenixVPNrobot"),
            InlineKeyboardButton(text="⭐ Купить дешёвые Stars",url="https://t.me/Fenix_stars_bot")],
           [InlineKeyboardButton(text=db.setting("stars_label","⭐ Пополнить Stars"),callback_data="donate_stars"),
