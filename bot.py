@@ -2139,11 +2139,11 @@ def split_message(text,limit=4000):
     return chunks
 
 POST_FOOTER_HTML = (
-    "━━━━━━━━━━━━━━━━━━\n<b>🔥 FENIX ONLINE</b>\n"
-    "<i>Твой проект. Твои возможности.</i>\n\n"
-    "🛡 <b>VPN:</b> @fenixVPNrobot\n"
-    "⭐ <b>Stars:</b> @Fenix_stars_bot\n"
-    '💬 <b>Форум:</b> <a href="http://forum.wh35740.web1.maze-tech.ru/index.php">Открыть форум</a>'
+    "<b>Наши переходники</b>\n"
+    'Дискорд канал — <a href="https://discord.gg/e24kTSbQJ">https://discord.gg/e24kTSbQJ</a>\n'
+    "VPN @fenixVPNrobot\n"
+    "Купить звёзды @Fenix_stars_bot\n"
+    'Наш форум <a href="http://forum.wh35740.web1.maze-tech.ru/index.php">http://forum.wh35740.web1.maze-tech.ru/index.php</a>'
 )
 POST_SIGNATURE_HTML = f"<blockquote>{POST_FOOTER_HTML}</blockquote>"
 
@@ -2216,9 +2216,8 @@ async def send_composed(chat_id,data):
             logging.exception("Не удалось отправить часть публикации с исходными Premium Emoji")
             raise
 
-@dp.channel_post()
-async def auto_style_channel_post(message: Message):
-    """Оформляет посты, опубликованные администраторами канала не через бота."""
+async def _auto_style_channel_post(message: Message):
+    """Добавляет в конец поста единый блок ссылок в цитате."""
     if not CHANNEL or str(message.chat.id) != str(CHANNEL):
         return
     # Берём HTML-представление Telegram: оно сохраняет tg-emoji и исходные custom_emoji_id.
@@ -2250,6 +2249,14 @@ async def auto_style_channel_post(message: Message):
             except Exception:
                 logging.exception("Не удалось применить fallback для channel post %s", message.message_id)
         logging.exception("Не удалось автоматически оформить channel post %s: %s", message.message_id, exc)
+
+@dp.channel_post()
+async def auto_style_channel_post(message: Message):
+    await _auto_style_channel_post(message)
+
+@dp.edited_channel_post()
+async def auto_style_edited_channel_post(message: Message):
+    await _auto_style_channel_post(message)
 
 async def _broadcast_worker(data, initiator):
     ids=db.user_ids()
