@@ -1,10 +1,11 @@
-import asyncio, logging, os, re, secrets, hashlib, html, json, random
+import asyncio, logging, os, re, secrets, hashlib, html, json, random, hmac, time
 import store as shop
 from datetime import datetime, timezone, timedelta
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, MessageEntity, WebAppInfo, LabeledPrice, LinkPreviewOptions
 from pathlib import Path
+from urllib.parse import parse_qsl
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -14,6 +15,7 @@ from db import DB
 
 load_dotenv()
 TOKEN=os.getenv("BOT_TOKEN","")
+MINI_APP_URL=os.getenv("MINI_APP_URL","").strip().rstrip("/")
 CHANNEL=os.getenv("CHANNEL_ID","")
 CHANNEL_URL=os.getenv("CHANNEL_URL","")
 ADMINS={int(x) for x in os.getenv("ADMIN_IDS","").replace(" ","").split(",") if x}
@@ -292,7 +294,10 @@ def menu(uid):
     label=db.setting("home_label","📢 Новости FENIX ONLINE")
     url=db.setting("home_url",CHANNEL_URL)
     wheel_url=os.getenv("WEBAPP_URL","https://fenixbot-vyqo.onrender.com").rstrip("/")+"/wheel"
-    rows=[[InlineKeyboardButton(text=db.setting("gifts_label","🎁 Telegram-подарки"),callback_data="tgs:catalog")],
+    rows=[]
+    if MINI_APP_URL:
+        rows.append([InlineKeyboardButton(text="🔥 Открыть FENIX ONLINE", web_app=WebAppInfo(url=MINI_APP_URL + "/miniapp/"))])
+    rows += [[InlineKeyboardButton(text=db.setting("gifts_label","🎁 Telegram-подарки"),callback_data="tgs:catalog")],
           [InlineKeyboardButton(text=db.setting("wheel_label","🎡 Колесо фортуны · 50 ₽"),url=wheel_url)],
           [InlineKeyboardButton(text="🛡 FENIX VPN",url="https://t.me/fenixVPNrobot"),
            InlineKeyboardButton(text="⭐ Купить дешёвые Stars",url="https://t.me/Fenix_stars_bot")],
@@ -318,6 +323,33 @@ class S(StatesGroup):
 def hashpw(p):
     salt=secrets.token_hex(16)
     return salt+"$"+hashlib.pbkdf2_hmac("sha256",p.encode(),salt.encode(),200000).hex()
+@dp.message(Command("topadd"))
+async def topadd(m: Message):
+    if not is_admin(m.from_user.id):
+        return await m.answer("⛔ Нет доступа.")
+    parts=(m.text or "").split()
+    if len(parts)!=7:
+        return await m.answer("Формат: /topadd Ник Уровень Опыт FHZ PvP_победы PvE_боссы")
+    try:
+        nick=parts[1]
+        if not re.fullmatch(r"[A-Za-z0-9_]{3,24}",nick): raise ValueError()
+        values=[int(x) for x in parts[2:]]
+        if any(x<0 for x in values): raise ValueError()
+        db.game_player_set(nick,*values)
+        await m.answer(f"✅ Игрок <b>{html.escape(nick)}</b> добавлен или обновлён в топе FENIX ONLINE.")
+    except ValueError:
+        await m.answer("❌ Проверь ник и показатели: нужны неотрицательные числа.")
+
+@dp.message(Command("topdel"))
+async def topdel(m: Message):
+    if not is_admin(m.from_user.id):
+        return await m.answer("⛔ Нет доступа.")
+    parts=(m.text or "").split(maxsplit=1)
+    if len(parts)!=2:
+        return await m.answer("Формат: /topdel Игровой_ник")
+    db.game_player_delete(parts[1].strip())
+    await m.answer("✅ Игрок удалён из рейтинга, если такая запись существовала.")
+
 @dp.message(Command("id"))
 async def cmd_id(m): await m.answer(f"Твой Telegram ID: {m.from_user.id}")
 
@@ -2319,6 +2351,36 @@ async def buttonurl(m,state:FSMContext):
 @dp.message(Command("cancel"))
 async def cancel(m,state:FSMContext):
     await state.clear(); await m.answer("↩️ Действие отменено. Главное меню:",reply_markup=menu(m.from_user.id))
+def verify_miniapp_init_data(raw):
+    try:
+        values=dict(parse_qsl(raw or "",keep_blank_values=True))
+        received=values.pop("hash","")
+        if not received:return None
+        check="\\n".join(f"{k}={v}" for k,v in sorted(values.items()))
+        secret=hmac.new(b"WebAppData",TOKEN.encode(),hashlib.sha256).digest()
+        actual=hmac.new(secret,check.encode(),hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(actual,received):return None
+        auth_date=int(values.get("auth_date","0"))
+        if auth_date<=0 or time.time()-auth_date>86400 or auth_date>time.time()+60:return None
+        user=json.loads(values.get("user","{}"))
+        return user if isinstance(user,dict) and user.get("id") else None
+    except Exception:
+        return None
+
+async def miniapp_index(request):
+    return web.FileResponse(Path(__file__).resolve().parent / "miniapp" / "index.html")
+
+async def miniapp_me(request):
+    user=verify_miniapp_init_data(request.headers.get("X-Telegram-Init-Data",""))
+    if not user:return web.json_response({"error":"unauthorized"},status=401)
+    account=db.user(int(user["id"])) or {}
+    return web.json_response({"user":{"id":user["id"],"first_name":user.get("first_name",""),"username":user.get("username",""),"nick":account.get("nick") or ""}})
+
+async def miniapp_tops(request):
+    kind=request.query.get("type","level")
+    if kind not in {"level","fhz","pvp","pve"}:kind="level"
+    return web.json_response({"items":db.game_top(kind)})
+
 async def health(request):
     return web.json_response({"status": "ok", "service": "fenix-online-bot"})
 
@@ -2328,6 +2390,11 @@ async def start_health_server():
     app = web.Application()
     app.router.add_get("/", health)
     app.router.add_get("/health", health)
+    app.router.add_get("/miniapp/", miniapp_index)
+    app.router.add_get("/api/miniapp/me", miniapp_me)
+    app.router.add_get("/api/miniapp/tops", miniapp_tops)
+    app.router.add_static("/miniapp/assets/", str(Path(__file__).resolve().parent / "miniapp" / "assets"), show_index=False)
+    app.router.add_static("/launcher/", str(Path(__file__).resolve().parent / "launcher"), show_index=False)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, host="0.0.0.0", port=port)
