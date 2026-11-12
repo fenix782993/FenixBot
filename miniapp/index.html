@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#090a0f"><title>FENIX ONLINE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/miniapp/assets/app.css">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+<div class="backdrop"></div><div class="shade"></div>
+<header class="topbar">
+  <a class="brand" href="#home"><img src="/assets/logo.png" alt="FENIX Online"></a>
+  <nav id="nav"><a class="active" href="#home">⌂ <span>Главная</span></a><a href="#client">⇩ <span>Клиент</span></a><a href="#donate">▣ <span>Донат</span></a><a href="#games">🎮 <span>Игры</span></a><a href="#shop">▢ <span>Магазин</span></a><a href="#tops">♜ <span>Топы</span></a></nav>
+  <button class="profile" id="profileBtn">◉ <span id="profileName">Профиль</span></button>
+</header>
+<main>
+<section class="hero page active" id="home">
+  <div class="hero-copy"><div class="eyebrow"><i></i> ROLEPLAY • BLACK SERVER</div><img class="hero-logo" src="/assets/logo.png" alt="FENIX ONLINE">
+  <h1>ТВОЯ ИГРА.<br><em>ТВОЯ ИСТОРИЯ.</em></h1><p>Погрузись в мир FENIX ONLINE — строй карьеру, развивай бизнес, создавай свою историю и играй вместе с другими.</p>
+  <div class="hero-actions"><a class="btn primary" href="#client">⇩ &nbsp; СКАЧАТЬ ИГРУ</a><a class="btn ghost" href="#games">Изучить проект&nbsp; ↗</a></div>
+  <div class="stats"><div><b>BLACK</b><small>ИГРОВОЙ СЕРВЕР</small></div><div><b>FHZ</b><small>ИГРОВАЯ ВАЛЮТА</small></div><div><b>24/7</b><small>ТВОЙ МИР</small></div></div></div>
+  <div class="scroll-hint">ПРОКРУТИ ВНИЗ <span>↓</span></div>
+</section>
+<section class="page content-page" id="client"><div class="section-head"><span class="kicker">FENIX ONLINE / CLIENT</span><h2>Скачай и <em>играй!</em></h2><p>Установи игровой клиент и присоединяйся к серверу BLACK.</p></div><div class="download-card"><div class="download-icon">⬇</div><div><h3>FENIX ONLINE Launcher</h3><p>Официальный лаунчер для Windows 10 / 11</p><small id="launcherState">Проверяем наличие лаунчера…</small></div><a class="btn primary" id="downloadBtn" href="/launcher/FenixOnline.exe">СКАЧАТЬ EXE</a></div><div class="steps"><article><b>01</b><h3>Скачай</h3><p>Загрузи установщик на компьютер.</p></article><article><b>02</b><h3>Установи</h3><p>Запусти файл и дождись установки игры.</p></article><article><b>03</b><h3>Играй</h3><p>Войди в аккаунт и подключись к BLACK.</p></article></div></section>
+<section class="page content-page" id="donate"><div class="section-head"><span class="kicker">FENIX ONLINE / DONATE</span><h2>Пополнение <em>FHZ</em></h2><p>Игровая валюта FHZ — покупки, развитие и возможности внутри проекта.</p></div><div class="feature-card"><div class="coin">FHZ</div><div><h3>Твой баланс FHZ</h3><p>Открой профиль через Telegram, чтобы посмотреть доступные данные и связаться с администрацией.</p></div><a class="btn primary" href="https://t.me/FenixMediarobot" target="_blank" rel="noopener">Связаться с нами</a></div></section>
+<section class="page content-page" id="games"><div class="section-head"><span class="kicker">FENIX ONLINE / GAMES</span><h2>Играй по <em>своим правилам</em></h2><p>Игровые активности и режимы FENIX ONLINE.</p></div><div class="tiles"><article><b>01 / ROLEPLAY</b><h3>Открытый мир</h3><p>Работы, организации, бизнесы и собственная история.</p></article><article><b>02 / PvP</b><h3>Сражения</h3><p>Соревнуйся с другими игроками и докажи своё превосходство.</p></article><article><b>03 / PvE</b><h3>Испытания</h3><p>Выполняй задания, развивай персонажа и получай награды.</p></article></div></section>
+<section class="page content-page" id="shop"><div class="section-head"><span class="kicker">FENIX ONLINE / STORE</span><h2>Магазин <em>FHZ</em></h2><p>Каталог игровых товаров и услуг появится здесь.</p></div><div class="empty-card">Каталог FENIX ONLINE будет подключён к игровому магазину.</div></section>
+<section class="page content-page" id="tops"><div class="section-head"><span class="kicker">FENIX ONLINE / LEADERBOARD</span><h2>Топ <em>игроков</em></h2><p>Рейтинг игроков по игровому нику и достижениям.</p></div><div class="tabs"><button class="selected" data-top="level">Уровень</button><button data-top="fhz">FHZ</button><button data-top="pvp">PvP</button><button data-top="pve">PvE</button></div><div class="leaderboard" id="leaderboard"><div class="empty-card">Пока в рейтинге нет игроков.</div></div></section>
+<section class="page content-page" id="profile"><div class="section-head"><span class="kicker">FENIX ONLINE / ACCOUNT</span><h2>Личный <em>профиль</em></h2><p id="profileHint">Открой Mini App через Telegram, чтобы загрузить свой профиль.</p></div><div class="feature-card"><div class="avatar" id="avatar">F</div><div><h3 id="playerName">Игрок FENIX</h3><p id="playerInfo">Telegram-профиль не загружен</p></div><div class="balance"><b>— FHZ</b><small>БАЛАНС</small></div></div></section>
+</main>
+<footer><img src="/assets/logo.png" alt="FENIX ONLINE"><span>© 2026 FENIX ONLINE · BLACK SERVER</span><b>ТВОЯ ИГРА • ТВОЯ ИСТОРИЯ</b></footer>
+<script src="/miniapp/assets/app.js"></script>
+</body></html>
