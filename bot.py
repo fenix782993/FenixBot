@@ -2140,10 +2140,10 @@ def split_message(text,limit=4000):
 
 POST_FOOTER_HTML = (
     "<b>Наши переходники</b>\n"
-    'Дискорд канал — <a href="https://discord.gg/e24kTSbQJ">https://discord.gg/e24kTSbQJ</a>\n'
-    "VPN @fenixVPNrobot\n"
-    "Купить звёзды @Fenix_stars_bot\n"
-    'Наш форум <a href="http://forum.wh35740.web1.maze-tech.ru/index.php">http://forum.wh35740.web1.maze-tech.ru/index.php</a>'
+    '<a href="https://discord.gg/e24kTSbQJ">Дискорд канал</a>\n'
+    '<a href="https://t.me/fenixVPNrobot">VPN</a>\n'
+    '<a href="https://t.me/Fenix_stars_bot">Купить звёзды</a>\n'
+    '<a href="http://forum.wh35740.web1.maze-tech.ru/index.php">Наш форум</a>'
 )
 POST_SIGNATURE_HTML = f"<blockquote>{POST_FOOTER_HTML}</blockquote>"
 
