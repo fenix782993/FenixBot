@@ -29,3 +29,17 @@
   const initial=(location.hash||'#home').slice(1);showPage(initial);loadProfile();
   fetch('/launcher/FenixOnline.exe',{method:'HEAD'}).then(r=>{if(r.ok)document.getElementById('launcherState').textContent='Лаунчер доступен для загрузки';else throw new Error();}).catch(()=>{document.getElementById('launcherState').textContent='Лаунчер будет добавлен владельцем проекта';document.getElementById('downloadBtn').addEventListener('click',e=>{e.preventDefault();if(tg?.showAlert)tg.showAlert('Лаунчер пока не загружен.');else alert('Лаунчер пока не загружен.');});});
 })();
+
+// Live SA-MP status for BLACK server
+async function refreshLiveServer(){
+  const value=document.getElementById('livePlayers');
+  const label=document.getElementById('livePlayersLabel');
+  if(!value) return;
+  try{
+    const response=await fetch('/api/server-status',{cache:'no-store'});
+    const data=await response.json();
+    if(data.online){value.textContent=String(data.players); if(label) label.textContent='ИГРОКОВ ОНЛАЙН';}
+    else {value.textContent='—'; if(label) label.textContent='СЕРВЕР НЕ ОТВЕЧАЕТ';}
+  }catch(e){value.textContent='—'; if(label) label.textContent='НЕТ СВЯЗИ С СЕРВЕРОМ';}
+}
+refreshLiveServer(); setInterval(refreshLiveServer,15000);
