@@ -1750,7 +1750,7 @@ async def owner(c):
         [InlineKeyboardButton(text="📣 Опубликовать пост",callback_data="post")],
         [InlineKeyboardButton(text="📨 Рассылка",callback_data="broadcast")],
         [InlineKeyboardButton(text="💸 Заявки на выплаты",callback_data="payout_queue")],
-        ...(is_owner(c.from_user.id) ? [[InlineKeyboardButton(text="🎁 Награды за приглашения",callback_data="invite_rewards")]] : []),
+        *([[InlineKeyboardButton(text="🎁 Награды за приглашения",callback_data="invite_rewards")]] if is_owner(c.from_user.id) else []),
         [InlineKeyboardButton(text="🤝 Управление медиапартнёрами",callback_data="media_admin")],
         [InlineKeyboardButton(text="🎫 Обращения игроков",callback_data="ticket_queue")],
         [InlineKeyboardButton(text="🎨 Кастомизация бота",callback_data="customize")],
