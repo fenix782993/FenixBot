@@ -1132,24 +1132,36 @@ async def invite_gift(m: Message):
         already={int(x["uid"]) for x in history if isinstance(x,dict) and str(x.get("uid","")).isdigit()}
         candidates=[x for x in db.channel_invite_leaders(100) if int(x.get("count") or 0)>0 and int(x["uid"]) not in already]
         if not candidates:
-            return await m.answer("🎁 Пока нет новых участников рейтинга для награждения. Нужны подтверждённые вступления по ссылкам /invite.")
+            return await m.answer("🎁 Нет новых участников для награждения. Сначала должны быть реальные вступления по ссылкам /invite.")
         pool=candidates[:max(1,(len(candidates)+2)//3)]
         winners=random.sample(pool,min(amount,len(pool)))
-        gifts=["🎁 Сюрприз от команды FENIX ONLINE","💎 Особая награда за поддержку FENIX ONLINE","🏆 Подарок активному амбассадору FENIX ONLINE","🔥 Бонус благодарности «FENIX ONLINE красавчик!»","✨ Специальный подарок за приглашения в наше сообщество"]
+        gifts=["Секретный бонус FENIX","Подарок «FENIX ONLINE красавчик!»","Награда амбассадора FENIX","Сюрприз за поддержку проекта","Бонус активного приглашателя"]
         sent=[]
         for winner in winners:
-            uid=int(winner["uid"]); nick=winner.get("nick") or "Игрок"; count=int(winner.get("count") or 0); gift=random.choice(gifts)
-            body=(f"🔥 <b>FENIX ONLINE красавчик!</b>\n\nСпасибо, что помогаешь развивать наше сообщество и приглашаешь людей в канал. "
-                  f"По твоей ссылке вступили: <b>{count}</b> человек.\n\nТвой подарок: <b>{html.escape(gift)}</b>\nСпасибо за поддержку! ❤️")
-            db.add_notification(uid,"🎁 Награда за приглашения",body)
+            uid=int(winner["uid"]); nick=winner.get("nick") or "Игрок"; count=int(winner.get("count") or 0)
+            reward=random.choice([50,75,100,125,150,200,250])
+            gift=random.choice(gifts)
+            ref=f"invite-reward:{uid}"
+            if not shop.credit(db,uid,reward,"Награда за приглашения в канал",ref,actor=m.from_user.id):
+                sent.append(f"• <code>{uid}</code> — награда уже была начислена, пропущено.")
+                continue
+            body=(f"🔥 <b>FENIX ONLINE красавчик!</b>\n\n"
+                  f"Спасибо, что помогаешь развивать наше сообщество и приглашаешь людей в канал!\n"
+                  f"По твоей ссылке вступили: <b>{count}</b> человек.\n\n"
+                  f"🎁 Твой подарок: <b>{html.escape(gift)}</b>\n"
+                  f"💎 На твой баланс начислено: <b>+{reward} FNZ</b>\n\n"
+                  f"Спасибо за поддержку FENIX ONLINE! ❤️")
+            db.add_notification(uid,"🎁 Подарок за приглашения",body)
             try:
-                await bot.send_message(uid,body,parse_mode="HTML"); delivery="личное уведомление отправлено"
+                await bot.send_message(uid,body,parse_mode="HTML")
+                delivery="личное сообщение отправлено"
             except Exception as exc:
-                logging.info("Invite gift DM failed for %s: %s",uid,exc); delivery="личные сообщения закрыты или пользователь не запускал бота"
-            history.append({"uid":uid,"nick":nick,"count":count,"gift":gift,"by":m.from_user.id,"created":datetime.now(timezone.utc).isoformat(),"delivery":delivery})
-            sent.append(f"• <b>{html.escape(str(nick))}</b> — <code>{uid}</code>\n  Приглашено: <b>{count}</b> · {html.escape(gift)}\n  {delivery}")
+                logging.info("Invite reward DM failed for %s: %s",uid,exc)
+                delivery="не доставлено в личку (уведомление сохранено в кабинете)"
+            history.append({"uid":uid,"nick":nick,"count":count,"gift":gift,"reward_fnz":reward,"by":m.from_user.id,"created":datetime.now(timezone.utc).isoformat(),"delivery":delivery})
+            sent.append(f"• <b>{html.escape(str(nick))}</b> — <code>{uid}</code>\n  Приглашено: <b>{count}</b> · начислено <b>+{reward} FNZ</b>\n  {html.escape(gift)}\n  {delivery}")
         db.set_setting("invite_gift_history",json.dumps(history,ensure_ascii=False))
-        await m.answer("🎁 <b>РАЗДАЧА НАГРАД FENIX ONLINE</b>\n\n"+"\n\n".join(sent)+"\n\nЗаписано в историю. Повторно эти аккаунты не награждаются.",parse_mode="HTML")
+        await m.answer("🎁 <b>РАЗДАЧА ПОДАРКОВ FENIX ONLINE</b>\n\n"+"\n\n".join(sent)+"\n\nFNZ начислены на баланс кошелька. Повторное начисление одному аккаунту заблокировано.",parse_mode="HTML")
     except Exception:
         logging.exception("Invite reward distribution failed")
         await m.answer("❌ Не удалось провести раздачу. Подробности записаны в журнал сервера.")
@@ -2501,6 +2513,7 @@ async def start_health_server():
 
 async def main():
     db.init()
+    shop.init(db)
     from chat_manager import register_chat_manager
     register_chat_manager(dp, bot, db, OWNER_IDS)
     # Не перезаписываем пользовательский набор, импортированный владельцем через /emojipack.
