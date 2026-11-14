@@ -1,20 +1,26 @@
-/* FENIX ONLINE — unified 2026 visual system */
-:root{color-scheme:dark;--fx-bg:#070c15;--fx-panel:#101b2a;--fx-panel2:#14243a;--fx-line:#294562;--fx-gold:#ffc15a;--fx-blue:#68baff;--fx-text:#f4f8ff;--fx-muted:#9fb2c8}
-html{scroll-behavior:smooth}body{background:radial-gradient(ellipse at 78% -12%,#17436c 0,transparent 38%),linear-gradient(145deg,#060a12,#0b1727 56%,#070c15)!important;color:var(--fx-text)!important;font-family:Inter,Segoe UI,Arial,sans-serif!important}
-a{color:inherit}header.top,header.nav,.nav{background:#091522ed!important;border:1px solid var(--fx-line)!important;border-radius:18px!important;box-shadow:0 14px 40px #0007,inset 0 1px #b6ddff10;backdrop-filter:blur(16px)}
-.brand,.logo{color:#f6f9ff!important;font-weight:1000!important;letter-spacing:1px}.brand span,.logo span,.logo small{color:var(--fx-blue)!important}
-nav a,.links a,.tab,.btn,.button{transition:.18s ease}
-nav a,.links a{color:#c8d8e9!important}nav a:hover,.links a:hover,nav a.active{color:var(--fx-blue)!important}
-.btn,button.btn,.primary,.spinbtn{background:linear-gradient(125deg,#83d0ff,#287ce8)!important;color:#061426!important;border:0!important;border-radius:12px!important;font-weight:900!important;box-shadow:0 9px 28px #2188e633!important}
-.btn:hover,button:hover{filter:brightness(1.08)}
-.btn.ghost,.tab,.danger{background:#10243a!important;color:#e9f4ff!important;border:1px solid #315477!important;box-shadow:none!important}
-.hero,.panel,.stat,.tile,.card,.feature,.product,.loginbox,.wheel-panel,.prize,.track,.order-card,.cta,.modal{background:linear-gradient(145deg,#14263d,#0b1523)!important;border:1px solid var(--fx-line)!important;border-radius:19px!important;box-shadow:0 14px 38px #0005}
-.hero{background-image:linear-gradient(90deg,#07101ff5,#0a1b30c9 55%,#09172866),url('/assets/home-v748-world.webp')!important;background-position:center!important;background-size:cover!important}
-h1,h2,h3,h4,strong,b{color:#f4f8ff}p,.muted,small,.sub{color:var(--fx-muted)}
-input,select,textarea,.input{background:#091522!important;color:#f4f8ff!important;border:1px solid #31506f!important;border-radius:11px!important}
-input:focus,select:focus,textarea:focus{outline:2px solid #4c9ee877}
-.stat strong,.stat .value,.balance,.price,.total b{color:var(--fx-blue)!important}
-.badge,.pill,.status,.order-state{background:#122d49!important;color:#a9dcff!important;border:1px solid #31577a!important;border-radius:999px!important}
-footer,.foot,.footer{border-color:#203b5a!important;color:#91a8c2!important}
+/* FENIX ONLINE — glass-world design inspired by the supplied reference */
+:root{color-scheme:dark;--fx-bg:#101a30;--fx-panel:rgba(24,39,67,.78);--fx-panel2:rgba(41,51,70,.68);--fx-line:rgba(190,210,245,.18);--fx-gold:#ffab22;--fx-blue:#79bfff;--fx-text:#f7f8ff;--fx-muted:#b5bfd0}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:#172744 url('/assets/home-v748-world.webp') center center/cover fixed no-repeat!important;color:var(--fx-text)!important;font-family:Inter,Segoe UI,Arial,sans-serif!important}
+body:before{content:"";position:fixed;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(13,27,54,.22),rgba(10,18,34,.38) 52%,rgba(8,14,25,.58));pointer-events:none}
+a{color:inherit}
+header.top,header.nav,.nav{background:rgba(19,37,72,.94)!important;border:1px solid rgba(190,210,245,.16)!important;border-radius:19px!important;box-shadow:0 14px 40px #07132966,inset 0 1px #fff2!important;backdrop-filter:blur(18px) saturate(135%)}
+.nav{position:sticky!important;top:12px;z-index:50}
+.brand,.logo{color:#fff!important;font-weight:1000!important;letter-spacing:.2px}.brand span,.logo span,.logo small{color:var(--fx-gold)!important}
+nav a,.links a,.tab,.btn,.button{transition:all .18s ease}
+nav a,.links a{color:#d0d9eb!important}nav a:hover,.links a:hover,nav a.active{color:var(--fx-gold)!important}
+.btn,button.btn,.primary,.spinbtn{background:linear-gradient(115deg,#ffc044,#ff9415)!important;color:#211506!important;border:0!important;border-radius:12px!important;font-weight:900!important;box-shadow:0 9px 28px #ff9e1c38!important}
+.btn:hover,button:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.btn.ghost,.tab,.danger{background:rgba(19,34,60,.78)!important;color:#f0f4ff!important;border:1px solid rgba(190,210,245,.2)!important;box-shadow:none!important}
+.hero,.panel,.stat,.tile,.card,.feature,.product,.loginbox,.wheel-panel,.prize,.track,.order-card,.cta,.modal{background:linear-gradient(145deg,rgba(45,61,91,.82),rgba(24,31,48,.82))!important;border:1px solid var(--fx-line)!important;border-radius:21px!important;box-shadow:0 16px 42px #08152b55,inset 0 1px #ffffff12!important;backdrop-filter:blur(17px) saturate(125%)}
+.hero{background-image:linear-gradient(90deg,rgba(18,32,57,.58),rgba(21,34,59,.25) 65%,rgba(15,24,42,.15)),url('/assets/home-v748-world.webp')!important;background-position:center!important;background-size:cover!important}
+h1,h2,h3,h4,strong,b{color:#fff}p,.muted,small,.sub{color:var(--fx-muted)}
+input,select,textarea,.input{background:rgba(19,29,47,.72)!important;color:#fff!important;border:1px solid rgba(196,211,239,.2)!important;border-radius:12px!important}
+input:focus,select:focus,textarea:focus{outline:2px solid #ffb13e88}
+.stat strong,.stat .value,.balance,.price,.total b{color:#ffd078!important}
+.badge,.pill,.status,.order-state{background:rgba(18,38,66,.75)!important;color:#ffe0a2!important;border:1px solid rgba(255,190,90,.26)!important;border-radius:999px!important}
+footer,.foot,.footer{border-color:var(--fx-line)!important;color:#c1cada!important;background:rgba(20,29,45,.66);backdrop-filter:blur(14px)}
 img{max-width:100%}
-@media(max-width:760px){.wrap{padding:12px!important}.nav,.top{height:auto!important;position:static!important;display:flex!important;flex-wrap:wrap!important;gap:12px!important;padding:14px!important}.links,nav{display:flex!important;flex-wrap:wrap!important;gap:10px!important}.hero{min-height:unset!important;padding:22px!important}.grid,.cols,.stats,.features,.steps{grid-template-columns:1fr!important}.panel{padding:17px!important}.layout{display:block!important}.layout>*{margin-bottom:14px}}
+@media(max-width:760px){body{background-attachment:scroll!important}.wrap{padding:12px!important}.nav,.top{height:auto!important;position:relative!important;display:flex!important;flex-wrap:wrap!important;gap:12px!important;padding:14px!important}.links,nav{display:flex!important;flex-wrap:wrap!important;gap:10px!important}.hero{min-height:unset!important;padding:22px!important}.grid,.cols,.stats,.features,.steps{grid-template-columns:1fr!important}.panel{padding:17px!important}.layout{display:block!important}.layout>*{margin-bottom:14px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;scroll-behavior:auto!important}}
