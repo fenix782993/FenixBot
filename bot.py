@@ -1144,7 +1144,8 @@ async def invite_gift(m: Message):
         pool=candidates[:max(1,(len(candidates)+2)//3)]
         winners=random.sample(pool,min(amount,len(pool)))
 
-        # Берём актуальный каталог Telegram, а не полагаемся на устаревающие gift_id.
+        # Берём актуальный каталог Telegram. Отсутствие одного вида подарка
+        # не должно блокировать всю раздачу: используем все доступные варианты.
         available=await bot.get_available_gifts()
         wanted={
             "rose": {"🌹","🌷"},
@@ -1162,12 +1163,10 @@ async def invite_gift(m: Message):
             ]
             if matches:
                 gift_pool[kind]=matches
-        missing=[name for name,kind in (("роза","rose"),("мишка","teddy"),("сердце","heart")) if not gift_pool.get(kind)]
-        if missing:
+        if not gift_pool:
             return await m.answer(
-                "❌ Не удалось начать раздачу: в каталоге Telegram сейчас отсутствуют подарки: "
-                + ", ".join(missing)
-                + ". Ничего не списано и никому ничего не отправлено."
+                "❌ В каталоге Telegram сейчас нет доступных подарков из списка: роза, мишка или сердце. "
+                "Ничего не списано и никому ничего не отправлено."
             )
 
         gift_names={"rose":"🌹 Роза","teddy":"🧸 Мишка","heart":"❤️ Сердце"}
@@ -1176,7 +1175,7 @@ async def invite_gift(m: Message):
             uid=int(winner["uid"])
             nick=winner.get("nick") or "Игрок"
             count=int(winner.get("count") or 0)
-            kind=random.choice(("rose","teddy","heart"))
+            kind=random.choice(list(gift_pool.keys()))
             gift=random.choice(gift_pool[kind])
             gift_id=str(gift.id)
             stars=int(gift.star_count)
