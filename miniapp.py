@@ -145,11 +145,15 @@ async def serve_asset(request):
     name = request.match_info["filename"]
     if name in (".", "..") or Path(name).name != name:
         raise web.HTTPNotFound()
-    path = ROOT / "assets" / name
-    if not path.is_file():
-        log.warning("Asset not found: %s (ROOT=%s)", name, ROOT)
+    # Website-specific assets (shared CSS, etc.) live in webapp/assets.
+    # Keep root/assets as the primary location for existing game/product images.
+    candidates = (ROOT / "assets" / name, WEB_DIR / "assets" / name)
+    path = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if path is None:
+        log.warning("Asset not found: %s (checked ROOT/assets and webapp/assets)", name)
         raise web.HTTPNotFound(text="Asset not found")
-    return web.FileResponse(path, headers={"Cache-Control": "public, max-age=86400"})
+    cache = "public, max-age=300" if path.parent == WEB_DIR / "assets" else "public, max-age=86400"
+    return web.FileResponse(path, headers={"Cache-Control": cache})
 
 
 async def bootstrap(req):
