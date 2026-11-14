@@ -66,3 +66,7 @@ input::placeholder,textarea::placeholder{color:#aebbd0}.tag,.pill,.badge,.status
 .fx-account-side button{margin-top:8px;background:rgba(17,25,39,.78);border-color:#ffffff20;color:#fff;cursor:pointer}
 .fx-account-main{min-width:0}
 @media(max-width:700px){.fx-account-layout{grid-template-columns:1fr}.fx-account-side{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.fx-account-side-title{grid-column:1/-1}.fx-account-side button{margin:0}}
+
+/* Dedicated product shop route reuses the verified catalog and purchase handlers. */
+body.shop-page>.wrap>.hero,body.shop-page .donate-layout{display:none!important}
+body.shop-page .section{margin-top:20px!important}
