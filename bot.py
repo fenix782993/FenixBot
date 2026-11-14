@@ -1116,6 +1116,54 @@ async def invite(m):
         db.save_invite(x.invite_link,m.from_user.id)
         await m.answer("Твоя персональная ссылка на вступление в канал:\n"+x.invite_link)
     except Exception as e: await m.answer("Не удалось создать ссылку. Добавь бота администратором канала с правом приглашать пользователей и управлять ссылками.\n"+str(e))
+@dp.message(Command("invite_gift"))
+async def invite_gift(m: Message):
+    if not is_owner(m.from_user.id):
+        return await m.answer("⛔ Эта команда доступна только владельцу FENIX ONLINE.")
+    parts=(m.text or "").split()
+    try:
+        amount=int(parts[1]) if len(parts)>1 else 1
+        if not 1<=amount<=20: raise ValueError()
+    except ValueError:
+        return await m.answer("Формат: /invite_gift [количество от 1 до 20]")
+    try:
+        history=json.loads(db.setting("invite_gift_history","[]") or "[]")
+        if not isinstance(history,list): history=[]
+        already={int(x["uid"]) for x in history if isinstance(x,dict) and str(x.get("uid","")).isdigit()}
+        candidates=[x for x in db.channel_invite_leaders(100) if int(x.get("count") or 0)>0 and int(x["uid"]) not in already]
+        if not candidates:
+            return await m.answer("🎁 Пока нет новых участников рейтинга для награждения. Нужны подтверждённые вступления по ссылкам /invite.")
+        pool=candidates[:max(1,(len(candidates)+2)//3)]
+        winners=random.sample(pool,min(amount,len(pool)))
+        gifts=["🎁 Сюрприз от команды FENIX ONLINE","💎 Особая награда за поддержку FENIX ONLINE","🏆 Подарок активному амбассадору FENIX ONLINE","🔥 Бонус благодарности «FENIX ONLINE красавчик!»","✨ Специальный подарок за приглашения в наше сообщество"]
+        sent=[]
+        for winner in winners:
+            uid=int(winner["uid"]); nick=winner.get("nick") or "Игрок"; count=int(winner.get("count") or 0); gift=random.choice(gifts)
+            body=(f"🔥 <b>FENIX ONLINE красавчик!</b>\n\nСпасибо, что помогаешь развивать наше сообщество и приглашаешь людей в канал. "
+                  f"По твоей ссылке вступили: <b>{count}</b> человек.\n\nТвой подарок: <b>{html.escape(gift)}</b>\nСпасибо за поддержку! ❤️")
+            db.add_notification(uid,"🎁 Награда за приглашения",body)
+            try:
+                await bot.send_message(uid,body,parse_mode="HTML"); delivery="личное уведомление отправлено"
+            except Exception as exc:
+                logging.info("Invite gift DM failed for %s: %s",uid,exc); delivery="личные сообщения закрыты или пользователь не запускал бота"
+            history.append({"uid":uid,"nick":nick,"count":count,"gift":gift,"by":m.from_user.id,"created":datetime.now(timezone.utc).isoformat(),"delivery":delivery})
+            sent.append(f"• <b>{html.escape(str(nick))}</b> — <code>{uid}</code>\n  Приглашено: <b>{count}</b> · {html.escape(gift)}\n  {delivery}")
+        db.set_setting("invite_gift_history",json.dumps(history,ensure_ascii=False))
+        await m.answer("🎁 <b>РАЗДАЧА НАГРАД FENIX ONLINE</b>\n\n"+"\n\n".join(sent)+"\n\nЗаписано в историю. Повторно эти аккаунты не награждаются.",parse_mode="HTML")
+    except Exception:
+        logging.exception("Invite reward distribution failed")
+        await m.answer("❌ Не удалось провести раздачу. Подробности записаны в журнал сервера.")
+
+@dp.message(Command("invite_gifts"))
+async def invite_gifts(m: Message):
+    if not is_owner(m.from_user.id):
+        return await m.answer("⛔ Эта команда доступна только владельцу FENIX ONLINE.")
+    history=json.loads(db.setting("invite_gift_history","[]") or "[]")
+    if not history:
+        return await m.answer("🎁 История наград пока пуста.")
+    lines=[f"• {html.escape(str(x.get('nick') or 'Игрок'))} — <code>{x.get('uid')}</code> · {x.get('count',0)} приглашений\n  {html.escape(str(x.get('gift') or 'Подарок'))}" for x in reversed(history[-30:])]
+    await m.answer("🎁 <b>ИСТОРИЯ НАГРАД ЗА ПРИГЛАШЕНИЯ</b>\n\n"+"\n".join(lines),parse_mode="HTML")
+
 @dp.chat_member()
 async def member(ev:ChatMemberUpdated):
     if str(ev.chat.id)!=str(CHANNEL): return
@@ -1690,6 +1738,7 @@ async def owner(c):
         [InlineKeyboardButton(text="📣 Опубликовать пост",callback_data="post")],
         [InlineKeyboardButton(text="📨 Рассылка",callback_data="broadcast")],
         [InlineKeyboardButton(text="💸 Заявки на выплаты",callback_data="payout_queue")],
+        ...(is_owner(c.from_user.id) ? [[InlineKeyboardButton(text="🎁 Награды за приглашения",callback_data="invite_rewards")]] : []),
         [InlineKeyboardButton(text="🤝 Управление медиапартнёрами",callback_data="media_admin")],
         [InlineKeyboardButton(text="🎫 Обращения игроков",callback_data="ticket_queue")],
         [InlineKeyboardButton(text="🎨 Кастомизация бота",callback_data="customize")],
@@ -1703,6 +1752,17 @@ async def owner(c):
         [InlineKeyboardButton(text="🛡️ Чат-менеджер",callback_data="chat_manager_admin")],
         [InlineKeyboardButton(text="💎 Premium Emoji для всех кнопок",callback_data="button_emoji_setup")]
     ]))
+    await c.answer()
+
+@dp.callback_query(F.data=="invite_rewards")
+async def invite_rewards_panel(c: CallbackQuery):
+    if not is_owner(c.from_user.id):
+        return await c.answer("Нет доступа",show_alert=True)
+    leaders=db.channel_invite_leaders(10)
+    lines=[f"• {html.escape(str(x.get('nick') or 'Игрок'))} — <code>{x['uid']}</code>: <b>{x['count']}</b>" for x in leaders if int(x.get("count") or 0)>0]
+    text=("🎁 <b>НАГРАДЫ ЗА ПРИГЛАШЕНИЯ</b>\n\n"+("\n".join(lines) if lines else "Пока нет подтверждённых вступлений по ссылкам /invite.")+
+          "\n\n<code>/invite_gift 3</code> — случайно наградить до 3 активных участников рейтинга.\n<code>/invite_gifts</code> — история наград.\n\nКаждый аккаунт получает награду только один раз.")
+    await edit_panel(c.message,text,reply_markup=markup([[InlineKeyboardButton(text="⬅️ В панель владельца",callback_data="owner")]]))
     await c.answer()
 
 @dp.callback_query(F.data=="ticket_queue")
