@@ -1118,6 +1118,7 @@ async def invite(m):
     except Exception as e: await m.answer("Не удалось создать ссылку. Добавь бота администратором канала с правом приглашать пользователей и управлять ссылками.\n"+str(e))
 @dp.message(Command("invite_gift"))
 async def invite_gift(m: Message):
+    """Владелец запускает реальную раздачу Telegram Star Gifts лидерам канальных рефералов."""
     if not is_owner(m.from_user.id):
         return await m.answer("⛔ Эта команда доступна только владельцу FENIX ONLINE.")
     parts=(m.text or "").split()
@@ -1125,56 +1126,134 @@ async def invite_gift(m: Message):
         amount=int(parts[1]) if len(parts)>1 else 1
         if not 1<=amount<=20: raise ValueError()
     except ValueError:
-        return await m.answer("Формат: /invite_gift [количество от 1 до 20]")
+        return await m.answer("Формат: /invite_gift [количество победителей от 1 до 20]")
+
     try:
-        history=json.loads(db.setting("invite_gift_history","[]") or "[]")
+        history=json.loads(db.setting("invite_star_gift_history","[]") or "[]")
         if not isinstance(history,list): history=[]
         already={int(x["uid"]) for x in history if isinstance(x,dict) and str(x.get("uid","")).isdigit()}
-        candidates=[x for x in db.channel_invite_leaders(100) if int(x.get("count") or 0)>0 and int(x["uid"]) not in already]
+
+        candidates=[
+            x for x in db.channel_invite_leaders(100)
+            if int(x.get("count") or 0)>0 and int(x["uid"]) not in already
+        ]
         if not candidates:
-            return await m.answer("🎁 Нет новых участников для награждения. Сначала должны быть реальные вступления по ссылкам /invite.")
+            return await m.answer("🎁 Нет новых участников для награждения. Нужны подтверждённые вступления по персональным ссылкам /invite.")
+
+        # Победители выбираются случайно из верхней трети рейтинга приглашений.
         pool=candidates[:max(1,(len(candidates)+2)//3)]
         winners=random.sample(pool,min(amount,len(pool)))
-        gifts=["Секретный бонус FENIX","Подарок «FENIX ONLINE красавчик!»","Награда амбассадора FENIX","Сюрприз за поддержку проекта","Бонус активного приглашателя"]
+
+        # Берём актуальный каталог Telegram, а не полагаемся на устаревающие gift_id.
+        available=await bot.get_available_gifts()
+        wanted={
+            "rose": {"🌹","🌷"},
+            "teddy": {"🧸"},
+            "heart": {"❤️","❤","💗","💖"},
+        }
+        gift_pool={}
+        for kind, emojis in wanted.items():
+            matches=[
+                gift for gift in available.gifts
+                if getattr(getattr(gift,"sticker",None),"emoji",None) in emojis
+                and int(getattr(gift,"star_count",0) or 0)>0
+                and (getattr(gift,"remaining_count",None) is None or int(gift.remaining_count)>0)
+                and (getattr(gift,"personal_remaining_count",None) is None or int(gift.personal_remaining_count)>0)
+            ]
+            if matches:
+                gift_pool[kind]=matches
+        missing=[name for name,kind in (("роза","rose"),("мишка","teddy"),("сердце","heart")) if not gift_pool.get(kind)]
+        if missing:
+            return await m.answer(
+                "❌ Не удалось начать раздачу: в каталоге Telegram сейчас отсутствуют подарки: "
+                + ", ".join(missing)
+                + ". Ничего не списано и никому ничего не отправлено."
+            )
+
+        gift_names={"rose":"🌹 Роза","teddy":"🧸 Мишка","heart":"❤️ Сердце"}
         sent=[]
         for winner in winners:
-            uid=int(winner["uid"]); nick=winner.get("nick") or "Игрок"; count=int(winner.get("count") or 0)
-            reward=random.choice([50,75,100,125,150,200,250])
-            gift=random.choice(gifts)
-            ref=f"invite-reward:{uid}"
-            if not shop.credit(db,uid,reward,"Награда за приглашения в канал",ref,actor=m.from_user.id):
-                sent.append(f"• <code>{uid}</code> — награда уже была начислена, пропущено.")
-                continue
-            body=(f"🔥 <b>FENIX ONLINE красавчик!</b>\n\n"
-                  f"Спасибо, что помогаешь развивать наше сообщество и приглашаешь людей в канал!\n"
-                  f"По твоей ссылке вступили: <b>{count}</b> человек.\n\n"
-                  f"🎁 Твой подарок: <b>{html.escape(gift)}</b>\n"
-                  f"💎 На твой баланс начислено: <b>+{reward} FNZ</b>\n\n"
-                  f"Спасибо за поддержку FENIX ONLINE! ❤️")
-            db.add_notification(uid,"🎁 Подарок за приглашения",body)
+            uid=int(winner["uid"])
+            nick=winner.get("nick") or "Игрок"
+            count=int(winner.get("count") or 0)
+            kind=random.choice(("rose","teddy","heart"))
+            gift=random.choice(gift_pool[kind])
+            gift_id=str(gift.id)
+            stars=int(gift.star_count)
+
+            # Фактическая покупка/отправка Telegram-подарка за Stars с баланса бота.
             try:
-                await bot.send_message(uid,body,parse_mode="HTML")
-                delivery="личное сообщение отправлено"
+                await bot.send_gift(
+                    user_id=uid,
+                    gift_id=gift_id,
+                    text="🔥 FENIX ONLINE красавчик! Спасибо за приглашения в наш канал ❤️"
+                )
             except Exception as exc:
-                logging.info("Invite reward DM failed for %s: %s",uid,exc)
-                delivery="не доставлено в личку (уведомление сохранено в кабинете)"
-            history.append({"uid":uid,"nick":nick,"count":count,"gift":gift,"reward_fnz":reward,"by":m.from_user.id,"created":datetime.now(timezone.utc).isoformat(),"delivery":delivery})
-            sent.append(f"• <b>{html.escape(str(nick))}</b> — <code>{uid}</code>\n  Приглашено: <b>{count}</b> · начислено <b>+{reward} FNZ</b>\n  {html.escape(gift)}\n  {delivery}")
-        db.set_setting("invite_gift_history",json.dumps(history,ensure_ascii=False))
-        await m.answer("🎁 <b>РАЗДАЧА ПОДАРКОВ FENIX ONLINE</b>\n\n"+"\n\n".join(sent)+"\n\nFNZ начислены на баланс кошелька. Повторное начисление одному аккаунту заблокировано.",parse_mode="HTML")
+                logging.exception("Не удалось отправить Telegram Star Gift пользователю %s",uid)
+                sent.append(
+                    f"• <b>{html.escape(str(nick))}</b> — <code>{uid}</code> · {count} приглашений\n"
+                    f"  {gift_names[kind]} · ❌ не отправлено: {html.escape(str(exc)[:220])}"
+                )
+                continue
+
+            entry={
+                "uid":uid,"nick":str(nick),"count":count,
+                "gift":gift_names[kind],"gift_kind":kind,"gift_id":gift_id,
+                "stars":stars,"by":m.from_user.id,
+                "created":datetime.now(timezone.utc).isoformat(),
+                "delivery":"telegram_gift_sent"
+            }
+            history.append(entry)
+            db.add_notification(
+                uid,
+                "🎁 Подарок за приглашения!",
+                f"🔥 FENIX ONLINE красавчик! За {count} приглашений тебе отправлен настоящий подарок Telegram: {gift_names[kind]}."
+            )
+            try:
+                await bot.send_message(
+                    uid,
+                    f"🔥 <b>FENIX ONLINE красавчик!</b>\n\n"
+                    f"Ты помог развивать наш канал и пригласил <b>{count}</b> человек!\n"
+                    f"🎁 Мы отправили тебе настоящий подарок Telegram: <b>{gift_names[kind]}</b>.\n"
+                    f"Спасибо за поддержку FENIX ONLINE! ❤️",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                logging.info("Gift notification DM unavailable for %s; Telegram gift was sent",uid)
+
+            sent.append(
+                f"• <b>{html.escape(str(nick))}</b> — <code>{uid}</code>\n"
+                f"  Приглашено: <b>{count}</b> · подарок: <b>{gift_names[kind]}</b>\n"
+                f"  Списано с баланса бота: <b>{stars} ⭐</b> · подарок отправлен"
+            )
+
+        db.set_setting("invite_star_gift_history",json.dumps(history,ensure_ascii=False))
+        success=sum(1 for x in sent if "подарок отправлен" in x)
+        await m.answer(
+            "🎁 <b>РАЗДАЧА TELEGRAM-ПОДАРКОВ FENIX ONLINE</b>\n\n"
+            + ("\n\n".join(sent) if sent else "Ни один подарок не отправлен.")
+            + f"\n\nУспешно отправлено: <b>{success}</b> из {len(winners)}.\n"
+            "Каждый победитель получает ровно один случайный подарок. "
+            "Списываются реальные Telegram Stars с баланса бота.",
+            parse_mode="HTML"
+        )
     except Exception:
-        logging.exception("Invite reward distribution failed")
-        await m.answer("❌ Не удалось провести раздачу. Подробности записаны в журнал сервера.")
+        logging.exception("Invite Telegram Star Gift distribution failed")
+        await m.answer("❌ Не удалось провести раздачу. Проверь баланс Telegram Stars бота и журнал Render.")
 
 @dp.message(Command("invite_gifts"))
 async def invite_gifts(m: Message):
     if not is_owner(m.from_user.id):
         return await m.answer("⛔ Эта команда доступна только владельцу FENIX ONLINE.")
-    history=json.loads(db.setting("invite_gift_history","[]") or "[]")
+    history=json.loads(db.setting("invite_star_gift_history","[]") or "[]")
     if not history:
-        return await m.answer("🎁 История наград пока пуста.")
-    lines=[f"• {html.escape(str(x.get('nick') or 'Игрок'))} — <code>{x.get('uid')}</code> · {x.get('count',0)} приглашений\n  {html.escape(str(x.get('gift') or 'Подарок'))}" for x in reversed(history[-30:])]
-    await m.answer("🎁 <b>ИСТОРИЯ НАГРАД ЗА ПРИГЛАШЕНИЯ</b>\n\n"+"\n".join(lines),parse_mode="HTML")
+        return await m.answer("🎁 История Telegram-подарков пока пуста.")
+    lines=[
+        f"• {html.escape(str(x.get('nick') or 'Игрок'))} — <code>{x.get('uid')}</code> · "
+        f"{x.get('count',0)} приглашений\n  {html.escape(str(x.get('gift') or 'Подарок'))} · {x.get('stars',0)} ⭐"
+        for x in reversed(history[-30:])
+    ]
+    await m.answer("🎁 <b>ИСТОРИЯ TELEGRAM-ПОДАРКОВ ЗА РЕФЕРАЛОВ</b>\n\n"+"\n".join(lines),parse_mode="HTML")
 
 @dp.chat_member()
 async def member(ev:ChatMemberUpdated):
@@ -1773,7 +1852,7 @@ async def invite_rewards_panel(c: CallbackQuery):
     leaders=db.channel_invite_leaders(10)
     lines=[f"• {html.escape(str(x.get('nick') or 'Игрок'))} — <code>{x['uid']}</code>: <b>{x['count']}</b>" for x in leaders if int(x.get("count") or 0)>0]
     text=("🎁 <b>НАГРАДЫ ЗА ПРИГЛАШЕНИЯ</b>\n\n"+("\n".join(lines) if lines else "Пока нет подтверждённых вступлений по ссылкам /invite.")+
-          "\n\n<code>/invite_gift 3</code> — случайно наградить до 3 активных участников рейтинга.\n<code>/invite_gifts</code> — история наград.\n\nКаждый аккаунт получает награду только один раз.")
+          "\n\n<code>/invite_gift 3</code> — случайно наградить до 3 активных участников рейтинга.\n<code>/invite_gifts</code> — история наград.\n\nКаждый победитель получает один случайный реальный подарок Telegram (роза, мишка или сердце) за Stars с баланса бота. Повторно награждённые не выбираются.")
     await edit_panel(c.message,text,reply_markup=markup([[InlineKeyboardButton(text="⬅️ В панель владельца",callback_data="owner")]]))
     await c.answer()
 
