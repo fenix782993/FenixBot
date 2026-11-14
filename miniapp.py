@@ -176,8 +176,11 @@ async def stats(req):
     return response({"referrals": db.ref_count(user_id), "channel_joins": db.channel_count(user_id)})
 
 
-async def top(_):
-    return response(db.top())
+async def top(req):
+    kind=req.query.get("type","level")
+    if kind not in {"level","fhz","pvp","pve"}:
+        kind="level"
+    return response(db.game_top(kind,50))
 
 
 async def tickets(req):
