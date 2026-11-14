@@ -303,6 +303,17 @@ class DB:
     def channel_count(self, owner):
         return self._scalar(f"SELECT count(*) FROM joins WHERE owner={self._ph()}", (owner,))
 
+    def channel_invite_leaders(self, limit=100):
+        safe_limit=max(1,min(int(limit),500))
+        return self._all("""
+            SELECT joins.owner AS uid, COALESCE(users.nick, '') AS nick,
+                   COUNT(joins.uid) AS count
+            FROM joins LEFT JOIN users ON users.uid=joins.owner
+            GROUP BY joins.owner, users.nick
+            ORDER BY count DESC, joins.owner ASC
+            LIMIT """ + str(safe_limit))
+
+
     def media(self, uid, ch, stats, contact):
         with self.con() as c:
             if self.use_postgres:
